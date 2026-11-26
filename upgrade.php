@@ -318,7 +318,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_operator_outreach_schema_ready_v1($schemaConnection)
         && vp3_operator_outreach_diagnostics_ready_v1($schemaConnection)
         && vp3_operator_live_schema_ready_v1($schemaConnection)
-        && vp3_operator_participation_ready_v1($schemaConnection)
+        && vp3_operator_live_controls_ready_v1($schemaConnection)
         && VP3OperatorOwnerPhoneV1::ready($schemaConnection)
         && vp3_phone_contact_details_schema_ready_v1($schemaConnection)
         && vp3_ai_service_usage_ready_v1($schemaConnection)

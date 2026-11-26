@@ -31,7 +31,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
   <script src="phone-recording-holder-v1.js?v=1" defer></script>
   <script src="phone-camera-holder-v1.js?v=6" defer></script>
-  <script src="phone-agent-chat-v1.js?v=7" defer></script>
+  <script src="phone-agent-chat-v1.js?v=8" defer></script>
   <script src="phone-agent-workspace-media-v1.js?v=1" defer></script>
   <script src="agent-email-call-settings-v1.js?v=1" defer></script>
   <script src="phone-agent-workspace-v1.js?v=2" defer></script>
@@ -41,7 +41,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <script src="phone-managed-call-ui-v1.js?v=5" defer></script>
   <script src="phone-handoff-v1.js?v=1" defer></script>
   <script src="phone-push-subscriptions-v1.js?v=3" defer></script>
-  <script src="phone-location-v1.js?v=19" defer></script>
+  <script src="phone-location-v1.js?v=20" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php" data-email-call-settings-api="api/phone-location-v1.php?workspace_calls=1">

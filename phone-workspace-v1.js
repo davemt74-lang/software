@@ -1215,7 +1215,7 @@
   function addCaptionLine(session,side,value,seq){
     if(typeof value!=='string'||value.length>2400)throw new Error('The live caption result could not be verified.');
     if(value.trim())session.captions.push({side,text:text(value),seq});
-    // Capture is bounded to 30 single-track or 15 dual-track segments per session.
+    // Capture is bounded by the server's session grant, at most 30 segments.
   }
   function readCaptionReceipts(session,result,seq){
     if(!session.assist)return;
@@ -1257,7 +1257,10 @@
     // Slow speech responses never accumulate a private audio backlog.
     if(session.busy){session.skipped=Math.min(999,session.skipped+1);render();return;}
     if(!captionTracksCurrent(entry,session)){stopRemoteCaptions(entry,'Call audio changed. Live captions stopped.');render();return;}
-    if(session.seq>(session.mode==='both'?15:30)||Date.now()>=session.deadline){stopRemoteCaptions(entry,'Live caption allowance ended.');render();return;}
+    if(session.seq>session.maxSequences||Date.now()>=session.deadline){stopRemoteCaptions(entry,'Live caption allowance ended.');render();return;}
+    const cost=session.mode==='both'?8:4;
+    if(Number.isInteger(session.audioRemaining)&&session.audioRemaining<cost){stopRemoteCaptions(entry,'Caption processing allowance ended. The human call continues.');render();return;}
+    if(Number.isInteger(session.audioRemaining))session.audioRemaining-=cost;
     session.busy=true;const seq=session.seq++;
     try{
       const fields={token:session.token,seq,pcm:encodeCaptionPcm(session.mode==='both'?buffer?.remote:buffer)};
@@ -1267,6 +1270,11 @@
       if(result.call_id!==entry.info.public_id||result.seq!==seq||result.speaker!=='remote_audio'||typeof result.text!=='string'||result.text.length>2400)
         throw new Error('The live caption result could not be verified.');
       if(!captionTracksCurrent(entry,session)){stopRemoteCaptions(entry,'Call audio changed. Live captions stopped.');render();return;}
+      if(Number.isInteger(session.audioRemaining)){
+        if(!Number.isInteger(result.audio_seconds_remaining)||result.audio_seconds_remaining<0||result.audio_seconds_remaining>session.audioLimit-seq*cost)
+          throw new Error('The caption processing balance could not be verified.');
+        session.audioRemaining=result.audio_seconds_remaining;
+      }
       addCaptionLine(session,'remote_audio',result.text,seq);
       if(session.mode==='both')addCaptionLine(session,'local_audio',result.local_text,seq);
       else if('local_text' in result)throw new Error('Unexpected local caption.');
@@ -1283,6 +1291,7 @@
     const remote=entry.call?.getRemoteStream?.(),tracks=remote?.getAudioTracks?.()||[];
     const mode=view.assist_available===true&&entry.captionBoth===true?'both':'remote';
     const assist=view.assist_available===true&&entry.captionAssist===true;
+    const seconds=view.controls_available===true?(entry.captionSeconds??(mode==='both'?60:120)):(mode==='both'?60:120);
     const rawLocal=mode==='both'&&Boolean(entry.session.voiceMixer?.originalStream);
     const local=mode==='both'?(rawLocal?entry.session.voiceMixer.originalStream:entry.call?.getLocalStream?.()):null,localTracks=local?.getAudioTracks?.()||[];
     if(typeof Audio!=='function'||typeof window.AudioWorkletNode!=='function'||tracks.length!==1||tracks[0].readyState!=='live'){
@@ -1293,7 +1302,7 @@
       entry.captionNotice='Both-sided capture requires the unmuted, already-owned local phone track. No new microphone will be opened.';render();return;
     }
     const session={generation,scope:{conversation_id:context.conversation_id,agent_id:context.agent_id},phase:'starting',captions:[],receipts:[],
-      skipped:0,seq:1,busy:false,startSent:false,track:tracks[0],localTrack:localTracks[0],rawLocal,mode,assist,token:'',
+      skipped:0,seq:1,maxSequences:mode==='both'?15:30,busy:false,startSent:false,track:tracks[0],localTrack:localTracks[0],rawLocal,mode,assist,token:'',
       suggestionAttempts:0,lastSuggestionSeq:0,nextSuggestionAt:0,suggestionPending:false,suggestion:null,suggestionError:'',
       voiceTurn:null,voiceUsedSeq:0,voiceReview:false,voiceConsent:false,voiceNotice:'',voiceParticipant:false};
     entry.captionSession=session;entry.captionPrompt=false;entry.captionConsent=false;entry.captionBoth=false;entry.captionAssist=false;entry.captionNotice='';render();
@@ -1309,7 +1318,8 @@
         if(!captionCurrent(entry,session)||session.phase!=='listening')return;
         if(message.data?.activity===true){session.participation?.activity();return;}
         const phase=session.participation?.snapshot.phase;
-        if(phase&&!['listening','closed'].includes(phase))return;
+        if(phase&&!['listening','closed','paused'].includes(phase))return;
+        if(phase==='paused'&&session.participation.snapshot.pending)return;
         void sendRemoteCaption(entry,session,message.data);
       };
       session.worklet.onprocessorerror=()=>{if(captionCurrent(entry,session)){stopRemoteCaptions(entry,'Remote caption capture stopped.');render();}};
@@ -1318,13 +1328,22 @@
       session.localTrack?.addEventListener('ended',session.trackEnded,{once:true});
       // The explicit consent confirmation was made before any audio capture.
       session.startSent=true;
-      const result=await liveCaptionRequest(entry,session,'start',{consent_attested:true,...(view.assist_available===true?{capture_mode:mode,suggestions_attested:assist}:{})});
+      const result=await liveCaptionRequest(entry,session,'start',{consent_attested:true,...(view.assist_available===true?{capture_mode:mode,suggestions_attested:assist}:{}),
+        ...(view.controls_available===true?{session_seconds:seconds}:{})});
       if(!captionCurrent(entry,session)){stopCaptionReceipt(entry,session,result.token);return;}
       if(result.call_id!==entry.info.public_id||typeof result.token!=='string'||!/^[a-f0-9]{64}$/.test(result.token)||
         result.execution!=='captions_only'||result.chunk_seconds!==4||!Number.isSafeInteger(result.expires_epoch))throw new Error('Live caption authorization could not be verified.');
       session.token=result.token;
       if((result.capture_mode??'remote')!==mode||(result.suggestions_enabled??false)!==assist)throw new Error('Live assistance preferences could not be verified.');
-      session.deadline=Math.min(Date.now()+(mode==='both'?60000:120000),result.expires_epoch*1000);
+      if(view.controls_available===true){
+        if(result.session_seconds!==seconds||result.audio_limit_seconds!==seconds*(mode==='both'?2:1)||result.max_sequences!==Math.floor(seconds/4))
+          throw new Error('Live caption limits could not be verified.');
+        if(!Number.isInteger(result.audio_seconds_remaining)||result.audio_seconds_remaining<(mode==='both'?8:4)||result.audio_seconds_remaining>result.audio_limit_seconds)
+          throw new Error('The caption processing balance could not be verified.');
+        session.audioRemaining=result.audio_seconds_remaining;session.audioLimit=result.audio_limit_seconds;
+        session.maxSequences=result.max_sequences;
+      }
+      session.deadline=Math.min(Date.now()+seconds*1000,result.expires_epoch*1000);
       if(session.deadline<=Date.now()||session.context.state!=='running'||!captionTracksCurrent(entry,session))throw new Error('Live caption authorization expired.');
       session.phase='listening';session.timer=setTimeout(()=>{if(captionCurrent(entry,session)){stopRemoteCaptions(entry,'Live caption time limit reached.');render();}},session.deadline-Date.now());
       session.context.onstatechange=()=>{if(captionCurrent(entry,session)&&session.context.state!=='running'){stopRemoteCaptions(entry,'Browser audio processing stopped.');render();}};
@@ -1349,6 +1368,7 @@
     const controller=window.VP3OperatorParticipationV1.create({callId:entry.info.public_id,deadline:session.deadline,
       current:()=>captionCurrent(entry,session)&&captionTracksCurrent(entry,session)&&voiceMixerCurrent(entry)&&!stateError&&state?.operator_live?.eligible===true,
       request:(action,fields)=>liveCaptionRequest(entry,session,action,{token:session.token,...fields}),
+      canResume:()=>!session.busy,
       revoke:token=>revokeParticipationReceipt(entry,session,token),decode:decodeVoicePcm,
       play:(pcm,ended)=>entry.session.voiceMixer.play(pcm,entry.call.getLocalStream(),ended,true),
       stopVoice:()=>entry.session.voiceMixer?.stop(),refresh:()=>void refresh(),
@@ -1358,14 +1378,28 @@
         else session.worklet.port.postMessage(mode==='listen'?'start':mode);
       },changed:()=>{if(captionCurrent(entry,session))render();}});
     session.participation=controller;session.participationConsent=false;
-    void controller.start(session.participationHelpful?'helpful':'addressed');render();
+    void controller.start(session.participationHelpful?'helpful':'addressed',state?.operator_live?.controls_available===true?
+      {max_decisions:session.participationDecisions??4,max_responses:session.participationResponses??2}:{});render();
+  }
+  function operatorLimitField(parent,labelText,choices,value,changed,key){
+    const label=node('label','vp3-phone-field',labelText),select=node('select');select.setAttribute('aria-label',labelText);select.dataset.phoneFocusKey=key;
+    for(const [amount,title] of choices){const option=node('option',null,title);option.value=String(amount);select.append(option);}
+    select.value=String(value);select.addEventListener('change',()=>changed(Number(select.value)));label.append(select);parent.append(label);
   }
   function renderParticipation(panel,entry,session){
     const controller=session.participation;
     if(controller){
       const status=controller.snapshot,box=node('section','vp3-phone-suggestion');
       box.append(node('strong',null,'Agent · Conversation'),node('p',null,status.message));
+      const balance=node('p','vp3-phone-meta',status.seconds_remaining+' seconds left · '+status.checks_remaining+' AI checks left · '+status.responses_remaining+' speech reservations left');
+      balance.dataset.operatorBalance='';box.append(balance);
       if(status.phase!=='closed'){
+        if(status.controls){
+          const paused=status.phase==='paused',control=button(paused?'Resume Agent':'Pause Agent',event=>{
+            if(event.isTrusted&&captionCurrent(entry,session))void (paused?controller.resume():controller.pause());
+          });control.disabled=['starting','pausing','resuming'].includes(status.phase)||(paused&&(status.pending||session.busy||status.seconds_remaining<15||!status.checks_remaining||!status.responses_remaining));
+          control.dataset.phoneFocusKey='operator-conversation-pause';box.append(control);
+        }
         const remove=button('Remove Agent from conversation',event=>{if(event.isTrusted&&captionCurrent(entry,session))controller.stop();},'vp3-phone-button vp3-phone-danger');
         remove.dataset.phoneFocusKey='operator-conversation-remove';box.append(remove);
       }
@@ -1377,7 +1411,12 @@
       if(event.isTrusted&&captionCurrent(entry,session)&&!session.busy&&!session.voiceTurn){session.participationPrompt=!session.participationPrompt;session.participationConsent=false;render();}
     });open.disabled=session.busy||Boolean(session.voiceTurn);open.dataset.phoneFocusKey='operator-conversation-setup';panel.append(open);
     if(!session.participationPrompt)return false;
-    const box=node('section','vp3-phone-suggestion');box.append(node('p',null,'Let the Agent answer when addressed as Agent or VP3. It waits for a pause, and either person can interrupt. Say Agent, stop to end automatic replies. This uses the current caption session: up to 60 seconds, four AI checks and two spoken replies in total. Service charges may apply.'));
+    const box=node('section','vp3-phone-suggestion');box.append(node('p',null,'Let the Agent answer when addressed as Agent or VP3. It waits for a pause, and either person can interrupt. Say Agent, stop to end automatic replies. The existing caption deadline and hourly allowances still apply. Service charges may apply.'));
+    if(state?.operator_live?.controls_available===true){
+      operatorLimitField(box,'AI checks for this call',[[2,'2 checks'],[4,'4 checks'],[8,'8 checks']],session.participationDecisions??4,value=>{if(captionCurrent(entry,session)){session.participationDecisions=value;session.participationConsent=false;render();}},'operator-check-limit');
+      operatorLimitField(box,'Speech reservations for this call',[[1,'1 speech reservation'],[2,'2 speech reservations'],[4,'4 speech reservations']],session.participationResponses??2,value=>{if(captionCurrent(entry,session)){session.participationResponses=value;session.participationConsent=false;render();}},'operator-speech-limit');
+    }
+    box.append(node('p','vp3-phone-meta','Limits include earlier requests on this call. A check that waits, or speech that is interrupted or discarded, still uses its reservation. Pause keeps the same clock and balance.'));
     const consent=node('label','vp3-phone-check'),check=node('input');check.type='checkbox';check.checked=session.participationConsent===true;
     check.dataset.phoneFocusKey='operator-conversation-consent';check.addEventListener('change',event=>{if(event.isTrusted&&captionCurrent(entry,session)){session.participationConsent=check.checked;render();}});
     consent.append(check,node('span',null,'Everyone agrees to automatic AI replies and Cloud processing for this conversation.'));box.append(consent);
@@ -1398,6 +1437,8 @@
     if(session){
       panel.append(node('p','vp3-phone-meta',session.phase==='listening'?'Live captions on · human call remains in control':'Authorizing live captions…'));
       const participating=session.assist?renderParticipation(panel,entry,session):false;
+      if(Number.isInteger(session.audioRemaining))panel.append(node('p','vp3-phone-meta','Caption processing left: up to '+
+        Math.floor(session.audioRemaining/(session.mode==='both'?8:4))*4+' seconds for '+(session.mode==='both'?'both audio sides.':'caller audio.')));
       if(session.captions.length){
         if(session.captions.length>8){
           const history=button(session.showEarlier?'Show recent captions':'Show earlier captions',()=>{
@@ -1449,12 +1490,16 @@
           const bothLabel=node('label','vp3-phone-check'),both=node('input');both.type='checkbox';both.checked=entry.captionBoth===true;
           both.dataset.phoneFocusKey='both-caption-'+entry.info.public_id;
           both.addEventListener('change',event=>{if(event.isTrusted&&active===entry){entry.captionBoth=both.checked;render();}});
-          bothLabel.append(both,node('span',null,'Include both audio sides (everyone agrees; up to 60 seconds).'));panel.append(bothLabel);
+          bothLabel.append(both,node('span',null,view.controls_available===true?'Include both audio sides (everyone agrees).':'Include both audio sides (everyone agrees; up to 60 seconds).'));panel.append(bothLabel);
           const assistLabel=node('label','vp3-phone-check'),assist=node('input');assist.type='checkbox';assist.checked=entry.captionAssist===true;
           assist.dataset.phoneFocusKey='assist-caption-'+entry.info.public_id;
           assist.addEventListener('change',event=>{if(event.isTrusted&&active===entry){entry.captionAssist=assist.checked;render();}});
           assistLabel.append(assist,node('span',null,'Everyone agrees that recent captions may be sent to my configured AI model for private response suggestions (up to two paid requests).'));panel.append(assistLabel);
         }
+        if(view.controls_available===true)operatorLimitField(panel,'Caption session limit',[[30,'30 seconds'],[60,'60 seconds'],[120,'120 seconds']],entry.captionSeconds??(entry.captionBoth?60:120),value=>{
+          if(active===entry){entry.captionSeconds=value;entry.captionConsent=false;render();}
+        },'operator-session-limit');
+        if(view.controls_available===true)panel.append(node('p','vp3-phone-meta','Hourly caption allowance: 240 seconds of audio in total. Both audio sides each use allowance. Earlier call processing reduces what remains.'));
         const actions=node('div','vp3-phone-actions'),start=button('Start live captions',event=>void startRemoteCaptions(entry,event),'vp3-phone-button vp3-phone-primary');
         start.disabled=!entry.captionConsent;start.dataset.phoneFocusKey='start-caption-'+entry.info.public_id;
         const cancel=button('Cancel',()=>{if(active===entry){entry.captionPrompt=false;entry.captionConsent=false;entry.captionBoth=false;entry.captionAssist=false;render();}});actions.append(start,cancel);panel.append(actions);
