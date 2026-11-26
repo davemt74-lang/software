@@ -14,10 +14,11 @@ $memberHeaderUser=$user;$memberHeaderTitle='Music sites';$memberHeaderSubtitle=(
 $configError='';
 try{$providerUrl=music_provider_v1_base_url().'/api/music-provider-v1.php';}catch(MusicProviderV1Exception $error){$providerUrl='';$configError=$error->getMessage();}
 $enabled=$canManage&&$ready&&$providerUrl!=='';
-$version=substr(hash_file('sha256',__DIR__.'/assets/js/music-provider-sites-v1.js'),0,12);
+$scriptVersion=substr(hash_file('sha256',__DIR__.'/assets/js/music-provider-sites-v1.js'),0,12);
+$styleVersion=substr(hash_file('sha256',__DIR__.'/assets/css/music-provider-sites-v1.css'),0,12);
 ?><!doctype html>
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>VP3 | Sites &amp; streaming</title>
-<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/assets/css/music-provider-sites-v1.css?v='.$version)) ?>"></head>
+<link rel="stylesheet" href="<?= e(url('/chat.css?v=82')) ?>"><link rel="stylesheet" href="<?= e(url('/assets/css/music-provider-sites-v1.css?v='.$styleVersion)) ?>"></head>
 <body class="music-provider-page"><div class="chat-app"><?php $workspaceSidebarUser=$user;$workspaceSidebarActive='music_workspace';require __DIR__.'/includes/workspace-sidebar-v82.php'; ?>
 <div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div><main class="chat-main music-sites-main"><?php require __DIR__.'/includes/member-header.php'; ?>
 <div class="music-sites-wrap" id="musicProviderSites" data-endpoint="<?= e(url('/api/music-provider-manage-v1.php')) ?>" data-workspace="<?= $workspaceId ?>" data-csrf="<?= e(csrf_token()) ?>" data-enabled="<?= $enabled?'true':'false' ?>">
@@ -45,4 +46,4 @@ $version=substr(hash_file('sha256',__DIR__.'/assets/js/music-provider-sites-v1.j
 </section>
 <?php endif; ?>
 <section class="music-sites-note"><h2>What this connection supports</h2><p>Approved sites can browse their selected catalog and stream public recordings with source-page attribution. Listening evidence and delivery usage are recorded separately. Artist analytics and earnings will use their own reporting and payment setup.</p><details><summary>API connection details</summary><p>Keep the management credential on your site’s server. Visitors receive access for one playback session and do not need a VP3 account.</p><?php if($providerUrl): ?><p><strong>Provider API</strong><br><code><?= e($providerUrl) ?></code></p><?php endif; ?><p>Media tickets last five minutes and can be renewed within the same playback session. Private or paid listening, music downloads, and automatic royalty payments are not enabled by this connection.</p></details></section>
-</div></main></div><?php if($enabled): ?><script src="<?= e(url('/assets/js/music-provider-sites-v1.js?v='.$version)) ?>" defer></script><?php endif; ?></body></html>
+</div></main></div><?php if($enabled): ?><script src="<?= e(url('/assets/js/music-provider-sites-v1.js?v='.$scriptVersion)) ?>" defer></script><?php endif; ?></body></html>

@@ -108,7 +108,7 @@ try {
   }), begun.data.media.url);
   await page.getByRole('button', {name: 'Play selected recording'}).click();
   await page.waitForFunction(() => document.getElementById('recording').currentTime > 0.2);
-  await page.evaluate(() => {document.getElementById('recording').pause(); document.getElementById('status').textContent = 'Verified VP3 media is playing through the artist site';});
+  await page.evaluate(() => {document.getElementById('recording').pause(); document.getElementById('status').textContent = 'Verified VP3 media loaded and played through the artist site';});
   const beforeEvidence = fixture.readDb('SELECT started_ms,accepted_played_ms FROM music_provider_sessions_v1 WHERE session_id=?', [begun.data.session_id])[0];
   equal(beforeEvidence, {started_ms: null, accepted_played_ms: 0}, 'Actual media playback without telemetry is not fabricated as observed listening');
   const resume = eventInput(begun.data.session_id, {site_id: site.site_id});
@@ -242,14 +242,26 @@ try {
   await editor.waitForFunction(() => document.getElementById('musicProviderStatus').textContent.includes('Song selection saved'));
   check(!await editor.locator('#musicProviderRetry').isVisible(), 'Successful save left a stale retry control');
   await editor.setViewportSize({width: 390, height: 844});
-  equal(await editor.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), true, 'Phone layout scrolls horizontally');
+  const phoneLayout = await editor.evaluate(() => ({
+    viewport: innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    overflow: [...document.querySelectorAll('body *')].flatMap(node => {
+      const bounds = node.getBoundingClientRect();
+      if (!bounds.width || !bounds.height || bounds.right <= innerWidth + 1) return [];
+      return [{tag: node.tagName.toLowerCase(), id: node.id, className: node.className,
+        left: bounds.left, right: bounds.right, width: bounds.width}];
+    }),
+  }));
+  fs.writeFileSync(path.join(artifactDirectory, 'sites-mobile-layout.json'), JSON.stringify(phoneLayout, null, 2) + '\n');
+  await editor.screenshot({path: path.join(artifactDirectory, 'sites-mobile-selection.png'), fullPage: true});
+  equal(phoneLayout.documentWidth <= phoneLayout.viewport + 1, true,
+    'Phone layout scrolls horizontally: ' + JSON.stringify(phoneLayout));
   equal(await editor.evaluate(() => [...document.querySelectorAll('.music-sites-main,.music-sites-wrap,.music-sites-panel,.music-sites-catalog')]
     .filter(node => /auto|scroll/.test(getComputedStyle(node).overflowY) && node.scrollHeight > node.clientHeight + 1).length), 0, 'Music workflow has nested scrolling containers');
   equal(await editor.locator('#musicProviderSaveSelection').evaluate(node => node.getBoundingClientRect().height >= 40), true, 'Phone save control has an undersized target');
   await editor.locator('#musicProviderSaveSelection').focus();
   await editor.keyboard.press('Tab');
   check(await editor.evaluate(() => document.activeElement !== document.body), 'Keyboard focus was lost in page controls');
-  await editor.screenshot({path: path.join(artifactDirectory, 'sites-mobile-selection.png'), fullPage: true});
   await editor.locator('.music-sites-advanced summary').click();
   await editor.locator('#musicProviderRotate').click();
   await editor.waitForFunction(() => document.getElementById('musicProviderStatus').textContent.includes('Connection updated'));

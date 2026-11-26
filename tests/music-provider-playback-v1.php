@@ -86,6 +86,10 @@ function provider_playback_test_run(): void
     $site=provider_playback_test_site($clock,[$recordings[10],$recordings[11]]);
     $begin=provider_playback_test_begin($site,$recordings[10]);
     $before=music_listening_test_snapshot();
+    $pdo->beginTransaction();
+    provider_playback_test_reject(static fn()=>provider_playback_test_call($begin,$clock),409,'New grant inside caller transaction','transaction_boundary_required');
+    provider_playback_test_equal($pdo->inTransaction(),true,'Rejected new grant ended caller transaction');$pdo->rollBack();
+    provider_playback_test_equal(music_listening_test_snapshot(),$before,'Rejected nested begin mutated rows');
     provider_playback_test_reject(static fn()=>provider_playback_test_call($begin,$clock,null,['origin'=>'https://evil.example.com']),403,'Foreign origin');
     provider_playback_test_equal(music_listening_test_snapshot(),$before,'Rejected origin created evidence');
     provider_playback_test_reject(static fn()=>provider_playback_test_call(array_replace($begin,['recording_id'=>$recordings[20]]),$clock),404,'Foreign workspace private recording');

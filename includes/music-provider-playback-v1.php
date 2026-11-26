@@ -292,6 +292,10 @@ function music_provider_v1_playback_action(PDO $pdo,array $input,array $context=
 
 function music_provider_v1_playback_begin(PDO $pdo,array $input,array $context,int $now): array
 {
+    // A caller-owned MySQL transaction may already have a stale REPEATABLE READ
+    // snapshot. New grants need their own boundary; event receipts still support
+    // savepoints because they lock an existing session and recheck its state.
+    if($pdo->inTransaction())music_provider_v1_error('transaction_boundary_required',409,'Start a new playback outside an existing database transaction.');
     if(array_diff(array_keys($input),['protocol','action','site_id','recording_id','play_id','playback_key','source_url','source_surface','position_ms','playback_rate','muted','loop']))music_provider_v1_error('invalid_request',422,'This playback request contains unsupported fields.');
     $siteId=music_provider_v1_uuid($input['site_id']??null);$recordingId=music_provider_v1_uuid($input['recording_id']??null);$playId=music_provider_v1_uuid($input['play_id']??null);
     $key=music_provider_v1_playback_key($input['playback_key']??null);
@@ -299,8 +303,15 @@ function music_provider_v1_playback_begin(PDO $pdo,array $input,array $context,i
     foreach(['muted','loop'] as $flag)if(array_key_exists($flag,$input)&&!is_bool($input[$flag]))music_provider_v1_error('invalid_request',422,'Use boolean playback observations.');
     if(isset($context['site_id'])&&$context['site_id']!==$siteId)music_provider_v1_error('unavailable',404,'This playback is unavailable.');
     $context['site_id']=$siteId;
-    return music_provider_v1_atomic($pdo,function()use($pdo,$siteId,$recordingId,$playId,$key,$position,$rate,$input,$context,$now):array{
+    // Site→workspace is immutable. Resolve it outside the new transaction, then
+    // share the canonical catalog mutex before the first eligibility snapshot.
+    $mapping=$pdo->prepare('SELECT workspace_id FROM music_provider_sites_v1 WHERE site_id=?');$mapping->execute([$siteId]);$workspaceId=(int)$mapping->fetchColumn();$mapping->closeCursor();
+    if($workspaceId<1)music_provider_v1_error('connection_inactive',403,'This music connection is unavailable.');
+    return music_provider_v1_atomic($pdo,function()use($pdo,$siteId,$workspaceId,$recordingId,$playId,$key,$position,$rate,$input,$context,$now):array{
+        $mutex=$pdo->prepare('SELECT id FROM artist_workspaces_v181 WHERE id=?'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));$mutex->execute([$workspaceId]);
+        if(!$mutex->fetchColumn())music_provider_v1_error('connection_inactive',403,'This music connection is unavailable.');$mutex->closeCursor();
         $site=music_provider_v1_authorize_site($pdo,$siteId,$now,true);music_provider_v1_playback_origin($site,$context);
+        if((int)$site['workspace_id']!==$workspaceId)music_provider_v1_error('connection_inactive',403,'This music connection changed.');
         $public=music_provider_v1_public_recording($pdo,$site,$recordingId,true);$source=music_provider_v1_playback_source($site,$input);
         $hash=hash('sha256',music_provider_v1_json(['recording_id'=>$recordingId,'position_ms'=>$position,'playback_rate'=>$rate,'muted'=>$input['muted']??false,'loop'=>$input['loop']??false,'source'=>$source]));
         $query=$pdo->prepare('SELECT * FROM music_provider_sessions_v1 WHERE site_id=? AND play_id=?'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));$query->execute([$siteId,$playId]);$existing=$query->fetch(PDO::FETCH_ASSOC);

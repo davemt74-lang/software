@@ -1,14 +1,33 @@
 <?php
 declare(strict_types=1);
 
+/** Native queries are unchanged; fixture-only pipe barriers expose their order. */
+class ProviderConcurrencyPDO extends PDO
+{
+    public bool $announceWorkspace=false;
+    public bool $pauseBeforeInsert=false;
+    public function prepare(string $query,array $options=[]): PDOStatement|false
+    {
+        if($this->announceWorkspace&&str_starts_with($query,'SELECT id FROM artist_workspaces_v181 WHERE id=?')&&str_contains($query,'FOR UPDATE')){
+            $this->announceWorkspace=false;fwrite(STDOUT,"WORKSPACE\n");fflush(STDOUT);
+        }
+        if($this->pauseBeforeInsert&&str_starts_with($query,'INSERT INTO music_provider_sessions_v1 ')){
+            $this->pauseBeforeInsert=false;fwrite(STDOUT,"BEFORE_INSERT\n");fflush(STDOUT);
+            if(trim((string)fgets(STDIN,20))!=='CONTINUE')throw new RuntimeException('The insert barrier was not released.');
+        }
+        return parent::prepare($query,$options);
+    }
+}
+
 /** Separate PHP processes and PDO connections, not serial replay or mocked locks. */
-function provider_concurrency_mysql(): ?PDO
+function provider_concurrency_mysql(array $barriers=[]): ?PDO
 {
     $dsn=getenv('MUSIC_TEST_MYSQL_DSN')?:'';if($dsn==='')return null;
     if(!str_starts_with($dsn,'mysql:')||!in_array('mysql',PDO::getAvailableDrivers(),true))throw new RuntimeException('Native MySQL concurrency requires pdo_mysql and a mysql: DSN.');
-    $pdo=new PDO($dsn,getenv('MUSIC_TEST_MYSQL_USER')?:'',getenv('MUSIC_TEST_MYSQL_PASSWORD')?:'',[
+    $pdo=new ProviderConcurrencyPDO($dsn,getenv('MUSIC_TEST_MYSQL_USER')?:'',getenv('MUSIC_TEST_MYSQL_PASSWORD')?:'',[
         PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCEPTION,PDO::ATTR_DEFAULT_FETCH_MODE=>PDO::FETCH_ASSOC,PDO::ATTR_EMULATE_PREPARES=>false,
     ]);
+    $pdo->announceWorkspace=($barriers['workspace']??false)===true;$pdo->pauseBeforeInsert=($barriers['insert']??false)===true;
     if(!preg_match('/\Avp3_music_test[a-zA-Z0-9_]*\z/',(string)$pdo->query('SELECT DATABASE()')->fetchColumn()))throw new RuntimeException('Refusing concurrency fixture: database name must start with vp3_music_test.');
     return $pdo;
 }
@@ -20,7 +39,7 @@ function provider_concurrency_worker(): never
         $root=is_array($job)&&is_string($job['root']??null)?realpath($job['root']):false;
         if(!$root||!str_starts_with($root,rtrim(sys_get_temp_dir(),'/').'/vp3-provider-concurrency-'))throw new RuntimeException('Invalid isolated concurrency fixture.');
         define('STONEFELLOW_ROOT',$root);define('MUSIC_PROVIDER_PLAYBACK_TEST_LIBRARY_ONLY',true);
-        if($pdo=provider_concurrency_mysql())$GLOBALS['musicSongTestConnection']=$pdo;
+        if($pdo=provider_concurrency_mysql($job['barriers']??[]))$GLOBALS['musicSongTestConnection']=$pdo;
         else{
             if(!is_file($root.'/data.sqlite'))throw new RuntimeException('Concurrency SQLite fixture is missing.');
             putenv('MUSIC_LISTENING_TEST_DB='.$root.'/data.sqlite');
@@ -30,13 +49,28 @@ function provider_concurrency_worker(): never
         if(db()->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')db()->exec('PRAGMA busy_timeout=10000');
         fwrite(STDOUT,"READY\n");fflush(STDOUT);
         if(trim((string)fgets(STDIN,16))!=='GO')throw new RuntimeException('Concurrency barrier was not released.');
-        $result=music_provider_v1_playback_action(db(),$job['input'],$job['context']);
+        $result=($job['operation']??'playback')==='catalog'
+            ?provider_concurrency_catalog(db(),($job['published']??false)===true)
+            :music_provider_v1_playback_action(db(),$job['input'],$job['context']);
         fwrite(STDOUT,json_encode(['ok'=>true,'receipt'=>$result],JSON_THROW_ON_ERROR)."\n");exit(0);
     }catch(Throwable $error){
         // Fixture diagnostics contain no credentials, media tickets or DB DSN.
         fwrite(STDOUT,json_encode(['ok'=>false,'class'=>get_class($error),'status'=>$error instanceof MusicProviderV1Exception?$error->httpStatus:500,
             'code'=>$error instanceof MusicProviderV1Exception?$error->publicCode:'fixture_failure'],JSON_THROW_ON_ERROR)."\n");exit(1);
     }
+}
+
+function provider_concurrency_catalog(PDO $pdo,bool $published): array
+{
+    require_once dirname(__DIR__).'/includes/music-catalog.php';
+    $catalog=artist_music_v185_track($pdo,1,10);$metadata=music_song_metadata_v1_row($pdo,1,10);
+    $id=music_catalog_write($pdo,1,current_user(),'track','save',[
+        'id'=>10,'title'=>$catalog['title'],'description'=>$catalog['description']??'','genre'=>$catalog['genre']??'',
+        'visibility'=>'public','is_published'=>$published?1:0,'album_id'=>(int)($catalog['album_id']??0),
+        'duration_seconds'=>(int)($catalog['duration_seconds']??0),'track_number'=>(int)($catalog['track_number']??0),
+        'cover_photo_id'=>(int)($catalog['cover_photo_id']??0),'revision'=>music_catalog_revision($catalog),'metadata_revision'=>(int)$metadata['revision'],
+    ]);
+    return ['catalog_track_id'=>$id,'published'=>$published];
 }
 
 if(($argv[1]??'')==='--worker')provider_concurrency_worker();
@@ -115,6 +149,98 @@ function provider_concurrency_same(array $input,array $context): array
     return $results[0]['receipt'];
 }
 
+function provider_publication_worker(array $job): array
+{
+    $process=proc_open([getenv('PHP_BINARY')?:PHP_BINARY,'-d','display_errors=stderr','-d','log_errors=0',__FILE__,'--worker'],
+        [0=>['pipe','r'],1=>['pipe','w'],2=>['pipe','w']],$pipes,dirname(__DIR__));
+    if(!is_resource($process))throw new RuntimeException('Publication race worker could not start.');
+    stream_set_blocking($pipes[1],false);stream_set_blocking($pipes[2],false);
+    fwrite($pipes[0],json_encode(['root'=>STONEFELLOW_ROOT]+$job,JSON_THROW_ON_ERROR)."\n");fflush($pipes[0]);
+    return ['process'=>$process,'pipes'=>$pipes,'stdout'=>'','stderr'=>''];
+}
+
+function provider_publication_line(array &$worker,string $expected): void
+{
+    $deadline=microtime(true)+20;
+    while(true){
+        $worker['stdout'].=stream_get_contents($worker['pipes'][1]);$worker['stderr'].=stream_get_contents($worker['pipes'][2]);
+        $newline=strpos($worker['stdout'],"\n");
+        if($newline!==false){
+            $line=substr($worker['stdout'],0,$newline);$worker['stdout']=substr($worker['stdout'],$newline+1);
+            if($line!==$expected)throw new RuntimeException('Publication barrier returned unexpected fixture output: '.substr($line,0,300));
+            return;
+        }
+        if(!proc_get_status($worker['process'])['running'])throw new RuntimeException('Publication worker ended before its barrier.');
+        if(microtime(true)>$deadline)throw new RuntimeException('Publication barrier exceeded its 20-second deadline.');
+        usleep(10000);
+    }
+}
+
+function provider_publication_finish(array &$worker): array
+{
+    $deadline=microtime(true)+20;
+    while(true){
+        $worker['stdout'].=stream_get_contents($worker['pipes'][1]);$worker['stderr'].=stream_get_contents($worker['pipes'][2]);
+        $status=proc_get_status($worker['process']);
+        if(!$status['running'])break;
+        if(microtime(true)>$deadline)throw new RuntimeException('Publication worker exceeded its 20-second completion deadline.');
+        usleep(10000);
+    }
+    $worker['stdout'].=stream_get_contents($worker['pipes'][1]);$worker['stderr'].=stream_get_contents($worker['pipes'][2]);
+    if($worker['stderr']!=='')throw new RuntimeException('Publication worker emitted a runtime diagnostic.');
+    $result=json_decode(trim($worker['stdout']),true,32,JSON_THROW_ON_ERROR);
+    if(!is_array($result)||!isset($result['ok'])||$status['exitcode']!==($result['ok']?0:1))throw new RuntimeException('Publication worker result disagreed with its exit code.');
+    return $result;
+}
+
+/** Deterministic InnoDB publication race, including the real canonical writer. */
+function provider_concurrency_publication(PDO $pdo,array $site,string $recording,int $clock): void
+{
+    $workers=[];
+    try{
+        $begin=provider_playback_test_begin($site,$recording);
+        $context=['now_ms'=>$clock,'origin'=>$site['origin'],'site_id'=>$site['site_id'],'playback_key'=>$begin['playback_key']];
+        $workers['begin']=provider_publication_worker(['input'=>$begin,'context'=>$context,'barriers'=>['insert'=>true]]);
+        provider_publication_line($workers['begin'],'READY');fwrite($workers['begin']['pipes'][0],"GO\n");fflush($workers['begin']['pipes'][0]);
+        provider_publication_line($workers['begin'],'BEFORE_INSERT');
+        // The actual grant transaction must already hold the same mutex as the
+        // canonical writer. NOWAIT proves this with a second native connection.
+        $pdo->beginTransaction();$blocked=false;
+        try{$q=$pdo->prepare('SELECT id FROM artist_workspaces_v181 WHERE id=1 FOR UPDATE NOWAIT');$q->execute();$q->closeCursor();}
+        catch(PDOException $error){if((int)($error->errorInfo[1]??0)!==3572)throw $error;$blocked=true;}
+        finally{if($pdo->inTransaction())$pdo->rollBack();}
+        provider_playback_test_equal($blocked,true,'Grant insertion did not hold the canonical publication mutex');
+        $workers['withdraw']=provider_publication_worker(['operation'=>'catalog','published'=>false,'barriers'=>['workspace'=>true]]);
+        provider_publication_line($workers['withdraw'],'READY');fwrite($workers['withdraw']['pipes'][0],"GO\n");fflush($workers['withdraw']['pipes'][0]);
+        provider_publication_line($workers['withdraw'],'WORKSPACE');
+        fwrite($workers['begin']['pipes'][0],"CONTINUE\n");fflush($workers['begin']['pipes'][0]);
+        $allocated=provider_publication_finish($workers['begin']);$withdrawn=provider_publication_finish($workers['withdraw']);
+        provider_playback_test_equal($allocated['ok'],true,'Begin-first transaction failed');provider_playback_test_equal($withdrawn['ok'],true,'Concurrent canonical withdrawal failed');
+        $receipt=$allocated['receipt'];
+        provider_playback_test_equal(provider_playback_test_session($receipt['session_id'])['state'],'revoked','Canonical withdrawal missed the concurrent insertion');
+        provider_concurrency_catalog($pdo,true);
+        provider_playback_test_reject(static fn()=>music_provider_v1_ticket_context($pdo,provider_playback_test_ticket($receipt),['now_ms'=>$clock+1]),404,'Republish revived the concurrently withdrawn grant');
+
+        // Reverse order: withdrawal owns the mutex while a new begin arrives.
+        // The later begin must see committed publication, not an earlier RR view.
+        $pdo->beginTransaction();provider_concurrency_catalog($pdo,false);
+        $lateBegin=provider_playback_test_begin($site,$recording);$context['playback_key']=$lateBegin['playback_key'];
+        $workers['late']=provider_publication_worker(['input'=>$lateBegin,'context'=>$context,'barriers'=>['workspace'=>true]]);
+        provider_publication_line($workers['late'],'READY');fwrite($workers['late']['pipes'][0],"GO\n");fflush($workers['late']['pipes'][0]);
+        provider_publication_line($workers['late'],'WORKSPACE');$pdo->commit();
+        $late=provider_publication_finish($workers['late']);
+        provider_playback_test_equal($late['ok'],false,'Withdrawal-first transaction allowed a new grant');provider_playback_test_equal($late['status'],404,'Withdrawal-first unavailable status');
+        $q=$pdo->prepare('SELECT COUNT(*) FROM music_provider_sessions_v1 WHERE site_id=? AND play_id=?');$q->execute([$site['site_id'],$lateBegin['play_id']]);
+        provider_playback_test_equal((int)$q->fetchColumn(),0,'Withdrawal-first denial inserted a latent grant');
+        provider_concurrency_catalog($pdo,true);
+        provider_playback_test_reject(static fn()=>music_provider_v1_ticket_context($pdo,provider_playback_test_ticket($receipt),['now_ms'=>$clock+2]),404,'Repeated publication revived an old grant');
+        echo "MUSIC_PROVIDER_PUBLICATION_RACE_MYSQL_V1=PASS real native connections and canonical catalog writes: workspace mutex held before INSERT, begin-first withdrawal revokes new grant, withdrawal-first begin denies after waiting, republish never revives\n";
+    }finally{
+        if($pdo->inTransaction())$pdo->rollBack();
+        foreach($workers as $worker){$status=proc_get_status($worker['process']);if($status['running'])proc_terminate($worker['process']);foreach($worker['pipes'] as $pipe)if(is_resource($pipe))fclose($pipe);proc_close($worker['process']);}
+    }
+}
+
 $pdo=provider_concurrency_mysql();
 if($pdo&&(int)$pdo->query('SELECT COUNT(*) FROM information_schema.tables WHERE table_schema=DATABASE()')->fetchColumn()!==0)throw new RuntimeException('Refusing concurrency fixture: use an empty disposable test database.');
 define('STONEFELLOW_ROOT',sys_get_temp_dir().'/vp3-provider-concurrency-'.bin2hex(random_bytes(6)));
@@ -152,6 +278,7 @@ try{
     provider_playback_test_equal($denied[0]['code'],'play_conflict','Conflicting concurrent request code');
     provider_playback_test_equal((int)$pdo->query('SELECT COUNT(*) FROM music_provider_sessions_v1')->fetchColumn(),2,'Conflicting concurrent begin created extra sessions');
     provider_playback_test_equal((int)$pdo->query('SELECT COUNT(*) FROM track_play_sessions')->fetchColumn(),1,'Concurrent provider use wrote native personal history');
+    if($driver==='mysql')provider_concurrency_publication($pdo,$site,$recording,$clock+300010);
     echo 'MUSIC_PROVIDER_CONCURRENCY_V1=PASS '.$driver." actual separate-process PDO races: three identical begin/resume/heartbeat/renew requests, one frozen receipt/interval, conflicting begin has one winner, native history unchanged\n";
 }finally{
     if($pdo->inTransaction())$pdo->rollBack();

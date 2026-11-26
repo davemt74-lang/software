@@ -2,7 +2,7 @@
 
 Canonical planning entry point for the VP3 music revival, `/music-workspace.php`, song metadata and rights, hosted streaming, and the standalone Stoneward integration.
 
-**Status:** ML0 planning, ML1 catalog/metadata and ML2A native listening are merged in PRs #925, #930 and #936. ML2B adds the versioned VP3 provider API and Sites & streaming management; its implementation PR owns exact candidate checks, merge and package evidence. See [ML1 implementation and rollout](ML1-IMPLEMENTATION.md), [ML2A implementation](ML2A-IMPLEMENTATION.md), [ML2B provider implementation](ML2B-IMPLEMENTATION.md) and [development status](DEVELOPMENT-STATUS.md) for scope and release limits. Stoneward import, joint live acceptance, listening dashboards, earnings and payments remain separate phases.
+**Status:** ML0 planning, ML1 catalog/metadata and ML2A native listening are merged in PRs #925, #930 and #936. ML2B adds the versioned VP3 provider API and Sites & streaming management; [implementation PR #939](https://github.com/davemt74-lang/software/pull/939) owns exact candidate checks, merge and package evidence. See [ML1 implementation and rollout](ML1-IMPLEMENTATION.md), [ML2A implementation](ML2A-IMPLEMENTATION.md), [ML2B provider implementation](ML2B-IMPLEMENTATION.md) and [development status](DEVELOPMENT-STATUS.md) for scope and release limits. Stoneward import, joint live acceptance, listening dashboards, earnings and payments remain separate phases.
 
 ## Product direction
 
