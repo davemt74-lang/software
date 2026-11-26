@@ -728,7 +728,7 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
     $gmailSummary=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.gmail-inbox-initial-summary.v1';
     $gmailReply=($turnControl['surface']??'')==='tool_json'
-        &&($turnControl['protocol']??'')==='vp3.gmail-reply-draft.v1';
+        &&in_array($turnControl['protocol']??'',['vp3.gmail-reply-draft.v1','vp3.email-draft.v1'],true);
     $gmailAnalysis=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.gmail-thread-analysis.v1';
     $profileOwnerReply=($turnControl['surface']??'')==='tool_json'
@@ -879,7 +879,7 @@ function ai_generate_chat_response(
     $gmailSummary=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.gmail-inbox-initial-summary.v1';
     $gmailReply=($turnControl['surface']??'')==='tool_json'
-        &&($turnControl['protocol']??'')==='vp3.gmail-reply-draft.v1';
+        &&in_array($turnControl['protocol']??'',['vp3.gmail-reply-draft.v1','vp3.email-draft.v1'],true);
     $gmailAnalysis=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.gmail-thread-analysis.v1';
     $profileOwnerReply=($turnControl['surface']??'')==='tool_json'

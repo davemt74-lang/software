@@ -15,6 +15,7 @@ const activeExpected=[
   "client-release-intelligence-v100.yml",
   "cloud-hosting-v100.yml",
   "cognitive-loop-release-v2360.yml",
+  "gmail-composer-v1.yml",
   "homeserver-runtime-journey.yml",
   "package-entitlements-v340.yml",
   "profile-commerce-secure-file-v1130.yml",
