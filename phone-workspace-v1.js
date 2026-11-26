@@ -977,7 +977,9 @@
         const suggest=button(session.suggestionPending?'Preparing suggestion…':'Suggest a response',event=>void requestPrivateSuggestion(entry,session,event));
         suggest.disabled=session.phase!=='listening'||session.busy||session.suggestionAttempts>=2||Date.now()<session.nextSuggestionAt||!session.receipts.some(r=>r.speaker==='remote_audio')||(session.receipts.at(-1)?.seq||0)<=session.lastSuggestionSeq;
         suggest.dataset.phoneFocusKey='suggest-response-'+entry.info.public_id;panel.append(suggest);
-        if(session.suggestion){const note=node('div','vp3-phone-suggestion');note.append(node('strong',null,'Private suggestion · review before saying'),node('p',null,session.suggestion.text),node('p','vp3-phone-meta','Based on captions through segment '+session.suggestion.seq+' and '+session.suggestion.prior+' prior call records. Not sent or spoken.'));panel.append(note);}
+        if(session.suggestion){const note=node('div','vp3-phone-suggestion');note.append(node('strong',null,'Private suggestion · review before saying'),node('p',null,session.suggestion.text),node('p','vp3-phone-meta','Based on captions through segment '+session.suggestion.seq+' and '+session.suggestion.prior+' prior call records. Not sent or spoken.'));const linked=state?.companion_cards?.[entry.info.public_id];
+          if(linked)appendShareDraftButton(note,entry.info.public_id,linked,session.suggestion.text,'Review suggestion for phone');
+          panel.append(note);}
         if(session.suggestionError)panel.append(node('p','vp3-phone-meta',session.suggestionError));
       }
       const stop=button('Stop live captions',event=>{if(event.isTrusted&&active===entry){stopRemoteCaptions(entry);render();}});stop.dataset.phoneFocusKey='stop-caption-'+entry.info.public_id;panel.append(stop);
@@ -1099,6 +1101,44 @@
     card.append(host);
   }
 
+  function renderCallResearch(card,info,entry,g){
+    if(!entry||entry!==active||entry.phase!=='active'||!window.VP3CallResearch)return;
+    const available=()=>current(g)&&active===entry&&entry.phase==='active'&&!stateError&&state?.calls.some(call=>call.public_id===info.public_id&&call.state==='answered');
+    if(!available())return;
+    const section=node('section','vp3-phone-call-research');
+    const research=button('Research during call',event=>{
+      if(!event.isTrusted||!available())return;
+      if(opened)close();
+      const started=window.VP3CallResearch.open({...context,current:available,accept:finding=>{
+        if(!available()||typeof finding!=='string'||!finding.trim())return false;
+        entry.findings||=[];
+        if(!entry.findings.includes(finding))entry.findings.push(finding);
+        render();return true;
+      }});
+      if(!started)say('Finish the current research request before opening call research.');
+    });
+    section.append(research);
+    const shared=state?.companion_cards?.[info.public_id];
+    for(const finding of entry.findings||[]){
+      section.append(node('strong',null,'Private research finding'),node('p',null,finding));
+      if(shared)appendShareDraftButton(section,info.public_id,shared,finding,'Review finding for phone');
+    }
+    card.append(section);
+  }
+  function appendShareDraftButton(section,id,link,message,label){
+    const choose=button(label,event=>{
+      if(!event.isTrusted||active?.info.public_id!==id||state?.companion_cards?.[id]?.device_id!==link.device_id)return;
+      const draft=companionDrafts.get(id);
+      if(draft?.busy)return;
+      if(draft?.text&&draft.text!==message&&!window.confirm('Replace your current sharing draft?'))return;
+      companionDrafts.set(id,{device:link.device_id,text:message,key:'',busy:false,error:''});render();
+      const field=Array.from(document.querySelectorAll('[data-phone-focus-key]')).find(el=>el.dataset.phoneFocusKey==='companion-'+id&&el.getClientRects().length);
+      field?.focus();
+    });
+    choose.disabled=new TextEncoder().encode(message).length>1000;
+    if(choose.disabled)choose.title='This item exceeds the phone message limit.';
+    section.append(choose);
+  }
   function renderCallCompanion(card,info,g){
     const id=info.public_id,link=state?.companion_cards?.[id];
     if(!link||!publicId(link.device_id)||Number(info.conversation_id)!==context.conversation_id)return;
@@ -1151,7 +1191,7 @@
     if(recording&&safeUrl(recording.audio_url))addDetail('Recording','Available');else if(info.recording_enabled===true)addDetail('Recording','Requested');
     if(recording?.transcript||safeUrl(recording?.transcript_url))addDetail('Transcript','Available');
     if(safeUrl(recording?.report_url))addDetail('Call report','Available');
-    card.append(details);renderCallCompanion(card,info,renderGeneration);if(recording)appendRecording(card,recording,renderGeneration,true);
+    card.append(details);renderCallResearch(card,info,entry,renderGeneration);renderCallCompanion(card,info,renderGeneration);if(recording)appendRecording(card,recording,renderGeneration,true);
     const actions=node('div','vp3-phone-actions');
     if(contact&&(incoming||outgoing)){
       const emailButton=button('Send Email',async()=>{

@@ -55,6 +55,20 @@ try{
  assert.equal(await page.locator('img[src=x]').count(),0);assert.equal(await page.locator('.vp3-chat-research a').count(),2);
  await page.setViewportSize({width:390,height:844});assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=document.documentElement.clientWidth+2));
  const beforeFollowup=calls.filter(x=>x.action==='prepare').length;await page.getByRole('button',{name:'Research this gap'}).click();assert.equal(await page.locator('#chatInput').inputValue(),'Investigate: A missing date');assert.equal(calls.filter(x=>x.action==='prepare').length,beforeFollowup,'gap cannot automatically search or restart');
+ if(!native){
+  r.mission.answer={text:'Public finding',claims:[{statement:'Meeting time',value:'Friday',kind:'observed',state:'single_source',citations:['C1']}],
+   citations:[{label:'C1',domain:'one.example',url:'https://one.example/times',fingerprint:'b'.repeat(64)}]};
+  assert.equal(await page.evaluate(()=>window.VP3CallResearch.open({conversation_id:72,agent_id:9})),false);
+  const draft=await page.locator('#chatInput').inputValue();
+  await page.evaluate(()=>{window.callActive=true;window.findings=[];window.VP3CallResearch.open({conversation_id:71,agent_id:9,
+   current:()=>window.callActive,accept:message=>{window.findings.push(message);return true;}});});
+  const add=page.getByRole('button',{name:'Add finding to call card'});
+  await add.click();assert.match(await page.evaluate(()=>window.findings[0]),/Friday[\s\S]*https:\/\/one.example\/times/);
+  assert.equal(await page.locator('#chatInput').inputValue(),draft,'Opening call research preserves the typed draft');
+  await page.getByRole('button',{name:'Refresh research'}).click();await add.waitFor();
+  await page.evaluate(()=>window.callActive=false);await add.click();
+  assert.equal(await page.evaluate(()=>window.findings.length),1,'A stale call target cannot receive a result');
+ }
  blocked=true;await page.getByRole('button',{name:'Refresh research'}).click();await page.waitForFunction(()=>!document.querySelector('.vp3-chat-research pre'));
  assert.deepEqual(errors,[]);console.log('PASS: '+(native?'HomeServer':'Cloud')+' R2 canvas consent reviews exact external query, separates unverified candidates from evidence, prepares gap follow-ups without execution, intercepts ordinary Chat, requires exact approval, restores cited/conflicting findings, renders safe text/mobile and clears revoked results.');
 }finally{await browser.close();}

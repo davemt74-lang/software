@@ -711,7 +711,7 @@ $agentTeamsA3Runtime = '<link rel="stylesheet" data-agent-teams-a3 href="' . e(u
     . '<script data-agent-teams-a3 src="' . e(url('/chat-agent-teams-a3.js?v=' . $agentTeamsA3Build)) . '" defer></script>'
     . '<script>window.VP3_CHAT_RESEARCH={endpoint:' . json_encode(url('/api/chat-browser-research-v1.php'),JSON_UNESCAPED_SLASHES) . ',csrf:' . json_encode(csrf_token()) . '};</script>'
     . '<link rel="stylesheet" href="' . e(url('/chat-browser-research-v1.css?v=research-phase2')) . '">'
-    . '<script src="' . e(url('/chat-browser-research-v1.js?v=research-r3')) . '" defer></script>'
+    . '<script src="' . e(url('/chat-browser-research-v1.js?v=operator-research-v1')) . '" defer></script>'
     . '<script>window.VP3_PROJECT_KNOWLEDGE={endpoint:' . json_encode(url('/api/project-knowledge-r5.php')) . ',csrf:' . json_encode(csrf_token()) . '};</script>'
     . '<script src="' . e(url('/project-knowledge-r5.js?v=r5')) . '" defer></script>'
     . '<script src="' . e(url('/project-knowledge-r6.js?v=r6-context-ownership-20261017')) . '" defer></script>'

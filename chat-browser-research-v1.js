@@ -16,8 +16,40 @@ const context=()=>cfg.native?{local_conversation:window.HomeServerAgentRouting?.
  {conversation_id:Number(window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()??window.STONEFELLOW_CHAT?.initialConversationId??0),agent_id:Number(window.STONEFELLOW_AGENT_IDENTITY_V236?.agentId??0)};
 const key=()=>JSON.stringify(context());
 const pendingKey='vp3.chat-research.pending.'+String(cfg.csrf||'owner');
+let callTarget=null;
+window.VP3CallResearch=Object.freeze({
+ open(scope){
+  const current=context();
+  if(cfg.native||busy||scope.conversation_id!==current.conversation_id||scope.agent_id!==current.agent_id)return false;
+  callTarget={key:key(),accept:scope.accept,current:scope.current};
+  mode.value='chrome';mode.dispatchEvent(new Event('change',{bubbles:true}));panel.hidden=false;
+  panel.scrollIntoView({block:'nearest'});input.focus();return true;
+ }
+});
+function renderCallFindings(answer){
+ if(!callTarget||callTarget.key!==key()||!callTarget.current())return;
+ const target=callTarget;
+ for(const claim of answer.claims||[]){
+  const labels=new Set(claim.citations||[]);
+  if(!labels.size)continue;
+  const citations=(answer.citations||[]).filter(c=>labels.has(c.label));
+  if(citations.length!==labels.size)continue;
+  let urls;
+  try{urls=citations.map(c=>{const u=new URL(c.url);if(u.protocol!=='https:'||u.username||u.password)throw Error();return u.href;});}catch{continue;}
+  const summary=[claim.statement,claim.value].filter(Boolean).join(' — ');
+  if(!summary)continue;
+  const evidence=[claim.kind,String(claim.state||'').replace(/_/g,' '),claim.freshest_at].filter(Boolean).join(' · ');
+  const finding=[summary,evidence,...new Set(urls)].join('\n');
+  const item=node('div'),add=node('button','Add finding to call card');add.type='button';
+  item.append(node('p',summary),add);content.append(item);
+  add.addEventListener('click',event=>{
+   if(!event.isTrusted||target!==callTarget||target.key!==key()||!target.current())return;
+   if(target.accept(finding)){add.disabled=true;status.textContent='Finding added to your private call card.';}
+  });
+ }
+}
 function lock(value){busy=value;mode.disabled=value;input.disabled=value;runtime.disabled=value;project.disabled=value;panel.querySelectorAll('button,select').forEach(x=>x.disabled=value);}
-function clear(){generation++;selected=null;content.replaceChildren();savedContent.replaceChildren();savedReports=[];savedQuery=null;status.textContent='';panel.hidden=mode.value!=='chrome';}
+function clear(){callTarget=null;generation++;selected=null;content.replaceChildren();savedContent.replaceChildren();savedReports=[];savedQuery=null;status.textContent='';panel.hidden=mode.value!=='chrome';}
 async function api(action,args={}){
  const origin=key(),g=generation;
  const response=await fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,csrf_token:cfg.csrf||'owner',...context(),...args})});
@@ -43,7 +75,7 @@ function render(r){
  if(m){
   content.append(node('p',`${m.progress.pages} pages read · ${m.progress.corroborated} corroborated · ${m.progress.conflicted} conflicting claims`));
   const memo=node('pre',m.answer?.text||m.memo_preview||'No supported findings yet.');content.append(memo);
-  if(m.answer){if(m.answer.partial)content.append(node('p','Partial answer: source reading is still incomplete.'));renderCitations(m.answer,content);}
+  if(m.answer){if(m.answer.partial)content.append(node('p','Partial answer: source reading is still incomplete.'));renderCitations(m.answer,content);renderCallFindings(m.answer);}
   for(const c of m.claims||[]){const box=node('details');box.append(node('summary',`${c.state}: ${c.statement||c.value}`));
    for(const e of c.evidence||[])box.append(node('p',`${e.domain} · ${e.excerpt||''}`));content.append(box);}
   for(const p of m.pages||[])content.append(node('small',`${p.domain} · source receipt ${p.fingerprint} · ${p.source_version_id?'pinned source version '+p.source_version_id:'fingerprint-only evidence'}`));
