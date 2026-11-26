@@ -201,7 +201,19 @@ try {
   assert.equal(await editor().locator('iframe').getAttribute('scrolling'),'no');
   await editor().getByRole('button',{name:'Plain text',exact:true}).click();
   await editor().getByText('Please confirm delivery on December 7. Source for '+organic.id,{exact:true}).waitFor();
-  await editor().getByRole('button',{name:'Formatted',exact:true}).click();
+  const formatted=editor().getByRole('button',{name:'Formatted',exact:true});
+  await formatted.click();await formatted.hover();
+  const readerContrast=await formatted.evaluate(element=>{
+    const style=getComputedStyle(element);
+    const luminance=color=>color.match(/[\d.]+/g).slice(0,3).map(Number).map(value=>{
+      const channel=value/255;return channel<=0.04045 ? channel/12.92 : ((channel+0.055)/1.055)**2.4;
+    }).reduce((sum,value,index)=>sum+value*[0.2126,0.7152,0.0722][index],0);
+    const foreground=luminance(style.color),background=luminance(style.backgroundColor);
+    return {hovered:element.matches(':hover'),selected:element.getAttribute('aria-pressed'),foreground:style.color,background:style.backgroundColor,
+      ratio:(Math.max(foreground,background)+0.05)/(Math.min(foreground,background)+0.05)};
+  });
+  assert.equal(readerContrast.hovered,true);assert.equal(readerContrast.selected,'true');
+  assert.ok(readerContrast.ratio>=4.5,`Selected embedded reader tab must retain 4.5:1 text contrast when hovered: ${JSON.stringify(readerContrast)}`);
   await bounds();await screenshot('review-source-desktop.png');
   const selected=await page.evaluate(()=>window.VP3EmailComposerV1.selectedDraft());
   assert.deepEqual(Object.keys(selected).sort(),['agent_id','conversation_id','draft_id','edit_revision','owner_key']);

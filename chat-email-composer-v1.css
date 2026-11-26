@@ -33,6 +33,7 @@
   background:#fff; color:#243249; font:inherit; font-size:13px; font-weight:600; line-height:1.3; cursor:pointer;
 }
 .vp3-email-compose button:hover { background:#f3f6fa; }
+.vp3-email-compose .vp3-gmail-email-toolbar button[aria-pressed="true"]:hover { background:#213b67; color:#fff; }
 .vp3-email-compose button:disabled { opacity:.5; cursor:default; }
 .vp3-email-compose button:focus-visible,.vp3-email-compose input:focus-visible,.vp3-email-compose textarea:focus-visible,
 .vp3-email-compose select:focus-visible,.vp3-email-compose summary:focus-visible { outline:2px solid #386bc1; outline-offset:3px; }
