@@ -811,7 +811,7 @@ try{
   await page.evaluate(()=>{const d=phoneFixture.voiceFixture;try{d.a.stop();d.b.stop();}catch(_){}for(const track of d.remote.getTracks())track.stop();});
  });
  for(const speaker of ['caller','owner'])await check(speaker+' interrupts an automatically approved conversation without another microphone or playback click',async()=>{
-  await fresh();captionCalls=[];
+  await fresh('',{viewport:speaker==='owner'?{width:320,height:740}:{width:1360,height:900}});captionCalls=[];
   state.operator_live={available:true,assist_available:true,voice_available:true,participation_available:true,controls_available:true,eligible:false,call_id:'',state:'off',reason:''};
   await page.evaluate(()=>VP3PhoneWorkspaceV1.refresh());
   await page.getByRole('button',{name:'Prepare Agent voice for browser calls',exact:true}).click();
@@ -827,6 +827,8 @@ try{
   await caption.getByLabel('Caption session limit',{exact:true}).selectOption('120');
   assert.equal(await caption.getByRole('button',{name:'Start live captions',exact:true}).isDisabled(),true,'Changing limits requires the consent confirmation again');
   await caption.getByLabel('Everyone on this call has agreed to live Cloud AI transcription.',{exact:true}).check();
+  await caption.getByRole('button',{name:'Start live captions',exact:true}).scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-caption-limits-'+speaker+'.png')});
   let releaseStart;captionStartGate={seen:false,promise:new Promise(resolve=>releaseStart=resolve),resolve:()=>releaseStart()};
   await caption.getByRole('button',{name:'Start live captions',exact:true}).click();
   for(let i=0;!captionStartGate.seen;i++){if(i>100)throw Error('Caption grant request did not start');await new Promise(resolve=>setTimeout(resolve,10));}
@@ -836,6 +838,8 @@ try{
   assert.equal(await caption.getByRole('button',{name:'Let Agent join conversation',exact:true}).isDisabled(),true);
   await caption.getByLabel('AI checks for this call',{exact:true}).selectOption('8');
   await caption.getByLabel('Speech reservations for this call',{exact:true}).selectOption('4');
+  await caption.getByRole('button',{name:'Let Agent join conversation',exact:true}).scrollIntoViewIfNeeded();
+  await page.screenshot({path:path.join(root,'tests/artifacts/phone-workspace-conversation-limits-'+speaker+'.png')});
   await caption.getByLabel('Everyone agrees to automatic AI replies and Cloud processing for this conversation.',{exact:true}).check();
   await caption.getByRole('button',{name:'Let Agent join conversation',exact:true}).click();
   await caption.getByText('Agent is speaking. Either person can interrupt.',{exact:true}).waitFor({timeout:20000});
@@ -865,7 +869,9 @@ try{
   await caption.getByRole('button',{name:'Pause Agent',exact:true}).click();
   await caption.getByText('Agent paused. Captions and the session clock continue.',{exact:true}).waitFor();
   const usedWhilePaused=captionCalls.filter(row=>row.action==='voice_prepare').length;
-  assert.equal(await page.evaluate(()=>phoneFixture.voiceFixture.processor.speaking),false);
+  const pausedAudio=await page.evaluate(()=>{const f=phoneFixture.voiceFixture;return {speaking:Boolean(f.processor.speaking),microphoneGain:f.processor.graph.mic.gain.value,
+   owner:f.raw.getAudioTracks()[0].readyState,caller:f.remote.getAudioTracks()[0].readyState,call:phoneFixture.calls.at(-1).status()};});
+  assert.deepEqual(pausedAudio,{speaking:false,microphoneGain:1,owner:'live',caller:'live',call:'open'});
   assert.match(await caption.locator('[data-operator-balance]').innerText(),/7 AI checks left · 3 speech reservations left/);
   if(speaker==='owner'){
    await page.setViewportSize({width:320,height:740});await caption.getByRole('button',{name:'Remove Agent from conversation',exact:true}).scrollIntoViewIfNeeded();
