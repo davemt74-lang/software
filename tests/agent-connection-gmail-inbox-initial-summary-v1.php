@@ -43,6 +43,8 @@ function curl_exec(object $handle): string
         'invalid'=>'{"topics":[{"theme":"billing","refs":[99]}]}',
         'reply'=>'{"body":"Thanks for the update."}',
         'compose'=>'{"subject":"A new email","body":"The owner-approved draft text."}',
+        'followthrough'=>'{"draft":"Following up on the original request."}',
+        'empty'=>'',
         'thread'=>'{"category":"opportunity","priority":"normal","state":"open","summary":"The venue proposed a session.","importance_reason":"The venue has a date available.","next_step":"Review the date.","followup_question":"Would that date work?","evidence_ref":1}',
         default=>'{"topics":[{"theme":"scheduling","refs":[1]},{"theme":"billing","refs":[2]}]}',
     };
@@ -309,5 +311,55 @@ try {
     check_gmail_summary(count($GLOBALS['gmailSummaryDispatch'])===$callCount+1
         && (int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,
         'Gmail thread analysis revocation after reservation aborts before provider dispatch');
+}
+// Exercise the real Initiative -> service-target -> metered HTTP path. The
+// outer Initiative callback alone cannot prevent HTTP or target fallback.
+$followthroughJob=['background'=>true,'conversation_id'=>11,'job_key'=>'gmail-followthrough-fixture',
+    'gmail_followthrough_draft'=>true];
+$followthroughPrompt='{"response_kind":"gmail_followthrough_draft","original_sent_message":{"excerpt":"exact sent source only"}}';
+$followthrough=static fn(Closure $guard):string=>vp3_initiative_infer_v1($pdo,$owner,17,$followthroughPrompt,
+    'vp3.initiative-draft.v1',true,$guard,$followthroughJob);
+$GLOBALS['gmailSummaryScenario']='followthrough';$guardCalls=0;$held=false;
+$callCount=count($GLOBALS['gmailSummaryDispatch']);
+$answer=$followthrough(static function()use($pdo,&$guardCalls,&$held):void{
+    ++$guardCalls;
+    $held=(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===1;
+});
+$followthroughWire=json_encode(end($GLOBALS['gmailSummaryDispatch'])['payload'],JSON_THROW_ON_ERROR);
+$followthroughLedger=$pdo->query("SELECT * FROM ai_execution_ledger WHERE service_stage='vp3.initiative-draft.v1' ORDER BY id DESC LIMIT 1")->fetch();
+check_gmail_summary($answer==='{"draft":"Following up on the original request."}'&&$guardCalls===1&&$held
+    &&count($GLOBALS['gmailSummaryDispatch'])===$callCount+1&&str_contains($followthroughWire,'exact sent source only')
+    &&!str_contains($followthroughWire,'private-chat-persona')&&$followthroughLedger['service_key']==='initiative'
+    &&(int)$followthroughLedger['is_background']===1&&(int)$followthroughLedger['agent_id']===17
+    &&(int)$followthroughLedger['conversation_id']===11&&(int)$followthroughLedger['cloud_tokens_charged']===140,
+    'automatic email follow-up consumes its exact claim after metering and makes one isolated background dispatch');
+foreach(['rejected','unknown','empty'] as $scenario){
+    $GLOBALS['gmailSummaryScenario']=$scenario;$callCount=count($GLOBALS['gmailSummaryDispatch']);$guardCalls=0;
+    try{
+        $followthrough(static function()use(&$guardCalls):void{++$guardCalls;});
+        throw new LogicException('An unsuccessful follow-up provider response was accepted.');
+    }catch(RuntimeException $error){
+        check_gmail_summary(count($GLOBALS['gmailSummaryDispatch'])===$callCount+1&&$guardCalls===1,
+            'a '.$scenario.' automatic follow-up response makes no HTTP retry, model fallback or configured provider fallback');
+    }
+}
+$GLOBALS['gmailSummaryScenario']='followthrough';$callCount=count($GLOBALS['gmailSummaryDispatch']);$held=false;
+try{
+    $followthrough(static function()use($pdo,&$held):void{
+        $held=(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===1;
+        throw new DomainException('The owner paused this follow-up.',409);
+    });
+    throw new LogicException('A paused follow-up reached inference.');
+}catch(RuntimeException $error){
+    check_gmail_summary($held&&count($GLOBALS['gmailSummaryDispatch'])===$callCount
+        &&(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,
+        'pausing an automatic email follow-up during usage reservation prevents the actual provider request');
+}
+foreach([[],['service'=>'conversation'],['service'=>'initiative','background'=>false]] as $wrongContext){
+    $blocked=ai_v100_with_service_context($wrongContext,static fn()=>ai_generate_chat_response($followthroughPrompt,[],[],$owner,'main_ai',
+        ['surface'=>'tool_json','protocol'=>'vp3.initiative-draft.v1','gmail_followthrough_draft'=>true,
+            'before_gmail_followthrough_dispatch'=>static fn():bool=>true]));
+    check_gmail_summary(empty($blocked['ok'])&&count($GLOBALS['gmailSummaryDispatch'])===$callCount,
+        'an automatic follow-up cannot bypass the background Initiative service accounting boundary');
 }
 echo 'GMAIL_INBOX_INITIAL_SUMMARY_V1=PASS'.PHP_EOL;

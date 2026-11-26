@@ -132,11 +132,17 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
         throw new InvalidArgumentException('Invalid initiative inference request.');
     }
     $background=!empty($job['background']);
+    $gmailFollowthrough=($job['gmail_followthrough_draft']??false)===true;
+    if($gmailFollowthrough&&($protocol!=='vp3.initiative-draft.v1'||!$transientContext||!$background||$beforeInference===null)){
+        throw new InvalidArgumentException('An email follow-up requires its current background dispatch claim.');
+    }
+    unset($job['gmail_followthrough_draft']);
     $route=vp3_initiative_inference_health_v1($pdo,$user,$agentId,$background);
     if(empty($route['ready']))throw vp3_initiative_inference_blocked_v1($route);
     if($route['route']==='homeserver'){
+        if($gmailFollowthrough)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver',$background);
         if($beforeInference!==null)$beforeInference();
-        if($transientContext)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver',$background);
+        if($transientContext&&!$gmailFollowthrough)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'homeserver',$background);
         try{
             $run=homeserver_execution_v230_execute((int)$user['id'],'agent.infer.local',[
                 'messages'=>[
@@ -157,7 +163,7 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
             ];
         }catch(Throwable $e){
             $current=vp3_initiative_inference_health_v1($pdo,$user,$agentId,$background);
-            if(empty($route['cloud_fallback_allowed'])||empty($current['ready'])
+            if($gmailFollowthrough||empty($route['cloud_fallback_allowed'])||empty($current['ready'])
                 ||($current['route']!=='vp3_cloud'&&empty($current['cloud_fallback_allowed']))){
                 if(empty($current['ready'])){
                     throw vp3_initiative_inference_blocked_v1($current,$e);
@@ -175,9 +181,20 @@ function vp3_initiative_infer_scoped_v1(PDO $pdo,array $user,int $agentId,string
     if($route['route']==='vp3_cloud'){
         // A permitted fallback is another inference attempt. A stopped or
         // revoked live source cannot travel to it on an old request snapshot.
-        if($beforeInference!==null)$beforeInference();
+        if(!$gmailFollowthrough&&$beforeInference!==null)$beforeInference();
         if($transientContext)vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'vp3_cloud',$background);
-        $call=static fn()=>ai_generate_chat_response($prompt,[],[],$user,'main_ai',['surface'=>'tool_json','protocol'=>$protocol]);
+        $control=['surface'=>'tool_json','protocol'=>$protocol];
+        if($gmailFollowthrough){
+            // Consume the persisted one-use claim after the usage reservation
+            // lock, immediately before the single actual provider request.
+            $control['gmail_followthrough_draft']=true;
+            $control['before_gmail_followthrough_dispatch']=static function()use($pdo,$user,$agentId,$background,$beforeInference):bool{
+                vp3_initiative_transient_route_current_v1($pdo,$user,$agentId,'vp3_cloud',$background);
+                $beforeInference();
+                return true;
+            };
+        }
+        $call=static fn()=>ai_generate_chat_response($prompt,[],[],$user,'main_ai',$control);
         $result=function_exists('ai_v100_with_service_context')
             ?ai_v100_with_service_context(['service'=>'initiative','agent_id'=>$agentId,'stage'=>$protocol]+$job,$call)
             :$call();

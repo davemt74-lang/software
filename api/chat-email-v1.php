@@ -14,7 +14,7 @@ try {
     if (!is_string($raw) || strlen($raw)>50000) throw new DomainException('Email review request is too large.',413);
     $input = json_decode($raw,true,8,JSON_THROW_ON_ERROR);
     if (!is_array($input) || array_is_list($input)
-        || array_diff(array_keys($input),['action','owner_key','agent_id','conversation_id','draft_id','csrf_token','confirmed','review_token','watch_replies','subject','body','sender','enabled','watchlist_key','instruction','message_id','item_ref','request_id','to','attachment_ids','queue_scope','filter','limit','cursor','edit_revision'])) {
+        || array_diff(array_keys($input),['action','owner_key','agent_id','conversation_id','draft_id','csrf_token','confirmed','review_token','watch_replies','subject','body','sender','enabled','watchlist_key','instruction','message_id','item_ref','request_id','to','attachment_ids','queue_scope','filter','limit','cursor','edit_revision','followthrough','followthrough_ref','expected_revision','operation','deadline_at','time_zone','prepare_if_overdue','priority'])) {
         throw new DomainException('Choose an email review action.',422);
     }
     $user = current_user();
@@ -30,6 +30,37 @@ try {
     }
     $pdo = db();
     if (!$pdo) throw new DomainException('Email review storage is unavailable.',503);
+    if (in_array($input['action']??null,['followthrough_list','followthrough_get','followthrough_update','followthrough_check'],true)) {
+        $fields=['action','owner_key','agent_id','conversation_id','csrf_token',...match($input['action']) {
+            'followthrough_list'=>['filter','limit','cursor'],
+            'followthrough_get'=>['followthrough_ref'],
+            'followthrough_update'=>['followthrough_ref','expected_revision','operation','deadline_at','time_zone','prepare_if_overdue','priority'],
+            'followthrough_check'=>['followthrough_ref','expected_revision'],
+        }];
+        if (array_diff(array_keys($input),$fields)) throw new DomainException('Choose a valid email follow-up action.',422);
+        $key=$_SESSION['agent_connection_email_review_v1']??=bin2hex(random_bytes(32));
+        try {
+            $activeAgent=vp3_agent_chat_resolve_agent_v380($pdo,$user,$agent);
+        } catch (RuntimeException $error) {
+            if ($error instanceof PDOException || $error->getCode()!==0) throw $error;
+            throw new DomainException('This private Agent Chat is no longer available.',403,$error);
+        }
+        $principal=vp3_agent_chat_principal_v380($user,$activeAgent);
+        session_write_close();
+        require_once dirname(__DIR__).'/includes/agent-email-followthrough-v1.php';
+        $options=array_diff_key($input,array_flip(['action','owner_key','agent_id','conversation_id','csrf_token']));
+        $result=match($input['action']) {
+            'followthrough_list'=>agent_email_followthrough_list_v1($pdo,$user,$principal,$conversation,$key,$options),
+            'followthrough_get'=>['item'=>agent_email_followthrough_get_v1($pdo,$user,$principal,$conversation,$options,$key)],
+            'followthrough_update'=>['item'=>agent_email_followthrough_update_v1($pdo,$user,$principal,$conversation,$options,$key)],
+            'followthrough_check'=>['item'=>agent_email_followthrough_check_v1($pdo,$user,$principal,$conversation,$options,$key)],
+        };
+        echo json_encode(['ok'=>true]+$result,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+        exit;
+    }
+    if (array_intersect(array_keys($input),['followthrough_ref','expected_revision','operation','deadline_at','time_zone','prepare_if_overdue','priority'])) {
+        throw new DomainException('Choose a valid email follow-up action.',422);
+    }
     if (in_array($input['action']??null,['sent_list','sent_open'],true)) {
         $list = $input['action'] === 'sent_list';
         $fields = ['action','owner_key','agent_id','conversation_id','csrf_token',...($list ? ['limit','cursor'] : ['item_ref'])];
@@ -125,7 +156,7 @@ try {
         $fields = [...$fields,...match ($input['action']) {
             'compose_create'=>['request_id','to','subject','body'],
             'compose_list'=>['queue_scope','filter','limit','cursor'],
-            'compose_save'=>['draft_id','review_token','to','subject','body','attachment_ids'],
+            'compose_save'=>['draft_id','review_token','to','subject','body','attachment_ids','followthrough'],
             'compose_generate'=>['draft_id','review_token','instruction'],
         }];
         if (array_diff(array_keys($input),$fields)) throw new DomainException('Choose a valid email composer action.',422);
@@ -135,7 +166,7 @@ try {
             echo json_encode(['ok'=>true]+agent_email_composer_list_v1($pdo,$user,$principal,$conversation,$key,$options),JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
             exit;
         }
-    } elseif (array_intersect(array_keys($input),['request_id','to','attachment_ids','queue_scope','filter','limit','cursor'])
+    } elseif (array_intersect(array_keys($input),['request_id','to','attachment_ids','queue_scope','filter','limit','cursor','followthrough'])
         || (array_key_exists('edit_revision',$input) && ($input['action'] ?? null) !== 'discard')) {
         throw new DomainException('Choose a valid email composer action.',422);
     }
@@ -151,9 +182,11 @@ try {
         403,404 => 'Open the original private Agent Chat to review this email.',
         409 => 'The email review or send status changed. Reopen the review to check it.',
         422 => 'Choose a valid email review action.',
-        default => in_array($input['action']??null,['sent_list','sent_open'],true)
-            ? 'The Sent mailbox could not be read. Try again.'
-            : 'The email outcome could not be verified. Open the review again before sending another email.',
+        default => in_array($input['action']??null,['followthrough_list','followthrough_get','followthrough_update','followthrough_check'],true)
+            ? 'This Gmail follow-up could not be verified. Refresh its saved status before continuing.'
+            : (in_array($input['action']??null,['sent_list','sent_open'],true)
+                ? 'The Sent mailbox could not be read. Try again.'
+                : 'The email outcome could not be verified. Open the review again before sending another email.'),
     };
     echo json_encode(['ok'=>false,'error'=>$message], JSON_INVALID_UTF8_SUBSTITUTE);
 }

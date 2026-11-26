@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-connection-email-chat-v1.php';
 require_once __DIR__.'/agent-email-attachments-v1.php';
 require_once __DIR__.'/agent-email-review-queue-v1.php';
+require_once __DIR__.'/agent-email-followthrough-source-v1.php';
 
 /** Saved drafts and versioned organic proposals have no retention deadline; send approvals still expire. */
 function agent_email_composer_live_v1(array $draft, int $now): bool
@@ -32,7 +33,7 @@ function agent_email_composer_complete_v1(array $draft, array $payload): bool
 {
     try {
         if (agent_email_composer_recipient_v1($draft['recipient']) === '') return false;
-        if (!isset($payload['reply']) && agent_email_composer_text_v1($payload['subject'],200) === '') return false;
+        if (!isset($payload['reply']) && !isset($payload['outbound_followup']) && agent_email_composer_text_v1($payload['subject'],200) === '') return false;
         return agent_email_composer_text_v1($payload['body'],6000,true) !== '';
     } catch (DomainException $error) { return false; }
 }
@@ -47,10 +48,12 @@ function agent_email_composer_validate_v1(array $draft, array &$payload): void
         }
         if (($saved['version'] ?? null) === 1) {
             if (array_keys($saved) !== ['version','saved_at']) throw new DomainException('The saved email draft is unavailable.',503);
-        } elseif (($saved['version'] ?? null) === 2) {
+        } elseif (in_array($saved['version'] ?? null,[2,3],true)) {
+            $followup = $saved['version'] === 3;
             if (array_keys($saved) !== ['version','saved_at','created_at','origin','source']
                 || !is_int($saved['created_at']) || $saved['created_at'] < 1 || $saved['created_at'] > $saved['saved_at']
-                || $saved['origin'] !== 'organic_reply' || !isset($payload['reply']) || isset($payload['auto_revision'])
+                || $saved['origin'] !== ($followup ? 'outbound_followup' : 'organic_reply')
+                || !isset($payload[$followup ? 'outbound_followup' : 'reply']) || isset($payload['auto_revision'])
                 || !is_array($saved['source'])) {
                 throw new DomainException('The saved email proposal is unavailable.',503);
             }
@@ -62,6 +65,23 @@ function agent_email_composer_validate_v1(array $draft, array &$payload): void
     if (array_key_exists('attachments',$payload)) {
         if (!is_array($payload['attachments'])) throw new DomainException('The saved email attachments are unavailable.',503);
         $payload['attachments'] = agent_email_attachments_manifest_v1($payload['attachments']);
+    }
+    if (array_key_exists('outbound_followup',$payload)) {
+        if (!is_array($payload['outbound_followup']) || isset($payload['reply']) || isset($payload['auto_revision'])
+            || ($payload['composer']['version'] ?? null) !== 3) {
+            throw new DomainException('The saved follow-up source is unavailable.',503);
+        }
+        $payload['outbound_followup'] = agent_email_followthrough_binding_v1($payload['outbound_followup']);
+    }
+    if (array_key_exists('followthrough',$payload)) {
+        require_once __DIR__.'/agent-email-followthrough-v1.php';
+        $saved = $payload['followthrough'];
+        if (!is_array($saved) || ($saved['version'] ?? null) !== 1 || !is_int($saved['user_message_id'] ?? null)
+            || $saved['user_message_id'] < 1 || count($saved)!==7 || empty($saved['enabled'])) {
+            throw new DomainException('The saved response deadline is unavailable.',503);
+        }
+        $settings = agent_email_followthrough_settings_v1(array_diff_key($saved,array_flip(['version','user_message_id'])),false);
+        $payload['followthrough'] = $settings + ['version'=>1,'user_message_id'=>$saved['user_message_id']];
     }
 }
 
@@ -78,8 +98,26 @@ function agent_email_composer_public_v1(array $draft, array $payload, array $pub
         && in_array($public['status'],['prepared','write_failed'],true) && !isset($payload['auto_revision']);
     $public['can_send'] = $public['can_edit'] && $public['status'] === 'prepared'
         && agent_email_composer_complete_v1($draft,$payload);
+    $public['is_followup'] = isset($payload['outbound_followup']);
+    $public['followthrough'] = isset($payload['followthrough'])
+        ? array_diff_key($payload['followthrough'],array_flip(['version','user_message_id']))
+        : ['enabled'=>false,'deadline_at'=>null,'time_zone'=>'UTC','prepare_if_overdue'=>false,'priority'=>'normal'];
+    $public['followthrough_record'] = null;
+    if (isset($payload['outbound_followup']) && in_array($public['status'],['prepared','write_failed'],true)) {
+        try {
+            require_once __DIR__.'/agent-email-followthrough-v1.php';
+            agent_email_followthrough_binding_current_v1(db(),(int)$draft['owner_user_id'],(int)$draft['agent_id'],
+                (int)$draft['conversation_id'],$payload['outbound_followup']);
+        } catch (DomainException|AgentConnectionExceptionV1 $error) {
+            $public['can_send'] = false;
+            $public['followthrough_unavailable'] = true;
+        }
+    }
+    if ($draft['status'] === 'sent' && !empty($draft['watch_registered'])) {
+        $public['followthrough_record'] = agent_email_composer_followthrough_record_v1($draft);
+    }
     $readable = agent_email_review_queue_source_allowed_v1($draft,$payload);
-    if (isset($payload['reply']) && !isset($payload['auto_revision']) && !$readable) {
+    if ((isset($payload['reply']) || isset($payload['outbound_followup'])) && !isset($payload['auto_revision']) && !$readable) {
         // The read grant may have changed after the base projection's check.
         // Do not retain that earlier envelope merely because the source button
         // is now disabled. A revoked read also invalidates any send approval.
@@ -90,6 +128,23 @@ function agent_email_composer_public_v1(array $draft, array $payload, array $pub
     $public['can_open_source'] = $readable;
     $public['source'] = agent_email_review_queue_source_public_v1($draft,$payload,$readable);
     return $public;
+}
+
+/** Optional saved state cannot turn a confirmed Gmail send into an unconfirmed send. */
+function agent_email_composer_followthrough_record_v1(array $draft): ?array
+{
+    require_once __DIR__.'/agent-email-followthrough-v1.php';
+    $pdo = db();
+    if (!$pdo || !agent_email_followthrough_ready_v1($pdo)) return null;
+    try {
+        $q=$pdo->prepare('SELECT * FROM agent_connection_email_followups_v1 WHERE owner_user_id=? AND operation_key=?
+            AND agent_id=? AND conversation_id=? AND connection_id=? AND authorization_key=? AND draft_id=?');
+        $q->execute([$draft['owner_user_id'],agent_connection_email_chat_operation_key_v1($draft['id']),$draft['agent_id'],
+            $draft['conversation_id'],$draft['connection_id'],$draft['authorization_key'],$draft['id']]);
+        $watch=$q->fetch(PDO::FETCH_ASSOC);
+        $row=$watch ? agent_email_followthrough_for_watch_v1($pdo,$watch) : null;
+        return $row ? agent_email_followthrough_public_v1($pdo,$row) : null;
+    } catch (DomainException|AgentConnectionExceptionV1|PDOException $error) { return null; }
 }
 
 /** The connection is checked before locking Chat, matching the existing send ledger's lock order. */
@@ -179,37 +234,73 @@ function agent_email_composer_change_v1(PDO $pdo, array $user, array $principal,
     initiative_workbench_confirm_v1($input + ['confirmed'=>true],$key,agent_connection_email_chat_review_hash_v1($draft,false),time());
     $next = 'prepared';
     $recipient = $draft['recipient'];
+    $followthrough = null;
+    $followthroughChanged = false;
     if ($input['action'] === 'compose_save') {
         $recipient = agent_email_composer_recipient_v1($input['to'] ?? null);
         $subject = agent_email_composer_text_v1($input['subject'] ?? null,200);
         $body = agent_email_composer_text_v1($input['body'] ?? null,6000,true);
-        if (isset($payload['reply']) && ($recipient !== $draft['recipient'] || $subject !== $payload['subject'])) {
+        if ((isset($payload['reply']) || isset($payload['outbound_followup'])) && ($recipient !== $draft['recipient'] || $subject !== $payload['subject'])) {
             throw new DomainException('Keep the original Gmail reply recipient and subject.',422);
         }
         if (!is_array($input['attachment_ids'] ?? null) || !array_is_list($input['attachment_ids'])) throw new DomainException('Choose valid email attachments.',422);
         $payload['subject'] = $subject;
         $payload['body'] = $body;
         unset($payload['write']);
+        if (array_key_exists('followthrough',$input)) {
+            require_once __DIR__.'/agent-email-followthrough-v1.php';
+            $followthrough=agent_email_followthrough_settings_v1($input['followthrough'],false);
+            if ($followthrough['enabled'] && isset($payload['outbound_followup'])) {
+                throw new DomainException('Send this reviewed follow-up, then change its response deadline in Sent.',422);
+            }
+            $previous=isset($payload['followthrough']) ? array_diff_key($payload['followthrough'],array_flip(['version','user_message_id'])) : null;
+            $followthroughChanged=$followthrough!==$previous;
+            if ($followthrough['enabled'] && $followthroughChanged) agent_email_followthrough_settings_v1($followthrough,true);
+            if ($followthrough['enabled'] && !agent_email_followthrough_ready_v1($pdo)) {
+                throw new DomainException('Run Database Upgrade before setting response deadlines.',503);
+            }
+        }
     } elseif ($input['action'] === 'compose_generate') {
         $instruction = agent_email_composer_text_v1($input['instruction'] ?? null,600,true);
         if ($instruction === '') throw new DomainException('Tell the Email Specialist what to write.',422);
-        $kind = isset($payload['reply']) ? (trim($payload['body']) === '' ? 'compose' : 'revise') : 'compose_new';
+        $kind = isset($payload['outbound_followup']) ? 'revise'
+            : (isset($payload['reply']) ? (trim($payload['body']) === '' ? 'compose' : 'revise') : 'compose_new');
         $payload['write'] = agent_connection_email_chat_write_request_v1($kind,$instruction);
         $next = 'write_queued';
     } else throw new DomainException('Choose a valid email composer action.',422);
     // Keep the proposal's original source and creation time when the owner edits it.
     $payload['composer'] = array_replace($payload['composer'] ?? ['version'=>1],['saved_at'=>time()]);
-    $row = agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$user,$principal,$conversation,$draft,$payload,$recipient,$next,$input,$owner,$agent): array {
+    $row = agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$user,$principal,$conversation,$draft,$payload,$recipient,$next,$input,$owner,$agent,$followthrough,$followthroughChanged): array {
         agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
-        $connection = agent_connections_require_grant_v1($pdo,$owner,(int)$draft['connection_id'],isset($payload['reply'])?'reply':'send',$draft['authorization_key']);
+        $connection = agent_connections_require_grant_v1($pdo,$owner,(int)$draft['connection_id'],
+            isset($payload['reply']) || isset($payload['outbound_followup']) ? 'reply' : 'send',$draft['authorization_key']);
         if ($connection['account_email'] !== $draft['account_email'] || !agent_connection_gmail_ready_v1()) {
             throw new DomainException('Gmail access changed. Reopen the saved draft.',409);
         }
         if ($input['action'] === 'compose_save') $payload['attachments'] = agent_email_attachments_freeze_v1($pdo,$owner,$input['attachment_ids']);
+        if ($followthrough !== null) {
+            if (!$followthrough['enabled']) unset($payload['followthrough']);
+            else {
+                agent_connections_require_grant_v1($pdo,$owner,(int)$draft['connection_id'],'followups',$draft['authorization_key']);
+                if ($followthroughChanged) {
+                    // This marker records the actual saved owner control action;
+                    // no background worker may manufacture one for a draft.
+                    $at=gmdate('Y-m-d H:i:s');
+                    $notice='Track this email for a reply by '.$followthrough['deadline_at'].' ('.$followthrough['time_zone'].').'
+                        .($followthrough['prepare_if_overdue'] ? ' Prepare one follow-up draft for my review if a Gmail check verifies no reply.' : ' Notify me after verifying the overdue thread.');
+                    $context=json_encode(['source'=>'agent_email_followthrough_deadline','skip_brain_archive'=>true],JSON_THROW_ON_ERROR);
+                    $pdo->prepare("INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json,created_at) VALUES (?,?,'user',?,?,?)")
+                        ->execute([$conversation,$owner,$notice,$context,$at]);
+                    $payload['followthrough']=$followthrough+['version'=>1,'user_message_id'=>(int)$pdo->lastInsertId()];
+                    $pdo->prepare('UPDATE chat_conversations SET updated_at=? WHERE id=? AND user_id=?')->execute([$at,$conversation,$owner]);
+                }
+            }
+        }
         $encoded = ai_encrypt_secret(json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
-        $replace = $pdo->prepare('UPDATE agent_connection_email_drafts_v1 SET message_enc=?,recipient=?,status=?,expires_at=0,watch_replies=0
+        $watch=isset($payload['outbound_followup'])?(int)!empty($draft['watch_replies']):0;
+        $replace = $pdo->prepare('UPDATE agent_connection_email_drafts_v1 SET message_enc=?,recipient=?,status=?,expires_at=0,watch_replies=?
             WHERE id=? AND owner_user_id=? AND agent_id=? AND conversation_id=? AND status=? AND message_enc=? AND recipient=? AND expires_at=?');
-        $replace->execute([$encoded,$recipient,$next,$draft['id'],$owner,$agent,$conversation,$draft['status'],$draft['message_enc'],$draft['recipient'],$draft['expires_at']]);
+        $replace->execute([$encoded,$recipient,$next,$watch,$draft['id'],$owner,$agent,$conversation,$draft['status'],$draft['message_enc'],$draft['recipient'],$draft['expires_at']]);
         if ($replace->rowCount() !== 1) throw new DomainException('This email draft changed. Open the latest saved version.',409);
         return agent_connection_email_chat_draft_v1($pdo,$owner,$agent,$conversation,$draft['id']);
     });

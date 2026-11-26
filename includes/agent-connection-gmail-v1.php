@@ -526,7 +526,7 @@ PATTERN;
     return $source;
 }
 
-function agent_connection_gmail_thread_v1(string $accessToken, string $threadId, ?callable $http = null): array
+function agent_connection_gmail_thread_v1(string $accessToken, string $threadId, ?callable $http = null, bool $strict = false): array
 {
     if (agent_connection_gmail_id_v1($threadId) === '') {
         throw new AgentConnectionGmailExceptionV1('Choose a valid Gmail thread.', 400);
@@ -535,10 +535,60 @@ function agent_connection_gmail_thread_v1(string $accessToken, string $threadId,
     if (($thread['id'] ?? null) !== $threadId || !is_array($thread['messages'] ?? null)) {
         throw new AgentConnectionGmailExceptionV1('Gmail returned an invalid thread.');
     }
+    // Absence evidence needs the complete response, without silently dropping or
+    // truncating malformed headers. Legacy received-message readers keep their
+    // existing projection; deadline checks explicitly request this stricter read.
+    if ($strict && (!array_is_list($thread['messages']) || !$thread['messages']
+        || count($thread['messages']) > 1000 || array_key_exists('nextPageToken',$thread))) {
+        throw new AgentConnectionGmailExceptionV1('The complete Gmail thread could not be verified.',409);
+    }
     $messages = [];
+    $seen = [];
     foreach ($thread['messages'] as $message) {
         if (!is_array($message) || ($message['threadId'] ?? null) !== $threadId) {
             throw new AgentConnectionGmailExceptionV1('Gmail returned a message from a different thread.');
+        }
+        if ($strict) {
+            $id = agent_connection_gmail_id_v1($message['id'] ?? null);
+            $at = $message['internalDate'] ?? null;
+            if ($id === '' || isset($seen[$id]) || (!is_int($at) && !is_string($at))
+                || !preg_match('/\A[1-9][0-9]{0,15}\z/D',(string)$at)
+                || !is_array($message['labelIds'] ?? null) || !array_is_list($message['labelIds'])
+                || count(array_filter($message['labelIds'],'is_string')) !== count($message['labelIds'])
+                || !is_array($message['payload']['headers'] ?? null) || !array_is_list($message['payload']['headers'])) {
+                throw new AgentConnectionGmailExceptionV1('Gmail did not verify every message in this thread.',409);
+            }
+            $seen[$id] = true;
+            $headers = [];
+            $limits = ['from'=>500,'to'=>500,'subject'=>16000,'message-id'=>500,'in-reply-to'=>2000,
+                'references'=>4000,'authentication-results'=>2000];
+            foreach ($message['payload']['headers'] as $header) {
+                if (!is_array($header) || !is_string($header['name'] ?? null)) {
+                    throw new AgentConnectionGmailExceptionV1('Gmail returned unverifiable thread headers.',409);
+                }
+                $name = strtolower($header['name']);
+                if (!isset($limits[$name])) continue;
+                $value = $header['value'] ?? null;
+                if (isset($headers[$name]) || !is_string($value) || !mb_check_encoding($value,'UTF-8')) {
+                    throw new AgentConnectionGmailExceptionV1('Gmail returned ambiguous thread headers.',409);
+                }
+                $value = preg_replace('/\r?\n[ \t]+/',' ',$value);
+                if (mb_strlen($value) > $limits[$name] || preg_match('/[\x00-\x08\x0a-\x1f\x7f]/',$value)) {
+                    throw new AgentConnectionGmailExceptionV1('Gmail returned incomplete thread headers.',409);
+                }
+                if ($name==='subject') {
+                    // MIME encoding can exceed the display projection's limit
+                    // even for an ordinary valid Unicode composer subject.
+                    $decoded=mb_decode_mimeheader($value);
+                    if (!mb_check_encoding($decoded,'UTF-8') || strlen($decoded)>980 || preg_match('/[\x00-\x1f\x7f]/',$decoded)) {
+                        throw new AgentConnectionGmailExceptionV1('Gmail returned an unverifiable thread subject.',409);
+                    }
+                }
+                $headers[$name] = true;
+            }
+            if (!isset($headers['from'],$headers['to'],$headers['message-id'])) {
+                throw new AgentConnectionGmailExceptionV1('Gmail did not return the complete thread linkage.',409);
+            }
         }
         $messages[] = agent_connection_gmail_message_v1($message);
     }

@@ -26,7 +26,7 @@ function agent_email_review_queue_source_metadata_v1(array $source): array
 /** Read permission is independent of permission to send or of a proposal's retention deadline. */
 function agent_email_review_queue_source_allowed_v1(array $draft, array $payload): bool
 {
-    if (!isset($payload['reply']) || isset($payload['auto_revision']) || $draft['status'] === 'discarded') return false;
+    if ((!isset($payload['reply']) && !isset($payload['outbound_followup'])) || isset($payload['auto_revision']) || $draft['status'] === 'discarded') return false;
     try {
         $connection = agent_connections_require_grant_v1(db(),(int)$draft['owner_user_id'],(int)$draft['connection_id'],'read',$draft['authorization_key']);
     } catch (AgentConnectionExceptionV1 $error) {
@@ -37,12 +37,12 @@ function agent_email_review_queue_source_allowed_v1(array $draft, array $payload
 
 function agent_email_review_queue_source_public_v1(array $draft, array $payload, bool $readable): array
 {
-    $reply = isset($payload['reply']);
+    $reply = isset($payload['reply']) || isset($payload['outbound_followup']);
     if ($reply && !$readable) {
         return ['kind'=>'reply','reason'=>null,'priority'=>null,'deadline'=>null];
     }
-    if (($payload['composer']['version'] ?? null) === 2) {
-        return ['kind'=>'organic_reply'] + $payload['composer']['source'];
+    if (in_array($payload['composer']['version'] ?? null,[2,3],true)) {
+        return ['kind'=>isset($payload['outbound_followup']) ? 'outbound_followup' : 'organic_reply'] + $payload['composer']['source'];
     }
     return ['kind'=>$reply ? 'reply' : 'new_email',
         'reason'=>$reply ? 'Drafted from the original email.' : 'Saved in this Chat.','priority'=>null,'deadline'=>null];
@@ -85,7 +85,7 @@ function agent_email_review_queue_cursor_open_v1(string $key, array $scope, stri
 
 function agent_email_review_queue_created_v1(array $draft, ?array $payload): ?int
 {
-    if (($payload['composer']['version'] ?? null) === 2) return $payload['composer']['created_at'];
+    if (in_array($payload['composer']['version'] ?? null,[2,3],true)) return $payload['composer']['created_at'];
     $raw = $draft['request_created_at'] ?? null;
     if (is_string($raw)) {
         $date = DateTimeImmutable::createFromFormat('!Y-m-d H:i:s',$raw,new DateTimeZone('UTC'));
@@ -105,7 +105,7 @@ function agent_email_review_queue_row_v1(array $draft, string $key, int $now): a
         // but never expose automatic draft content in the manual saved queue.
         if (isset($payload['auto_revision'])) throw new DomainException('This is an automatic email draft.',404);
         $public = agent_connection_email_chat_public_draft_v1($draft,$key,$now);
-        $row = array_intersect_key($public,array_flip(['id','status','from','to','subject','is_reply','saved_at','persistent',
+        $row = array_intersect_key($public,array_flip(['id','status','from','to','subject','is_reply','is_followup','saved_at','persistent',
             'can_edit','can_send','can_open_source','source','edit_revision','connection_changed']));
         $row['attachment_count'] = count($public['attachments']);
         $blocked = !empty($public['connection_changed']) ? 'connection_changed' : match ($public['status']) {
@@ -267,7 +267,7 @@ function agent_email_review_queue_source_v1(PDO $pdo, array $user, array $princi
         throw new DomainException('This email draft changed. Open the latest saved version.',409);
     }
     $payload = agent_connection_email_chat_payload_v1($draft);
-    if (!isset($payload['reply']) || isset($payload['auto_revision']) || $draft['status'] === 'discarded') {
+    if ((!isset($payload['reply']) && !isset($payload['outbound_followup'])) || isset($payload['auto_revision']) || $draft['status'] === 'discarded') {
         throw new DomainException('This saved draft has no original email to read.',404);
     }
     $request = $pdo->prepare("SELECT id FROM chat_messages WHERE id=? AND conversation_id=? AND user_id=? AND role='user'");
@@ -285,9 +285,12 @@ function agent_email_review_queue_source_v1(PDO $pdo, array $user, array $princi
     // Token refresh can itself take time. Recheck before the exact message GET,
     // then again before any fetched text or presentation markup is returned.
     agent_email_review_queue_source_current_v1($pdo,$user,$principal,$draft,$revision);
-    $message = agent_connection_gmail_get_v1($access['access_token'],$payload['reply']['message_id'],true,$http,true);
-    $original = agent_connection_gmail_reply_from_message_v1($message,$draft['account_email']);
-    if ($original['reply'] !== $payload['reply'] || $original['to'] !== $draft['recipient'] || $original['subject'] !== $payload['subject']) {
+    $sourceKind=isset($payload['outbound_followup']) ? 'outbound_followup' : 'reply';
+    $message = agent_connection_gmail_get_v1($access['access_token'],$payload[$sourceKind]['message_id'],true,$http,true);
+    $original = $sourceKind==='outbound_followup'
+        ? agent_email_followthrough_original_v1($message,$draft['account_email'],$draft['recipient'],$payload[$sourceKind])
+        : agent_connection_gmail_reply_from_message_v1($message,$draft['account_email']);
+    if ($original[$sourceKind] !== $payload[$sourceKind] || $original['to'] !== $draft['recipient'] || $original['subject'] !== $payload['subject']) {
         throw new DomainException('The original email no longer matches this saved draft.',409);
     }
     $display = agent_connection_gmail_read_message_v1($message,true);
