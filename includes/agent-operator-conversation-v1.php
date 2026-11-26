@@ -18,7 +18,8 @@ function vp3_operator_conversation_context_v1(PDO $pdo,int $owner,string $sid,in
 {
     $q=$pdo->prepare("SELECT o.* FROM phone_operator_occurrences_v1 o JOIN phone_operator_carrier_attempts_v1 a
         ON a.owner_user_id=o.owner_user_id AND a.event_id=o.event_id AND a.start_epoch=o.start_epoch
-        WHERE a.owner_user_id=? AND a.provider_sid=? AND a.state='submitted' AND o.state='submitted'".
+        WHERE a.owner_user_id=? AND a.provider_sid=? AND a.state='submitted' AND a.recording_state='started'
+        AND a.recording_sid IS NOT NULL AND o.state='submitted'".
         ($lock?vp3_phone_workspace_lock_v1($pdo):''));
     $q->execute([$owner,$sid]);$row=$q->fetch(PDO::FETCH_ASSOC);
     if(!$row||!in_array($row['reason'],['answer_consented','conversation_active'],true))return [];

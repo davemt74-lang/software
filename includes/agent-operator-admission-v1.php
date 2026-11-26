@@ -87,19 +87,22 @@ function vp3_operator_admission_history_v1(PDO $pdo,array $scope,array $bound,ar
     // still block through latest, but do not count as attempts already made.
     $q=$pdo->prepare("SELECT COALESCE(SUM(CASE WHEN ($epoch)>=? AND ($epoch)<=? THEN 1 ELSE 0 END),0) AS today,
         COALESCE(MAX($epoch),0) AS latest FROM phone_browser_calls_v1 WHERE owner_user_id=? AND direction='outbound'
-        AND peer_e164=? AND provider_call_sid IS NOT NULL AND provider_call_sid<>''");
+        AND peer_e164=? AND provider_call_sid IS NOT NULL AND provider_call_sid<>'' AND provider_call_sid<>?");
     $q->bindValue(1,$day,PDO::PARAM_INT);
     $q->bindValue(2,$now,PDO::PARAM_INT);
     $q->bindValue(3,(int)$scope['owner_user_id'],PDO::PARAM_INT);
     $q->bindValue(4,$bound['contact']['destination_e164'],PDO::PARAM_STR);
+    $q->bindValue(5,$answeredSid??'',PDO::PARAM_STR);
     $q->execute();$r=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
     $latest=(int)$r['latest'];$today=(int)$r['today'];
     // Count the committed reservation even if the carrier response was lost. Older reservations
     // without a destination apply conservatively until their daily cap and spacing have elapsed.
     $q=$pdo->prepare("SELECT COALESCE(SUM(CASE WHEN started_epoch BETWEEN ? AND ? THEN 1 ELSE 0 END),0) AS today,
-        COALESCE(MAX(started_epoch),0) AS latest FROM phone_operator_carrier_attempts_v1
+        COALESCE(MAX(started_epoch),0) AS latest FROM phone_operator_carrier_attempts_v1 a
         WHERE owner_user_id=? AND (destination_hash=? OR destination_hash='')
-        AND (provider_sid IS NULL OR provider_sid<>?)");
+        AND (provider_sid IS NULL OR provider_sid<>?)
+        AND (provider_sid IS NULL OR destination_hash='' OR NOT EXISTS
+            (SELECT 1 FROM phone_browser_calls_v1 c WHERE c.provider_call_sid=a.provider_sid))");
     $q->execute([$day,$now,$scope['owner_user_id'],hash('sha256',$bound['contact']['destination_e164']),$answeredSid??'']);
     $scheduled=$q->fetch(PDO::FETCH_ASSOC);
     $today+=(int)$scheduled['today'];
@@ -110,8 +113,9 @@ function vp3_operator_admission_history_v1(PDO $pdo,array $scope,array $bound,ar
 function vp3_operator_admission_idle_v1(PDO $pdo,int $owner,int $now,?string $answeredSid=null): bool
 {
     $q=$pdo->prepare("SELECT 1 FROM phone_browser_calls_v1 WHERE owner_user_id=? AND
-        (state IN ('dialing','ringing','answered') OR (state='prepared' AND intent_expires_epoch>=?)) LIMIT 1");
-    $q->execute([$owner,$now]);$busy=(bool)$q->fetchColumn();$q->closeCursor();if($busy)return false;
+        ((state IN ('dialing','ringing','answered') AND (transport_kind<>'operator_scheduled' OR intent_expires_epoch>?))
+        OR (state='prepared' AND intent_expires_epoch>=?)) AND (provider_call_sid IS NULL OR provider_call_sid<>?) LIMIT 1");
+    $q->execute([$owner,$now,$now,$answeredSid??'']);$busy=(bool)$q->fetchColumn();$q->closeCursor();if($busy)return false;
     if(table_exists('phone_voice_calls_v130')){
         $q=$pdo->prepare("SELECT 1 FROM phone_voice_calls_v130 WHERE owner_user_id=? AND state IN ('conversation_active','streaming_active') LIMIT 1");
         $q->execute([$owner]);$busy=(bool)$q->fetchColumn();$q->closeCursor();

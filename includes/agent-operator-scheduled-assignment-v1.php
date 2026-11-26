@@ -30,6 +30,17 @@ function vp3_operator_schedule_assignment_install_v1(PDO $pdo,string $suffix): v
         try{$pdo->exec("ALTER TABLE phone_operator_carrier_attempts_v1 ADD COLUMN destination_hash CHAR(64) NOT NULL DEFAULT ''");}
         catch(PDOException $e){if(!schema_metadata_column_exists($pdo,'phone_operator_carrier_attempts_v1','destination_hash'))throw $e;}
     }
+    foreach([
+        'call_public_id'=>'CHAR(32) NULL',
+        'recording_sid'=>'VARCHAR(40) NULL',
+        'recording_state'=>"VARCHAR(20) NOT NULL DEFAULT 'none'",
+        'recording_policy_json'=>'TEXT NULL',
+        'recording_started_epoch'=>'BIGINT NOT NULL DEFAULT 0',
+    ] as $column=>$definition){
+        if(schema_metadata_column_exists($pdo,'phone_operator_carrier_attempts_v1',$column))continue;
+        try{$pdo->exec('ALTER TABLE phone_operator_carrier_attempts_v1 ADD COLUMN '.$column.' '.$definition);}
+        catch(PDOException $e){if(!schema_metadata_column_exists($pdo,'phone_operator_carrier_attempts_v1',$column))throw $e;}
+    }
     if(!schema_metadata_column_exists($pdo,'phone_operator_scheduled_assignments_v1','next_due_epoch')){
         try{$pdo->exec('ALTER TABLE phone_operator_scheduled_assignments_v1 ADD COLUMN next_due_epoch BIGINT NOT NULL DEFAULT 0');}
         catch(PDOException $e){if(!schema_metadata_column_exists($pdo,'phone_operator_scheduled_assignments_v1','next_due_epoch'))throw $e;}
