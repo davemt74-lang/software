@@ -10,7 +10,7 @@ const permissions = read('includes/permissions.php');
 const artistMusic = read('includes/artist-music-v185.php');
 const memberNav = read('includes/member-navigation.php');
 const workspacePage = read('music-workspace.php');
-const libraryPage = read('music-library.php')+read('includes/music-catalog.php');
+const libraryPage = read('music-library.php')+read('includes/music-catalog.php')+read('includes/music-song-metadata-v1.php');
 assert.match(read('music-library.php'), /music_catalog_write/);
 const studioPage = read('music-studio.php');
 const releasesPage = read('music-releases.php');
@@ -66,7 +66,9 @@ assert.match(permissions, /workspaceSelect/);
 // Music Library validates every professional catalog mutation against workspace_id.
 assert.match(libraryPage, /music_workspace_resources_v330_resolve_active/);
 assert.match(libraryPage, /artist_music_v185_track\(\$pdo,\$workspaceId/);
-assert.match(libraryPage, /DELETE FROM artist_catalog_tracks_v181 WHERE id=\? AND workspace_id=\?/);
+assert.match(libraryPage, /UPDATE artist_catalog_tracks_v181 SET is_published=0 WHERE workspace_id=\? AND id=\?/);
+assert.match(libraryPage, /music_song_metadata_v1_archive/);
+assert.doesNotMatch(read('includes/music-catalog.php'), /DELETE FROM artist_catalog_tracks_v181/, 'archiving must retain catalog references');
 assert.match(libraryPage, /UPDATE artist_catalog_tracks_v181[\s\S]*WHERE id=\? AND workspace_id=\?/);
 assert.match(libraryPage, /UPDATE artist_catalog_albums_v181[\s\S]*WHERE id=\? AND workspace_id=\?/);
 assert.match(libraryPage, /producer_user_id=\?/);
@@ -122,10 +124,11 @@ assert.match(workspacePage, /music_workspace_resources_v330_accessible_workspace
 // Fresh install and upgrade must install release prerequisites before adding workspace ownership columns.
 for (const file of [setup, upgrade]) {
   const releaseIndex = file.indexOf('music_workspace_release_schema_v330_ensure($pdo)');
-  const ownershipIndex = file.indexOf('music_workspace_resources_v330_ensure_schema($pdo)');
+  const ownershipIndex = file.indexOf('music_workspace_resources_v330_ensure_schema($pdo');
   assert.ok(releaseIndex >= 0, 'release schema installer missing');
   assert.ok(ownershipIndex > releaseIndex, 'release schema must exist before workspace ownership migration');
 }
+assert.match(upgrade,/music_workspace_resources_v330_ensure_schema\(\$pdo,false\)/,'metadata upgrades must stage ambiguous ownership instead of running legacy inference');
 
 console.log('MUSIC_WORKSPACE_RESOURCE_OWNERSHIP_V330=PASS');
 

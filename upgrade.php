@@ -307,6 +307,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && table_exists('agent_participant_observers_v1')
         && table_exists('user_agent_voice_preferences')
         && ($schemaConnection ??= db()) instanceof PDO
+        && music_song_metadata_v1_schema_ready($schemaConnection)
         && vp3_phone_sms_assignment_schema_ready_v111($schemaConnection)
         && vp3_phone_workspace_schema_ready_v1($schemaConnection)
         && vp3_managed_control_ready_v1($schemaConnection)
@@ -605,11 +606,14 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_plugin_migrate_legacy_v360($pdo);
             vp3_human_messaging_v370_migrate_legacy($pdo);
             music_workspace_release_schema_v330_ensure($pdo);
-            music_workspace_resources_v330_ensure_schema($pdo);
+            // Do not rerun the old ownership inference over established mappings.
+            if(!music_workspace_resources_v330_schema_ready($pdo))music_workspace_resources_v330_ensure_schema($pdo,false);
             artist_media_v182_ensure_schema();
             artist_posts_v183_ensure_schema();
             artist_shows_v184_ensure_schema();
             artist_music_v185_ensure_schema();
+            $musicMetadataReport=music_song_metadata_v1_install($pdo);
+            if($musicMetadataReport['open_issues']>0)flash('notice','Music metadata installed. '.$musicMetadataReport['open_issues'].' legacy catalog mappings need review; their existing tracks and listening history were preserved.');
             ai_haiku55_upgrade_defaults();
             $complete = vp3_upgrade_complete($pdo);
 

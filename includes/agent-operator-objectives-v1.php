@@ -53,12 +53,13 @@ function vp3_operator_objectives_bind_v1(PDO $pdo,array $announced,int $now):voi
         ||(string)($call['paired_profile_id']??'')!==''||(int)($call['owner_phone_revision']??0)>0)return;
     $q=$pdo->prepare('SELECT 1 FROM chat_conversations WHERE id=? AND user_id=? AND COALESCE(user_agent_id,0)=?');
     $q->execute([(int)$call['conversation_id'],(int)$call['owner_user_id'],(int)$call['chat_agent_id']]);if(!$q->fetchColumn())return;$q->closeCursor();
-    $rows=[];
+    $rows=[];$overflow=false;
     try{
         $q=$pdo->prepare("SELECT a.*,c.phone contact_phone FROM phone_operator_agendas_v1 a JOIN crm_contacts c ON c.id=a.contact_id AND c.owner_user_id=a.owner_user_id
-            WHERE a.owner_user_id=? AND a.conversation_id=? AND a.chat_agent_id=? AND a.number_id=? AND a.destination_hash=? AND c.status<>'archived' LIMIT 3");
+            WHERE a.owner_user_id=? AND a.conversation_id=? AND a.chat_agent_id=? AND a.number_id=? AND a.destination_hash=? AND c.status<>'archived' ORDER BY a.contact_id LIMIT 101");
         $q->execute([(int)$call['owner_user_id'],(int)$call['conversation_id'],(int)$call['chat_agent_id'],(int)$call['phone_number_id'],hash('sha256',(string)$call['peer_e164'])]);
-        foreach($q->fetchAll(PDO::FETCH_ASSOC) as $r){
+        $candidates=$q->fetchAll(PDO::FETCH_ASSOC);$overflow=count($candidates)>100;
+        foreach($candidates as $r){
             try{$peer=vp3_phone_caller_contacts_e164_v1((string)$r['contact_phone']);}catch(RuntimeException){continue;}
             if($peer===$call['peer_e164'])$rows[]=$r;
         }$q->closeCursor();
@@ -66,7 +67,7 @@ function vp3_operator_objectives_bind_v1(PDO $pdo,array $announced,int $now):voi
         // An optional agenda migration may not yet be installed. Do not run DDL or infer a source.
         try{$pdo->query('SELECT contact_id,questions FROM phone_operator_agendas_v1 WHERE 1=0');}catch(PDOException){return;}throw $e;
     }
-    $a=count($rows)===1?$rows[0]:null;$state=$a?'bound':($rows?'ambiguous':'none');
+    $a=!$overflow&&count($rows)===1?$rows[0]:null;$state=$a?'bound':($overflow||$rows?'ambiguous':'none');
     $pdo->prepare('INSERT INTO phone_operator_call_agendas_v1(call_id,call_public_id,owner_user_id,agent_id,chat_agent_id,conversation_id,contact_id,agenda_revision,agenda_hash,call_binding,source_state,created_epoch) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
         ->execute([(int)$call['id'],$public,(int)$call['owner_user_id'],(int)$call['agent_id'],(int)$call['chat_agent_id'],(int)$call['conversation_id'],
             (int)($a['contact_id']??0),(int)($a['revision']??0),$a?vp3_operator_objectives_hash_v1($a):'',vp3_operator_objectives_call_hash_v1($call),$state,$now]);

@@ -6,9 +6,15 @@ const f=await fixture();
 try{
  let form=await f.form();assert.equal(form.status,200,f.logs);assert.ok(form.revision&&form.csrf,form.html+f.logs);assert.match(form.html,/Legacy song/);assert.match(form.html,/Unscoped song/);assert.match(form.html,/Bass.wav/);assert.doesNotMatch(form.html,/Foreign secret/);
  const context=JSON.parse(f.run("require STONEFELLOW_ROOT.'/includes/music-file-repair.php';echo json_encode(music_file_repair_context(db(),current_user(),'Which song audio files are missing?'));"));assert.equal(context.length,1);assert.doesNotMatch(context[0].text,/Foreign secret/);assert.match(context[0].text,/Read-only file report/);
+ const metadataBefore=JSON.parse(f.run("echo json_encode(music_song_metadata_v1_get(db(),1,10,current_user()));"));
  const before=f.snapshot();let r=await f.post(form,{user:0});assert.equal(r.status,401);r=await f.post(form,{token:'wrong'});assert.equal(r.status,419);r=await f.post(form,{user:14});assert.equal(r.status,403);r=await f.post(form,{user:13});assert.equal(r.status,403);r=await fetch(f.base+'/api/music-file-repair.php',{headers:{Accept:'application/json'}});assert.equal(r.status,405);
  r=await f.post(form,{bytes:Buffer.from('<html>not audio</html>')});assert.equal(r.status,422);r=await f.post(form,{bytes:null});assert.equal(r.status,422);assert.deepEqual(f.snapshot(),before,'Rejected uploads changed existing records');
  r=await f.post(form);const saved=await r.json();assert.equal(r.status,200,JSON.stringify(saved)+f.logs);assert.equal(saved.track.source_track_id,1);assert.equal(saved.track.catalog_track_id,10);
+ const metadataAfter=JSON.parse(f.run("echo json_encode(music_song_metadata_v1_get(db(),1,10,current_user()));"));
+ assert.equal(metadataAfter.recording_id,metadataBefore.recording_id,'File repair changed canonical recording identity');
+ assert.notEqual(metadataAfter.asset_id,metadataBefore.asset_id,'File repair did not version its audio');
+ assert.equal(metadataAfter.revision,metadataBefore.revision+1,'File repair did not record a metadata revision');
+ assert.deepEqual(metadataAfter.metadata,metadataBefore.metadata,'File repair changed private metadata');
  const after=f.snapshot();for(const key of ['playlists','history','projects','stems','mixes'])assert.deepEqual(after[key],before[key],key+' changed during master replacement');
  const strip=rows=>rows.map(({audio_path,updated_at,...rest})=>rest);assert.deepEqual(strip(after.tracks),strip(before.tracks));assert.deepEqual(strip(after.catalog),strip(before.catalog));assert.equal(after.tracks[0].audio_path,after.catalog[0].audio_path);assert.ok(fs.existsSync(path.join(f.root,after.tracks[0].audio_path)));assert.equal(after.tracks.length,before.tracks.length);
  r=await f.post(form);assert.equal(r.status,409,'Stale replacement was not rejected');

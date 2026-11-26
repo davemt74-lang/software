@@ -2,7 +2,7 @@
 
 Canonical planning entry point for the VP3 music revival, `/music-workspace.php`, song metadata and rights, hosted streaming, and the standalone Stoneward integration.
 
-**Status:** planning package for review. No music application implementation, schema migration, royalty activation, hosting deployment, or payout is delivered by this documentation change. See [development status](DEVELOPMENT-STATUS.md) for exact evidence and outstanding work.
+**Status:** ML0 planning merged in PR #925. ML1 now implements the shared catalog and metadata foundation; see [ML1 implementation and rollout](ML1-IMPLEMENTATION.md) and [development status](DEVELOPMENT-STATUS.md) for its verified scope and release limits. Streaming-provider, Stoneward import, listening dashboards, earnings and payments remain separate phases.
 
 ## Product direction
 
@@ -24,6 +24,7 @@ These user requirements are distinct from engineering recommendations and unreso
 | [Streaming contract](STREAMING-CONTRACT.md) | Proposed provider/client contract, permissions, source attribution, playback identity and joint acceptance |
 | [Rights and earnings](RIGHTS-AND-EARNINGS.md) | Metadata, readiness, rights/financial distinctions, accounting requirements and financial decision register |
 | [Delivery plan](DELIVERY-PLAN.md) | Ordered phases, ML1 engineering handoff, dependencies, release criteria and nonfinancial decisions |
+| [ML1 implementation](ML1-IMPLEMENTATION.md) | Implemented metadata/API contract, migration, recovery and acceptance evidence |
 | [Development status](DEVELOPMENT-STATUS.md) | Current completion state, test evidence, pending verification and next action |
 
 ## First complete integration milestone

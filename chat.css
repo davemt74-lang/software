@@ -2398,7 +2398,8 @@
   border-bottom:1px solid #d1d5db;
   background:#ffffff;
   color:#6b7280;
-  font-size:.62rem;
+  font-size:14px;
+  line-height:1.5;
 }
 
 .chat-create-modal-status[data-state="working"]{
@@ -2408,13 +2409,13 @@
 .chat-create-modal-status[data-state="success"]{
   border-bottom-color:rgba(95,139,91,.3);
   background:#ffffff;
-  color:#a9c4a6;
+  color:#24603c;
 }
 
 .chat-create-modal-status[data-state="error"]{
   border-bottom-color:rgba(157,75,65,.32);
   background:#ffffff;
-  color:#d49489;
+  color:#8c2f24;
 }
 
 .chat-create-modal-body{

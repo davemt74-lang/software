@@ -16,8 +16,11 @@ function objective_fixture(?array $reuse=null,bool $agenda=true,bool $ambiguous=
         if($agenda)action('save_operator_agenda',['contact_id'=>$contact,'number_id'=>1,'expected_revision'=>0,'enabled'=>false,'review_missed'=>false,'review_account'=>false,
             'topics'=>'Call planning','questions'=>"Which day works?\nWho will attend?"]);
         if($ambiguous){
-            $insert->execute([bin2hex(random_bytes(16)),'objective-alias'.$n.'@example.test',$peer,gmdate('Y-m-d H:i:s'),gmdate('Y-m-d H:i:s')]);$alias=(int)$pdo->lastInsertId();
-            action('save_operator_agenda',['contact_id'=>$alias,'number_id'=>1,'expected_revision'=>0,'enabled'=>false,'review_missed'=>false,'review_account'=>false,'topics'=>'Other agenda','questions'=>'Which other day?']);
+            for($aliasIndex=0;$aliasIndex<3;$aliasIndex++){
+                $insert->execute([bin2hex(random_bytes(16)),'objective-alias'.$n.'-'.$aliasIndex.'@example.test',$peer,gmdate('Y-m-d H:i:s'),gmdate('Y-m-d H:i:s')]);$alias=(int)$pdo->lastInsertId();
+                action('save_operator_agenda',['contact_id'=>$alias,'number_id'=>1,'expected_revision'=>0,'enabled'=>false,'review_missed'=>false,'review_account'=>false,'topics'=>'Other agenda','questions'=>'Which other day?']);
+                if($aliasIndex<2)$pdo->prepare("UPDATE crm_contacts SET phone='+16025559988' WHERE id=?")->execute([$alias]);
+            }
         }
     }else{$contact=$reuse['contact'];$peer=$reuse['peer'];}
     $public=bin2hex(random_bytes(16));$parent='CA'.bin2hex(random_bytes(16));$child='CA'.bin2hex(random_bytes(16));$intent=bin2hex(random_bytes(32));
@@ -104,7 +107,7 @@ $pdo->exec('UPDATE users SET is_active=1 WHERE id=1');
 $missing=objective_fixture(null,false);c(objective_review($missing)['coverage']==='none','a call with no starting agenda is recorded as such');
 action('save_operator_agenda',['contact_id'=>$missing['contact'],'number_id'=>1,'expected_revision'=>0,'enabled'=>false,'review_missed'=>false,'review_account'=>false,'topics'=>'Later','questions'=>'Which day works?']);
 c(objective_review($missing)['coverage']==='none','adding an agenda after the call cannot fabricate an earlier objective');
-$ambiguous=objective_fixture(null,true,true);c(objective_review($ambiguous)['coverage']==='ambiguous','two matching contact agendas require review rather than a guessed identity');
+$ambiguous=objective_fixture(null,true,true);c(objective_review($ambiguous)['coverage']==='ambiguous','a second matching contact beyond stale candidates cannot be hidden by a short first-page query');
 $off=objective_fixture();$policy=json_decode($off['job']['policy_json'],true);$policy['modules']=['basic'];
 $pdo->prepare('UPDATE phone_recording_jobs_v1 SET policy_json=? WHERE id=?')->execute([json_encode($policy),$off['job']['id']]);$calls=0;
 $r=objective_review($off,null,static function(int $id)use(&$calls,$off):array{$calls++;return $off['saved'];});

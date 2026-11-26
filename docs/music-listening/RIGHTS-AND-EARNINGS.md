@@ -1,6 +1,6 @@
 # Rights, metadata and earnings specification
 
-**Status:** planning specification; no application changes or released capabilities are implied.
+**Status:** product/financial specification. The initial metadata and readiness implementation is tracked in [ML1 implementation](ML1-IMPLEMENTATION.md); this document does not imply a deployed integration or active earnings/payment policy.
 
 **Planning date:** November 26, 2026.
 
@@ -84,7 +84,7 @@ Stoneward's current readiness function checks composition/master totals and sele
 
 ## 6. Four independent readiness states
 
-These are proposed states, not released status widgets.
+ML1 implements separate catalog/playback readiness and explicit `not_configured` earnings/payout states. The funded-earnings, agreement and settlement conditions below remain requirements for later phases. See [ML1 implementation](ML1-IMPLEMENTATION.md) for the current checks and limits.
 
 | State | Question answered | Examples of unresolved information |
 |---|---|---|

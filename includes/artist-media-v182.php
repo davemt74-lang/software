@@ -31,30 +31,30 @@ function artist_media_v182_workspace_photo_dir(int $workspaceId): string
 
 function artist_media_v182_store_photo(array $file,int $workspaceId): string
 {
-    if($workspaceId<1) throw new RuntimeException('Artist workspace is required.');
+    if($workspaceId<1) throw new RuntimeException('Artist workspace is required.',422);
     $error=(int)($file['error']??UPLOAD_ERR_NO_FILE);
     if($error===UPLOAD_ERR_NO_FILE) return '';
-    if($error!==UPLOAD_ERR_OK) throw new RuntimeException('Photo upload failed.');
+    if($error!==UPLOAD_ERR_OK) throw new RuntimeException('Photo upload failed.',422);
     global $config;
     $max=max(1,(int)($config['uploads']['max_image_bytes']??(8*1024*1024)));
     $size=(int)($file['size']??0);
-    if($size<1 || $size>$max) throw new RuntimeException('Photo is larger than the configured image upload limit.');
+    if($size<1 || $size>$max) throw new RuntimeException('Photo is larger than the configured image upload limit.',422);
     $tmp=(string)($file['tmp_name']??'');
-    if($tmp==='' || !is_uploaded_file($tmp)) throw new RuntimeException('Invalid photo upload.');
-    $actualSize=filesize($tmp);if($actualSize===false||$actualSize<1||$actualSize>$max)throw new RuntimeException('Image exceeds the upload limit.');
+    if($tmp==='' || !is_uploaded_file($tmp)) throw new RuntimeException('Invalid photo upload.',422);
+    $actualSize=filesize($tmp);if($actualSize===false||$actualSize<1||$actualSize>$max)throw new RuntimeException('Image exceeds the upload limit.',422);
     $info=@getimagesize($tmp);
-    if(!is_array($info)||$info[0]<1||$info[1]<1||$info[0]>16384||$info[1]>16384||$info[0]*$info[1]>40000000)throw new RuntimeException('Image dimensions are too large.');
+    if(!is_array($info)||$info[0]<1||$info[1]<1||$info[0]>16384||$info[1]>16384||$info[0]*$info[1]>40000000)throw new RuntimeException('Image dimensions are too large.',422);
     $mime=is_array($info)?strtolower((string)($info['mime']??'')):'';
     $extensions=['image/jpeg'=>'jpg','image/png'=>'png','image/webp'=>'webp'];
-    if(!isset($extensions[$mime])) throw new RuntimeException('Use a JPG, PNG, or WebP image.');
+    if(!isset($extensions[$mime])) throw new RuntimeException('Use a JPG, PNG, or WebP image.',422);
     $dir=artist_media_v182_workspace_photo_dir($workspaceId);
-    if(!is_dir($dir) && !mkdir($dir,0750,true) && !is_dir($dir)) throw new RuntimeException('Artist media directory could not be created.');
+    if(!is_dir($dir) && !mkdir($dir,0750,true) && !is_dir($dir)) throw new RuntimeException('Artist media directory could not be created.',503);
     $root=artist_media_v182_root();
-    if(!is_dir($root) && !mkdir($root,0750,true) && !is_dir($root)) throw new RuntimeException('Artist media storage is unavailable.');
+    if(!is_dir($root) && !mkdir($root,0750,true) && !is_dir($root)) throw new RuntimeException('Artist media storage is unavailable.',503);
     if(!is_file($root.'/.htaccess')) @file_put_contents($root.'/.htaccess',"Require all denied\nDeny from all\n");
     $name=bin2hex(random_bytes(18)).'.'.$extensions[$mime];
     $target=$dir.'/'.$name;
-    if(!move_uploaded_file($tmp,$target)) throw new RuntimeException('Photo could not be saved.');
+    if(!move_uploaded_file($tmp,$target)) throw new RuntimeException('Photo could not be saved.',503);
     @chmod($target,0640);
     return '/uploads/artist-media/'.$workspaceId.'/photos/'.$name;
 }

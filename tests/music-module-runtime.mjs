@@ -25,6 +25,7 @@ assert.doesNotMatch(read('api/playback.php'),/\$action === 'ended' \|\|/,'Seekin
 assert.match(read('api/player-library-v76.php'),/music_catalog_playlist_tracks/);assert.match(read('api/player-library-v76.php'),/MAX\(sort_order\).*artist_workspace_playlist_tracks_v181/);
 assert.match(read('admin/artist.php'),/no changes were applied/);assert.match(read('admin/artist-media.php'),/music_catalog_delete_photo/);
 assert.match(read('content-image.php'),/music_workspace_resources_v330_can_manage/);
-assert.match(read('music-library.php'),/name="cover_photo_id"/);
+assert.match(read('music-library.php'),/music_song_catalog_editor_v1/);
+assert.match(read('includes/music-song-metadata-form-v1.php'),/name="cover_photo_id"/);
 for(const route of ['media.php','artist-track-audio.php','artist-music-image.php'])assert.match(read(route),/music_media_send/);
 console.log('MUSIC_MODULE_RUNTIME=PASS');
