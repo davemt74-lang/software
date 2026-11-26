@@ -77,6 +77,8 @@ $bad=$accepted;$bad['qa_items'][0]['evidence_refs']=[['page'=>999]];
 c(objective_review($ctx,$bad)['questions'][0]['state']==='unverified','an accepted answer without a current page locator cannot settle the question');
 $bad=$accepted;$bad['qa_items'][]=array_replace($bad['qa_items'][0],['item_id'=>'conflicting-answer','answer'=>'Saturday works.']);
 c(objective_review($ctx,$bad)['questions'][0]['state']==='conflicting','two matching answers are a conflict rather than an arbitrary first result');
+$bad=$accepted;$bad['qa_items'][]=array_replace($bad['qa_items'][0],['answer'=>'Saturday works.']);
+c(objective_review($ctx,$bad)['questions'][0]['state']==='conflicting','duplicate canonical item IDs cannot hide a conflicting answer behind a reviewed one');
 $bad=$accepted;$bad['qa_items'][0]['question']='Which day works for delivery?';
 c(objective_review($ctx,$bad)['questions'][0]['state']==='unverified','a similar but different question is never silently matched');
 $countBefore=(int)$pdo->query('SELECT COUNT(*) FROM chat_messages')->fetchColumn();

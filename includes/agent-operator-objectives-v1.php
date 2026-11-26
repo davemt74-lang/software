@@ -140,7 +140,7 @@ function vp3_operator_objectives_progress_v1(array $questions,array $saved,int $
                 ||!is_string($item['item_id']??null)||!preg_match('/^[A-Za-z0-9_.:-]{1,190}$/D',$item['item_id']))continue;
             $refs=array_values(array_filter((array)($item['evidence_refs']??[]),static fn($r):bool=>is_array($r)&&is_int($r['page']??null)&&$r['page']>0&&$r['page']<=$pages));
             if(!$refs||($item['section']==='answered'&&(!is_string($item['answer']??null)||trim($item['answer'])==='')))continue;
-            $matches[$item['section'].':'.$item['item_id']]=[$item,$refs[0]['page']];
+            $matches[]=[$item,$refs[0]['page']];
         }
         $row=$q+['state'=>'unverified','review_state'=>'unreviewed','answer'=>'','source_url'=>''];
         if(count($matches)===1){
