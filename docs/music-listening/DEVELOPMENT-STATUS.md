@@ -4,6 +4,8 @@
 
 **ML0 is merged; ML1 implementation is in PR [#930](https://github.com/davemt74-lang/software/pull/930).** The user approved merging the planning package and building the first implementation phase on 2026-11-26. Planning PR [#925](https://github.com/davemt74-lang/software/pull/925) merged as `3ec69d03031e859f9cf155d1ad64cd9f16d5b631`; implementation uses the isolated branch `codex/vp3-music-ml1` based on that commit. The implementation PR records its current candidate commit, checks and review evidence.
 
+Integration was subsequently refreshed against main `5dc2767bcf1edc6be3704182b87da1c39b740fd9` (Operator conversation mode, PR #928). Its new phone participation test exposed a fixture clock crossing a second boundary between call creation and the signed answered receipt. The fixture now uses the persisted receipt clock and includes an explicit earlier-clock case; production freshness checks are unchanged.
+
 ML1 introduces one catalog/metadata save contract for main Add Track and both library editors, structured song credits and identifiers, private notes, stable recording/work/file identities, reusable parties, revision conflicts, request receipts, safe archive/restore and additive migration. `/music-workspace.php` links directly to song creation and metadata editing. The existing audio repair path also records canonical asset versions.
 
 See [ML1 implementation and rollout](ML1-IMPLEMENTATION.md) for exact behavior, tests and operational requirements. No production database migration or live application deployment has been performed by this development task. There is no new listening dashboard, active royalty rate, payout or completed Stoneward streaming integration in ML1.
