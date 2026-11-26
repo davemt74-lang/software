@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require_once __DIR__.'/music-media.php';
 require_once __DIR__.'/stem-import-media.php';
+require_once __DIR__.'/music-song-metadata-v1.php';
 
 function music_file_repair_authorize(PDO $pdo,int $workspaceId,array $user): void
 {
@@ -89,7 +90,9 @@ function music_file_repair_inventory(PDO $pdo,int $workspaceId,array $user): arr
 function music_file_repair_replace(PDO $pdo,int $workspaceId,array $user,string $kind,int $id,string $revision,array $upload): array
 {
     $target=music_file_repair_target($pdo,$workspaceId,$user,$kind,$id);
+    if($target['catalog'])music_song_metadata_v1_require_schema($pdo);
     if($revision===''||!hash_equals(music_file_repair_revision($target),$revision))throw new UnexpectedValueException('This song or its file changed. Reload before replacing audio.');
+    if($pdo->inTransaction())throw new RuntimeException('Save replacement audio in its own transaction so failed saves can clean up the file.',409);
     $newPath=artist_music_v185_store_audio($upload,$workspaceId);
     if($newPath==='')throw new InvalidArgumentException('Choose a replacement audio file.');
     try{
@@ -106,6 +109,12 @@ function music_file_repair_replace(PDO $pdo,int $workspaceId,array $user,string 
                 $write=$pdo->prepare('UPDATE tracks SET audio_path=?,updated_at=NOW() WHERE id=? AND '.($scoped?'workspace_id=?':'workspace_id IS NULL'));
                 $write->execute($scoped?[$newPath,(int)$current['source']['id'],$workspaceId]:[$newPath,(int)$current['source']['id']]);
                 if($write->rowCount()!==1)throw new UnexpectedValueException('The Studio record changed. Reload before replacing audio.');
+            }
+            if($current['catalog']){
+                // The repair path preserves its existing IDs and publication state,
+                // while the canonical metadata service versions the replacement file.
+                $catalog=artist_music_v185_track($pdo,$workspaceId,(int)$current['catalog']['id']);
+                music_song_metadata_v1_save($pdo,$workspaceId,$user,$catalog,[]);
             }
         });
     }catch(Throwable $e){artist_music_v185_delete_owned_audio($workspaceId,$newPath);throw $e;}

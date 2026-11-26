@@ -4,7 +4,7 @@ declare(strict_types=1);
 // The paired-device cookie is scoped to this exact path. Keep private owner
 // routes here without broadening that holder credential's cookie authority.
 $workspaceRoutes=array_values(array_intersect(array_keys($_GET),[
-    'workspace','workspace_view','workspace_email','workspace_canvas','workspace_image','workspace_media',
+    'workspace','workspace_view','workspace_email','workspace_canvas','workspace_image','workspace_media','workspace_calls',
 ]));
 if ($workspaceRoutes) {
     if (count($workspaceRoutes)!==1 || $_GET[$workspaceRoutes[0]]!=='1') {
@@ -16,6 +16,10 @@ if ($workspaceRoutes) {
     }
     if ($workspaceRoutes[0]==='workspace') require __DIR__.'/phone-agent-workspace-v1.php';
     elseif ($workspaceRoutes[0]==='workspace_view') require dirname(__DIR__).'/includes/phone-agent-workspace-view-v1.php';
+    elseif ($workspaceRoutes[0]==='workspace_calls') {
+        define('VP3_PHONE_AGENT_EMAIL_CALLS_V1',true);
+        require __DIR__.'/agent-email-calls-v1.php';
+    }
     else {
         require_once dirname(__DIR__).'/includes/bootstrap.php';
         define('VP3_PHONE_AGENT_NATIVE_V1',substr($workspaceRoutes[0],10));

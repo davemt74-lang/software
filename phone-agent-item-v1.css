@@ -31,3 +31,12 @@ body.phone-agent-canvas #phoneAgentItemContent h1 { margin:0; font-size:16px; }
 body.phone-agent-canvas #phoneAgentItemContent header p { margin:4px 0 0; font-size:12px; color:#657083; }
 .phone-agent-canvas-frame { display:block; width:100%; height:100%; min-height:0; border:0; background:#fff; }
 @media (prefers-reduced-motion:reduce) { * { scroll-behavior:auto !important; } }
+.phone-agent-call-review {margin:0 0 16px;padding:16px;border:1px solid #b9c9e3;border-radius:12px;background:#f4f7fc;color:#17243a;overflow-wrap:anywhere;}
+.phone-agent-call-review[hidden],.phone-agent-call-review [hidden] {display:none;}
+.phone-agent-call-review h2 {margin:0 0 8px;font-size:1.05rem;}
+.phone-agent-call-review p {margin:8px 0;line-height:1.5;font-size:.94rem;}
+.phone-agent-call-phrase {display:block;padding:12px 0;font-size:1.05rem;line-height:1.6;}
+.phone-agent-call-actions {display:flex;flex-wrap:wrap;gap:8px;margin-top:12px;}
+.phone-agent-call-actions button {min-height:44px;padding:10px 14px;border:1px solid #607595;border-radius:8px;background:#fff;color:#17243a;font:inherit;cursor:pointer;}
+.phone-agent-call-actions button:focus-visible {outline:3px solid #3873c8;outline-offset:2px;}
+.phone-agent-call-actions button:disabled {opacity:.6;cursor:default;}

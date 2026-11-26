@@ -1,8 +1,15 @@
 <?php
 declare(strict_types=1);
-define('STONEFELLOW_ROOT',sys_get_temp_dir().'/music-module-fixture-root');
+define('STONEFELLOW_ROOT',sys_get_temp_dir().'/music-module-fixture-'.bin2hex(random_bytes(6)));
+$fixtureAudioDir=STONEFELLOW_ROOT.'/uploads/artist-music/1';mkdir($fixtureAudioDir,0700,true);
+$fixtureWav=pack('a4Va4a4VvvVVvva4V','RIFF',38,'WAVE','fmt ',16,1,1,8000,16000,2,16,'data',2)."\0\0";
+foreach(['song.wav','second.wav'] as $file)file_put_contents($fixtureAudioDir.'/'.$file,$fixtureWav);
+register_shutdown_function(static function()use($fixtureAudioDir):void{
+    foreach(['song.wav','second.wav'] as $file)@unlink($fixtureAudioDir.'/'.$file);
+    foreach([$fixtureAudioDir,dirname($fixtureAudioDir),dirname($fixtureAudioDir,2),STONEFELLOW_ROOT] as $directory)@rmdir($directory);
+});
 function check(bool $ok,string $message): void{if(!$ok)throw new RuntimeException($message);}
-function rejects(callable $call,string $message):void{try{$call();}catch(Throwable $e){return;}throw new RuntimeException($message);}
+function rejects(callable $call,string $message):Throwable{try{$call();}catch(Throwable $e){return $e;}throw new RuntimeException($message);}
 class MusicFixturePDO extends PDO{
     public function prepare(string $query,array $options=[]):PDOStatement|false{return parent::prepare(str_replace(' FOR UPDATE','',$query),$options);}
 }
@@ -22,6 +29,7 @@ require dirname(__DIR__).'/includes/functions.php';
 require dirname(__DIR__).'/includes/artist-music-v185.php';
 require dirname(__DIR__).'/includes/artist-media-v182.php';
 require dirname(__DIR__).'/includes/music-workspace-resources-v330.php';
+require dirname(__DIR__).'/includes/music-song-metadata-v1.php';
 require dirname(__DIR__).'/includes/music-media.php';
 $workspaceSource=file_get_contents(dirname(__DIR__).'/includes/artist-workspace-v181.php');
 preg_match('/function artist_workspace_v181_public_records\([\s\S]*?\n}/',$workspaceSource,$m);eval($m[0]);
@@ -30,8 +38,14 @@ $pdo->exec("INSERT INTO users VALUES(11,'customer',1,1),(12,'customer',1,0),(13,
 $owner=['id'=>11,'role'=>'customer'];$manager=['id'=>12,'role'=>'customer'];$producer=['id'=>13,'role'=>'customer'];$outsider=['id'=>14,'role'=>'customer'];$viewer=$owner;
 $pdo->exec("CREATE TABLE artist_catalog_tracks_v181(id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id INTEGER,source_track_id INTEGER,title TEXT,album TEXT DEFAULT '',album_id INTEGER,description TEXT DEFAULT '',genre TEXT DEFAULT '',duration_seconds INTEGER,track_number INTEGER DEFAULT 0,audio_path TEXT DEFAULT '',cover_path TEXT DEFAULT '',cover_photo_id INTEGER,visibility TEXT DEFAULT 'public',is_published INTEGER DEFAULT 1,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);CREATE TABLE artist_catalog_albums_v181(id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id INTEGER,source_album_id INTEGER,title TEXT,release_date TEXT,description TEXT DEFAULT '',cover_path TEXT DEFAULT '',cover_photo_id INTEGER,sort_order INTEGER DEFAULT 0,visibility TEXT DEFAULT 'public',is_published INTEGER DEFAULT 1,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);CREATE TABLE artist_catalog_photos_v181(id INTEGER PRIMARY KEY,workspace_id INTEGER,image_path TEXT);CREATE TABLE tracks(id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id INTEGER,owner_user_id INTEGER,producer_user_id INTEGER,album_id INTEGER,title TEXT,album TEXT DEFAULT '',duration TEXT DEFAULT '',lyrics TEXT NOT NULL,description TEXT DEFAULT '',genre TEXT DEFAULT '',audio_path TEXT DEFAULT '',cover_path TEXT DEFAULT '',visibility TEXT DEFAULT 'public',is_published INTEGER DEFAULT 1,sort_order INTEGER DEFAULT 0,updated_at TEXT DEFAULT CURRENT_TIMESTAMP);CREATE TABLE albums(id INTEGER PRIMARY KEY AUTOINCREMENT,workspace_id INTEGER,title TEXT,release_date TEXT,description TEXT DEFAULT '',cover_path TEXT DEFAULT '',visibility TEXT DEFAULT 'public',sort_order INTEGER DEFAULT 0,is_published INTEGER DEFAULT 1);");
 $pdo->exec("INSERT INTO artist_catalog_albums_v181(id,workspace_id,title) VALUES(1,1,'Shared title'),(2,2,'Shared title');INSERT INTO artist_catalog_photos_v181 VALUES(1,1,'/uploads/artist-media/1/photos/a.png'),(2,2,'/uploads/artist-media/2/photos/b.png');INSERT INTO artist_catalog_tracks_v181(id,workspace_id,title,album,album_id,audio_path) VALUES(1,1,'Song','Shared title',1,'/uploads/artist-music/1/song.wav'),(2,1,'Native single','',NULL,'/uploads/artist-music/1/second.wav');");
+music_song_metadata_v1_install($pdo);
+function music_integrity_song_input(array $input): array {
+    $id=(int)$input['id'];$row=artist_music_v185_track(db(),1,$id);
+    $metadata=music_song_metadata_v1_row(db(),1,$id);
+    return $input+['revision'=>music_catalog_revision($row),'metadata_revision'=>(int)($metadata['revision']??0)];
+}
 $before=artist_music_v185_track($pdo,1,1);
-$input=['id'=>1,'title'=>'Edited','genre'=>'Rock','duration_seconds'=>'123','track_number'=>'2','album_id'=>1,'cover_photo_id'=>1,'visibility'=>'public','is_published'=>1,'revision'=>music_catalog_revision($before)];
+$input=music_integrity_song_input(['id'=>1,'title'=>'Edited','genre'=>'Rock','duration_seconds'=>'123','track_number'=>'2','album_id'=>1,'cover_photo_id'=>1,'visibility'=>'public','is_published'=>1,'revision'=>music_catalog_revision($before)]);
 music_catalog_write($pdo,1,$manager,'track','save',$input);
 $row=artist_music_v185_track($pdo,1,1);$source=(int)$row['source_track_id'];check($source>0,'New catalog save has no real backing');
 $backing=$pdo->query('SELECT * FROM tracks WHERE id='.$source)->fetch();check($backing['title']==='Edited'&&$backing['duration']==='2:03','Backing metadata not synchronized');
@@ -40,12 +54,13 @@ check((int)$pdo->query('SELECT COUNT(*) FROM tracks')->fetchColumn()===1,'Repeat
 rejects(fn()=>music_catalog_write($pdo,1,$owner,'track','save',$input),'Stale edit overwrote a newer version');
 rejects(fn()=>music_catalog_write($pdo,1,$outsider,'track','save',['id'=>1,'title'=>'Foreign','is_published'=>1]),'Foreign account wrote catalog');
 rejects(fn()=>music_catalog_write($pdo,1,$producer,'track','save',['id'=>1,'title'=>'Producer','is_published'=>1]),'Producer wrote catalog');
-rejects(fn()=>music_catalog_write($pdo,1,$owner,'track','save',['id'=>1,'title'=>'Foreign art','cover_photo_id'=>2,'is_published'=>1]),'Foreign artwork accepted');
-rejects(fn()=>music_catalog_write($pdo,1,$owner,'track','save',['id'=>1,'title'=>'Foreign album','album_id'=>2,'is_published'=>1]),'Foreign album accepted');
+rejects(fn()=>music_catalog_write($pdo,1,$owner,'track','save',music_integrity_song_input(['id'=>1,'title'=>'Foreign art','cover_photo_id'=>2,'is_published'=>1])),'Foreign artwork accepted');
+rejects(fn()=>music_catalog_write($pdo,1,$owner,'track','save',music_integrity_song_input(['id'=>1,'title'=>'Foreign album','album_id'=>2,'is_published'=>1])),'Foreign album accepted');
 rejects(fn()=>music_catalog_write($pdo,1,$owner,'track','save',['id'=>1,'title'=>str_repeat('x',191)]),'Oversized title accepted');
 check(!db()->inTransaction(),'Failed mutation leaked a transaction');
 $pdo->exec("CREATE TRIGGER reject_track_sync BEFORE UPDATE ON tracks BEGIN SELECT RAISE(ABORT,'forced sync failure'); END;");
-rejects(fn()=>music_catalog_write($pdo,1,$owner,'track','save',['id'=>1,'title'=>'Rollback','album_id'=>1,'is_published'=>1]),'Sync failure was hidden');
+$syncFailure=rejects(fn()=>music_catalog_write($pdo,1,$owner,'track','save',music_integrity_song_input(['id'=>1,'title'=>'Rollback','album_id'=>1,'is_published'=>1])),'Sync failure was hidden');
+check(str_contains($syncFailure->getMessage(),'forced sync failure'),'Rollback fixture failed before exercising the backing sync trigger');
 check(artist_music_v185_track($pdo,1,1)['title']==='Edited','Catalog persisted despite backing failure');$pdo->exec('DROP TRIGGER reject_track_sync');
 rejects(fn()=>music_catalog_delete_photo($pdo,1,1),'Referenced cover photo was deleted');
 check(music_catalog_delete_photo($pdo,2,2)==='/uploads/artist-media/2/photos/b.png','Unused owned photo cannot be removed');
@@ -79,7 +94,7 @@ $albumList=music_catalog_albums($pdo,$owner,array_column($merged,null,'id'));for
 $sourceAlbum=(int)$row['album_id'];music_catalog_write($pdo,1,$owner,'album','save',['id'=>1,'title'=>'Renamed','cover_photo_id'=>1,'is_published'=>1]);
 check($pdo->query('SELECT album FROM tracks WHERE id='.$source)->fetchColumn()==='Renamed','Album rename missed backing tracks');
 music_catalog_write($pdo,1,$owner,'album','delete',['id'=>1]);check($pdo->query('SELECT album_id FROM tracks WHERE id='.$source)->fetchColumn()===null,'Album deletion did not detach Studio backing');
-music_catalog_write($pdo,1,$owner,'track','delete',['id'=>1]);check((int)$pdo->query('SELECT is_published FROM tracks WHERE id='.$source)->fetchColumn()===0,'Catalog deletion left published audio');check((int)$pdo->query('SELECT COUNT(*) FROM tracks')->fetchColumn()===1,'Catalog deletion destroyed Studio history');
+music_catalog_write($pdo,1,$owner,'track','delete',music_integrity_song_input(['id'=>1]));check((int)$pdo->query('SELECT is_published FROM tracks WHERE id='.$source)->fetchColumn()===0,'Catalog deletion left published audio');check((int)$pdo->query('SELECT COUNT(*) FROM tracks')->fetchColumn()===1,'Catalog deletion destroyed Studio history');
 $_SESSION=['music_workspace_id'=>1];check(music_workspace_resources_v330_resolve_active($pdo,$owner,2)===null,'Explicit foreign workspace silently fell back');
 $pdo->exec('UPDATE users SET enabled=0 WHERE id=11');check(!music_workspace_resources_v330_can_access($pdo,1,$manager),'Disabled workspace still admits manager');$pdo->exec('UPDATE users SET enabled=1 WHERE id=11');
 $pdo->exec('DELETE FROM artist_team_members WHERE member_user_id=12');check(!music_workspace_resources_v330_can_access($pdo,1,$manager),'Removed team member still has access');

@@ -116,7 +116,11 @@ function canvas_pipeline_email_prepare(array $owner, string $ref): int
         UPDATE agent_activity_state SET last_heartbeat_at=CURRENT_TIMESTAMP;
         UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=11");
     $model = canvas_pipeline_email_model($ref);
-    $beforePlans = count(canvas_pipeline_runs('initiative.plan'));
+    // A general OB1 assessment can independently review a creative starter.
+    // This workflow already knows its app; it needs no Canvas discovery planner.
+    $discoveryPlans=static fn():array=>array_filter(canvas_pipeline_runs('initiative.plan'),
+        static fn(array $run):bool=>(json_decode((string)$run['goal'],true)['opportunity_lane']??null)==='app_suggestions');
+    $beforePlans = count($discoveryPlans());
     $beforePreparations = count(canvas_pipeline_runs('initiative.prepare'));
     vp3_initiative_schedule_v1($pdo,$owner,7);
     $preparations = canvas_pipeline_runs('initiative.prepare');
@@ -125,12 +129,15 @@ function canvas_pipeline_email_prepare(array $owner, string $ref): int
     $binding=vp3_initiative_policy_v1($owner,7);
     $evidence=vp3_initiative_email_canvas_evidence_v1($pdo,$owner,$binding,[$ref]);
     canvas_pipeline_check(count($preparations)===$beforePreparations+1
-        && count(canvas_pipeline_runs('initiative.plan'))===$beforePlans
+        && count($discoveryPlans())===$beforePlans
         && ($goal['tool']??null)==='canvas.prepare' && ($goal['primary']??null)===$ref
         && ($goal['binding']??null)===$binding && ($goal['sources']??null)===[$ref=>$evidence[$ref]['revision']]
         && ($goal['canonical_sources']??null)===$goal['sources'] && ($goal['opportunity_lane']??null)==='app_suggestions'
         && ($goal['email_canvas_work_key']??null)===vp3_initiative_email_canvas_work_key_v1($ref),
-        'the actual scheduler directly admits one exact email workflow through the app suggestions lane without a duplicate planner');
+        'the actual scheduler directly admits one exact email workflow without an extra Canvas discovery assessment');
+    canvas_pipeline_check(!array_filter(canvas_pipeline_runs('initiative.plan'),
+        static fn(array $run):bool=>isset(json_decode((string)$run['goal'],true)['sources'][$ref])),
+        'an independent OB1 assessment cannot duplicate the exact private email Canvas workflow');
     canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($prepared),$model)['ok'],
         'the actual Canvas adapter prepares the email opportunity through its canonical receipt');
     return $prepared;

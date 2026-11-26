@@ -83,6 +83,8 @@ async function history(api,owner,cid=scope.conversation_id) {
 async function ownerUI(context,first,turn,action,second) {
   const page=await context.newPage();
   await page.goto('/chat.php?agent=system&conversation_id='+scope.conversation_id);
+  assert.equal(await page.evaluate(()=>typeof window.VP3PhoneOwnerReply?.mount),'function',
+    'the active Chat wrapper loads owner-reply controls before phone messages are polled');
   const entry=page.locator('#chatThread .message[data-chat-message-id="'+action.message_id+'"]');
   await entry.getByText(new RegExp(first.name)).first().waitFor();
   assert.ok((await entry.innerText()).includes(prompt));

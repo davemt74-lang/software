@@ -68,6 +68,11 @@
   const followPolicy = value => followthrough()?.policy ? followthrough().policy(value) : null;
   const valuesKey = values => JSON.stringify([values.to,values.subject,values.body,values.attachments.map(asset => asset.asset_id),values.followthrough || null]);
   const dirty = state => state.draft && valuesKey(state.values) !== state.saved;
+  function invalidateVoiceReview(state) {
+    if (!cfg.fixedDraftId || cfg.callReviewEnabled !== true || !current(state)) return;
+    state.voiceEditSeq = (state.voiceEditSeq || 0)+1;
+    window.dispatchEvent(new Event('vp3:email-call-review-invalidated'));
+  }
   const memoryKey = state => scopeKey(state.scope)+':'+state.draft?.id;
   const shortText = (value,limit = 500) => typeof value === 'string' ? value.trim().slice(0,limit) : '';
   function sameScope(value,currentScope = scope()) {
@@ -249,6 +254,7 @@
       caption.append(node('span',item.name),node('small',Math.ceil(item.size/1024)+' KB'));
       const remove = button('Remove',() => {
         if (!current(state) || state.busy || state.uploading) return;
+        invalidateVoiceReview(state);
         state.values.attachments = state.values.attachments.filter(value => value.asset_id !== item.asset_id);
         renderAttachments(state);controls(state);
       });
@@ -342,7 +348,7 @@
       state.followRecordHost.hidden = false;
       state.followRecord = followthrough().mount(state.followRecordHost,draft.followthrough_record,{
         context:{owner_key:owner,...state.scope},isCurrent:() => current(state) && state.draft === draft,
-        onChange:item => { if (current(state)) state.draft.followthrough_record = item; },
+        onChange:item => { if (current(state)) { invalidateVoiceReview(state);state.draft.followthrough_record = item; } },
         openDraft:cfg.fixedDraftId ? undefined : target => navigate(state,() => void openDraft(target,{surface:state.surface,replace:true})),
         openReply:cfg.fixedDraftId ? undefined : (target,trigger) => navigate(state,() => {
           if (!current(state) || typeof window.VP3EmailFollowup?.open !== 'function') return;
@@ -351,10 +357,15 @@
     }
     renderSource(state,draft);renderAttachments(state);resizeBody(state.body);controls(state);
   }
-  async function api(state,action,input = {},{media = false,signal} = {}) {
+  async function api(state,action,input = {},{media = false,signal,voiceReview} = {}) {
     if (!current(state)) throw new DOMException('The Chat context changed.','AbortError');
-    const endpoint = localUrl(media ? cfg.imageEndpoint : cfg.endpoint);
+    let endpoint = localUrl(media ? cfg.imageEndpoint : cfg.endpoint);
     if (!endpoint) throw new Error(media ? 'Image generation is unavailable.' : 'The Gmail composer is unavailable.');
+    if (voiceReview !== undefined) {
+      if (!cfg.fixedDraftId || cfg.callReviewEnabled !== true || media || action !== 'confirm' || !draftId.test(voiceReview))
+        throw new Error('This voice review is unavailable.');
+      const bound = new URL(endpoint);bound.searchParams.set('voice_review',voiceReview);endpoint = bound.href;
+    }
     const parent = signal || state.controller.signal;
     const controller = new AbortController();
     const abort = () => controller.abort();
@@ -435,6 +446,42 @@
       if (current(state) && dispatched) state.notice.textContent += ' Check send status to verify the outcome.';
     } finally { state.busy = false;controls(state); }
   }
+  // The trusted Phone host keeps this exact review only in memory. Editing,
+  // refreshing, attachment work or a watch-choice change invalidates it.
+  function voiceReviewSnapshot() {
+    const state = active;
+    if (!cfg.fixedDraftId || cfg.callReviewEnabled !== true || !state || !current(state) || dirty(state)
+      || state.busy || state.uploading || state.imageWorking || state.imageReview || state.conflicted || state.sendUncertain
+      || state.draft?.id !== cfg.fixedDraftId || state.draft.status !== 'prepared' || state.draft.can_send === false
+      || state.draft.connection_changed || state.draft.followthrough_unavailable || state.send.disabled) return null;
+    const watch = state.watch.checked || state.values.followthrough?.enabled === true;
+    const token = watch ? state.draft.watch_review_token : state.draft.review_token;
+    if (!token) return null;
+    return Object.freeze({draft_id:state.draft.id,review_token:token,watch_replies:watch,
+      edit_revision:state.draft.edit_revision,sequence:state.snapshotSeq,edit_sequence:state.voiceEditSeq || 0});
+  }
+  function voiceReviewMatches(snapshot) {
+    const value = voiceReviewSnapshot();
+    return Boolean(value && snapshot && Object.keys(value).every(key => value[key] === snapshot[key]));
+  }
+  async function voiceReviewSend(snapshot,reviewId) {
+    if (!draftId.test(reviewId || '') || !voiceReviewMatches(snapshot)) return false;
+    const state = active;state.busy = true;controls(state);let dispatched = false;
+    try {
+      setNotice(state,'Sending the exact email confirmed during your call…');dispatched = true;
+      const result = await api(state,'confirm',{draft_id:snapshot.draft_id,review_token:snapshot.review_token,
+        confirmed:true,watch_replies:snapshot.watch_replies},{voiceReview:reviewId});
+      state.sendUncertain = false;adopt(state,result.draft);
+      window.dispatchEvent(new Event('vp3:chat-email-watch-changed'));
+      window.dispatchEvent(new Event('vp3:chat-email-drafts-changed'));
+      return state.draft.status === 'sent';
+    } catch (error) {
+      if (current(state) && dispatched) state.sendUncertain = true;
+      failure(state,error);
+      if (current(state) && dispatched) state.notice.textContent += ' Check send status before trying another action.';
+      return false;
+    } finally {state.busy = false;controls(state);}
+  }
   async function refreshDraft(state,action = 'review') {
     if (!current(state) || state.busy || !state.draft) return;
     state.busy = true;controls(state);setNotice(state,'Checking the saved email…');
@@ -464,7 +511,7 @@
   }
   async function write(state,retry = false) {
     if (!current(state) || state.busy || state.imageWorking || !state.draft?.review_token || !retry && !state.instruction.value.trim()) return false;
-    state.busy = true;controls(state);
+    invalidateVoiceReview(state);state.busy = true;controls(state);
     try {
       if (!retry) await saveSnapshot(state);
       const result = await api(state,retry ? 'retry_write' : 'compose_generate',{draft_id:state.draft.id,
@@ -620,7 +667,7 @@
     if (state.values.attachments.some(value => value.asset_id === item.asset_id)) return;
     if (state.values.attachments.length >= 5 || state.values.attachments.reduce((sum,value) => sum+value.size,0)+item.size > attachmentLimit)
       throw new Error('Use up to five images with a combined size of 10 MB.');
-    state.values.attachments.push(item);renderAttachments(state);controls(state);
+    invalidateVoiceReview(state);state.values.attachments.push(item);renderAttachments(state);controls(state);
   }
   async function upload(state,file) {
     if (!file || !current(state) || state.busy || state.uploading) return;
@@ -629,7 +676,7 @@
     }
     const endpoint = localUrl(cfg.mediaLibraryEndpoint);
     if (!endpoint) { setNotice(state,'Image uploads are unavailable.');return; }
-    state.uploading = true;controls(state);
+    invalidateVoiceReview(state);state.uploading = true;controls(state);
     const post = async (action,fields = {}) => {
       const form = new FormData();form.set('action',action);form.set('csrf_token',cfg.csrf);
       for (const [key,value] of Object.entries(fields)) form.set(key,value);
@@ -689,7 +736,7 @@
   }
   async function generateImage(state) {
     if (!current(state) || state.imageCreate.disabled) return;
-    state.imageWorking = true;controls(state);
+    invalidateVoiceReview(state);state.imageWorking = true;controls(state);
     try {
       setNotice(state,'Preparing your image…');
       if (!state.imageReview) state.imageReview = await api(state,'preview',{prompt:state.imagePrompt.value.trim(),title:'Email image',
@@ -784,7 +831,7 @@
     state.latestMessage = node('details','','vp3-email-compose-source');state.latestMessage.hidden = true;state.latestMessage.open = true;
     editor.append(from,state.originalSource,state.latestMessage,field('To',state.to),field('Subject',state.subject),field('Message',state.body));
     for (const [name,input] of [['to',state.to],['subject',state.subject],['body',state.body]]) input.addEventListener('input',() => {
-      if (!current(state)) return;state.values[name] = input.value;if (name === 'body') resizeBody(input);controls(state);
+      if (!current(state)) return;invalidateVoiceReview(state);state.values[name] = input.value;if (name === 'body') resizeBody(input);controls(state);
     });
     const images = node('section','','vp3-email-compose-images');images.append(node('h3','Images'));
     const imageActions = node('div','','vp3-email-compose-toolbar');
@@ -839,10 +886,11 @@
     agentTools.append(field('Instructions',state.instruction),state.generate,node('small','The Agent saves a draft for your review. Sending remains your choice.'));
     editor.append(agentTools);
     if (followthrough()?.settings) {
-      state.followSettings = followthrough().settings(undefined,{onChange:value => { if (current(state)) { state.values.followthrough = value;controls(state); } }});
+      state.followSettings = followthrough().settings(undefined,{onChange:value => { if (current(state)) { invalidateVoiceReview(state);state.values.followthrough = value;controls(state); } }});
       editor.append(state.followSettings.root);
     }
     state.watch = node('input');state.watch.type = 'checkbox';
+    state.watch.addEventListener('change',() => invalidateVoiceReview(state));
     state.watchLabel = node('label','','vp3-email-compose-watch');state.watchLabel.append(state.watch,node('span','Watch for the first reply for 30 days'));editor.append(state.watchLabel);
     const actions = node('footer','','vp3-email-compose-actions');
     state.changed = node('small');
@@ -1181,5 +1229,6 @@
   });
   window.addEventListener('resize',() => { if (active) resizeBody(active.body); });
   window.VP3EmailComposerV1 = Object.freeze({openCompose,openDraft,openDrafts,queueSummary,selectedDraft,matchInstruction,handleChatInstruction,
-    requestClose,isDirty:() => Boolean(active && current(active) && dirty(active))});
+    requestClose,isDirty:() => Boolean(active && current(active) && dirty(active)),
+    ...(cfg.fixedDraftId && cfg.callReviewEnabled === true ? {voiceReview:Object.freeze({snapshot:voiceReviewSnapshot,matches:voiceReviewMatches,send:voiceReviewSend})} : {})});
 })();

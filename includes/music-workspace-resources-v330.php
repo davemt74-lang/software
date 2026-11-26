@@ -134,7 +134,7 @@ function music_workspace_resources_v330_backfill(PDO $pdo): void
     if(table_exists('agent_work_actions')&&column_exists('agent_work_actions','workspace_id')&&column_exists('agent_work_actions','release_id'))$pdo->exec('UPDATE agent_work_actions a INNER JOIN release_plans r ON r.id=a.release_id SET a.workspace_id=r.workspace_id WHERE a.workspace_id IS NULL AND r.workspace_id IS NOT NULL');
 }
 
-function music_workspace_resources_v330_ensure_schema(?PDO $pdo=null): void
+function music_workspace_resources_v330_ensure_schema(?PDO $pdo=null,bool $backfill=true): void
 {
     $pdo??=db();
     if(!$pdo)throw new RuntimeException('Database connection is unavailable.');
@@ -163,7 +163,9 @@ function music_workspace_resources_v330_ensure_schema(?PDO $pdo=null): void
         $pdo->exec('ALTER TABLE playlists ADD COLUMN artist_workspace_id BIGINT UNSIGNED NULL AFTER owner_user_id');
         music_workspace_resources_v330_add_index($pdo,'playlists','idx_playlists_artist_workspace','artist_workspace_id,updated_at,id');
     }
-    music_workspace_resources_v330_backfill($pdo);
+    // New metadata upgrades stage unresolved ownership instead of inferring it.
+    // Keep legacy behavior available to existing explicit migration callers.
+    if($backfill)music_workspace_resources_v330_backfill($pdo);
 }
 
 function music_workspace_resources_v330_workspace(PDO $pdo,int $workspaceId): ?array

@@ -110,9 +110,13 @@
     let device=null,reachable=false,visible=false,owner=null,scope=null,selected='all',rows=[],nextCursor=null,hasMore=false;
     let loading=false,writing=false,statusLoading=false,statusAt=0,statusSerial=0,listSerial=0,detailSerial=0,auditSerial=0;
     let native=null,nativeController=null,opened=null,returnRef=null,feedScroll=0,pendingNotification=null,settingsSignature='',recoveredScope='';
+    let callClient=null,callSettings=null,callSettingsHost=null,callLoading=false,callSerial=0,callAt=0,callRefreshPending=false;
+    const callContract=window.VP3EmailCallSettingsContractV1,callState=callContract?.createCallState();
+    const callEndpoint=root.dataset.emailCallSettingsApi||'';
     const sourceRefreshes=new Set();
     const make=(tag,value='',className='')=>{const node=document.createElement(tag);node.textContent=value;if(className)node.className=className;return node;};
     const button=(label,handler,className='')=>{const node=make('button',label,className);node.type='button';node.addEventListener('click',event=>{if(event.isTrusted)void handler(event);});return node;};
+    const enrollmentContent=make('div');
     const head=make('header','','phone-agent-head'),heading=make('h1','Your Agent'),sub=make('p','Results and decisions, brought to you.','phone-agent-subtitle');
     const title=make('div');title.append(heading,sub);const headControls=make('div','','phone-agent-head-controls');
     headControls.append(button('Refresh',async()=>{await refreshStatus(true);if(live())void loadFeed();}),button('Settings',()=>shell.openConnection()));head.append(title,headControls);
@@ -125,7 +129,8 @@
     const list=make('div','','phone-agent-list');list.setAttribute('aria-label','Agent results');
     const empty=make('p','','phone-agent-empty');empty.hidden=true;
     const more=button('Load more',()=>loadFeed(true),'secondary phone-agent-more');more.hidden=true;
-    const feed=make('div');feed.append(head,filterBar,list,empty,more);
+    const callBanner=make('aside','','phone-agent-email-call-banner');callBanner.hidden=true;callBanner.setAttribute('aria-label','Exact email call review');
+    const feed=make('div');feed.append(head,callBanner,filterBar,list,empty,more);
     const detailHost=make('div','','phone-agent-detail');detailHost.hidden=true;
     host.append(feedback,feed,detailHost);
     function message(value,error=false){feedback.textContent=value;feedback.dataset.error=String(error);}
@@ -136,8 +141,12 @@
       ? value.needs_action>0?value.needs_action+' '+(value.needs_action===1?'item needs':'items need')+' you.':'Results and decisions, brought to you.'
       :'Recent results and decisions. More may be available.';}
     function closeNative(){nativeController?.abort();nativeController=null;try{native?.close?.();}catch{}native=null;panel.classList.remove('phone-agent-native');}
+    function disposeCalls(){
+      callSerial++;callLoading=false;callAt=0;callRefreshPending=false;callClient?.dispose();callClient=null;
+      callSettings?.dispose();callSettings=null;callSettingsHost?.remove();callSettingsHost=null;callState?.clear();callBanner.replaceChildren();callBanner.hidden=true;
+    }
     function clearPrivate(){
-      model.clear();listSerial++;detailSerial++;auditSerial++;sourceRefreshes.clear();closeNative();scope=null;opened=null;rows=[];nextCursor=null;hasMore=false;loading=false;writing=false;
+      model.clear();listSerial++;detailSerial++;auditSerial++;sourceRefreshes.clear();disposeCalls();closeNative();scope=null;opened=null;rows=[];nextCursor=null;hasMore=false;loading=false;writing=false;
       list.replaceChildren();detailHost.replaceChildren();detailHost.hidden=true;feed.hidden=false;empty.hidden=true;more.hidden=true;message('');
       shell.setAgent({enabled:false});
     }
@@ -174,6 +183,74 @@
       for(const control of list.querySelectorAll('button'))control.disabled=!live()||writing;
     }
     function localDate(value){try{return new Intl.DateTimeFormat(undefined,{dateStyle:'medium',timeStyle:'short'}).format(new Date(value));}catch{return value;}}
+    function callDescription(value){
+      if(!value)return '';
+      const label=callContract.labels[value.state];
+      return value.state==='uncertain'?label+'. No automatic redial.':label;
+    }
+    function callLine(ref){
+      const line=make('p',callDescription(callState?.get(ref)),'phone-agent-email-call-status');line.dataset.emailCallStatus=ref;line.hidden=!line.textContent;return line;
+    }
+    function renderCallProgress(){
+      for(const element of list.querySelectorAll('[data-email-call-status]')){
+        const value=callDescription(callState?.get(element.dataset.emailCallStatus));if(element.textContent!==value)element.textContent=value;element.hidden=!value;
+      }
+      const active=callState?.active();
+      const signature=active?JSON.stringify(active):'';
+      if(callBanner.dataset.signature!==signature){
+        callBanner.dataset.signature=signature;callBanner.replaceChildren();callBanner.hidden=!active;
+        if(active){
+          const action=make('div','','phone-agent-actions');action.append(button(active.source_kind==='gmail_draft'?'Review email for this call':'Read email for this call',()=>openItem(active.item_ref)));
+          callBanner.append(make('h2',callDescription(active)),make('p','Open the exact email for this call. Sending requires its own review and approval.'),action);
+        }
+      }
+      const detail=detailHost.querySelector('[data-email-call-detail]');
+      if(detail&&opened){
+        const value=callState?.get(opened.item.item_ref),matching=active?.item_ref===opened.item.item_ref;
+        detail.textContent=callDescription(value||matching&&active)+(matching?' · This is the exact email linked to the call.':'');detail.hidden=!detail.textContent;
+      }
+    }
+    function setupCalls(){
+      if(!scope||callClient||!callEndpoint||!callContract||!window.VP3EmailCallSettingsV1?.createClient)return;
+      const capture=captured();
+      try{callClient=window.VP3EmailCallSettingsV1.createClient({endpoint:callEndpoint,context:capture.scope,isCurrent:()=>current(capture)});}
+      catch{callClient=null;}
+    }
+    function mountCallSettings(){
+      if(!scope||!callClient||!window.VP3EmailCallSettingsV1?.mount)return;
+      if(!callSettingsHost)callSettingsHost=make('div','','phone-agent-email-call-settings');
+      if(!enrollment.contains(callSettingsHost))enrollment.append(callSettingsHost);
+      if(!callSettings){
+        const capture=captured();callSettings=window.VP3EmailCallSettingsV1.mount({host:callSettingsHost,endpoint:callEndpoint,context:capture.scope,
+          isCurrent:()=>current(capture),onAccessChanged:error=>{if(error.code==='invalid_email_calls_response')error.code='invalid_workspace_response';failure(error,capture);},onSaved:()=>void refreshCalls(true)});
+      }
+    }
+    function visibleCallRefs(){
+      const refs=[];if(opened)refs.push(opened.item.item_ref);
+      if(!feed.hidden){
+        const area=panel.getBoundingClientRect();
+        for(const card of list.children){const box=card.getBoundingClientRect();if(box.bottom>=area.top-200&&box.top<=area.bottom+200)refs.push(card.dataset.item);}
+      }
+      if(!refs.length)refs.push(...rows.slice(-40).map(row=>row.item_ref));
+      return [...new Set(refs)].slice(0,40);
+    }
+    async function refreshCalls(force=false){
+      if(!live()||!callClient||!callState||!visible&&document.getElementById('phone-connection')?.hidden!==false)return;
+      if(callLoading){if(force)callRefreshPending=true;return;}
+      if(!force&&Date.now()-callAt<10000)return;
+      const capture=captured(),serial=++callSerial,refs=visibleCallRefs();callLoading=true;
+      try{
+        const result=callContract.statuses(await callClient.request('statuses',{item_refs:refs}),capture.scope,refs);
+        if(!current(capture)||serial!==callSerial)return;callState.merge(result);callAt=Date.now();renderCallProgress();
+      }catch(error){
+        if(!current(capture)||serial!==callSerial||error.name==='AbortError')return;
+        callState.clear();renderCallProgress();
+        if(error.code==='invalid_email_calls_response')error.code='invalid_workspace_response';
+        if([401,403,404,409,419].includes(error.status)||error.code==='invalid_workspace_response')failure(error,capture);
+      }finally{
+        if(current(capture)&&serial===callSerial){callLoading=false;if(callRefreshPending){callRefreshPending=false;void refreshCalls(true);}}
+      }
+    }
     function metadata(row){
       const line=make('div','','phone-agent-meta');line.dataset.agentMetadata='true';line.append(make('span',labels[row.source_kind]));
       if(!row.receipt.read_at)line.append(make('span','Unread','phone-agent-tag unread'));
@@ -194,12 +271,12 @@
         if(card.dataset.signature!==signature){
           card.dataset.signature=signature;card.dataset.unread=String(!row.receipt.read_at);const title=make('h2',row.title||'Agent result');
           const actions=make('div','','phone-agent-actions');actions.append(button(openLabels[row.source_kind],()=>openItem(row.item_ref)));
-          card.replaceChildren(metadata(row),title,make('p',row.summary),make('small',localDate(row.occurred_at),'phone-agent-meta'),actions);
+          card.replaceChildren(metadata(row),title,make('p',row.summary),make('small',localDate(row.occurred_at),'phone-agent-meta'),callLine(row.item_ref),actions);
         }
       }
       for(const node of retained.values())node.remove();
       empty.hidden=rows.length>0||loading;empty.textContent=selected==='needs_you'?'Nothing in this view needs your decision.':selected==='history'?'No completed or acknowledged items in this view yet.':selected==='for_you'?'Your Agent’s results will appear here.':'Your Agent has no current results to show here.';
-      controls();
+      controls();renderCallProgress();
     }
     async function loadFeed(append=false,{silent=false}={}){
       if(!live()||loading||writing||append&&!nextCursor)return false;
@@ -210,9 +287,9 @@
         if(!current(capture)||serial!==listSerial||filter!==selected)return false;
         const received=result.items.map(row=>model.merge(row));
         if(append){const values=new Map(rows.map(row=>[row.item_ref,row]));for(const row of received)values.set(row.item_ref,row);rows=[...values.values()];}else rows=received;
-        nextCursor=result.next_cursor;hasMore=result.has_more;setCounts(result.counts);if(!silent)message('');return true;
+        nextCursor=result.next_cursor;hasMore=result.has_more;setCounts(result.counts);if(!silent)message('');callRefreshPending=true;return true;
       }catch(error){failure(error,capture);return false;}
-      finally{if(current(capture)&&serial===listSerial){loading=false;renderFeed();}}
+      finally{if(current(capture)&&serial===listSerial){loading=false;renderFeed();if(callRefreshPending){callRefreshPending=false;void refreshCalls(true);}}}
     }
     async function canClose(){
       if(native?.canClose)return (await native.canClose())!==false;
@@ -273,6 +350,9 @@
         if(!current(capture)||serial!==detailSerial)return false;
         const sourceRevision=value.item.source_revision;value.item=model.merge(value.item);check(value.item.item_ref===ref&&value.item.source_revision===sourceRevision);
         opened=value;const top=make('div','','phone-agent-detail-top');top.append(button('← Back to results',back,'phone-agent-back'));
+        if(['gmail_draft','gmail_attention'].includes(value.item.source_kind)){
+          const progress=make('p','','phone-agent-email-call-status');progress.dataset.emailCallDetail='true';progress.hidden=true;top.append(progress);
+        }
         detailHost.append(top);
         const row=value.item;
         if(row.source_kind==='agent_result'){
@@ -289,7 +369,7 @@
           if(!current(capture)||serial!==detailSerial||openedController.signal.aborted){controller?.close?.();return false;}
           native=controller;
         }
-        message(notification?'Opened the current notified item.':'');return true;
+        renderCallProgress();void refreshCalls(true);message(notification?'Opened the current notified item.':'');return true;
       }catch(error){
         if(current(capture)&&serial===detailSerial){closeNative();opened=null;detailHost.replaceChildren(button('← Back to results',back,'phone-agent-back'));
           message('This result is no longer available in the current Agent workspace. Refresh your results to check.',true);}
@@ -324,34 +404,38 @@
     function renderEnrollment(note=''){
       enrollment.hidden=!device||device.status!=='approved';if(enrollment.hidden)return;
       const signature=JSON.stringify([device.id,reachable,owner?.state,owner?.revision,owner?.scope_revision,owner?.agents,owner?.preferences,writing,note]);
-      if(signature===settingsSignature)return;settingsSignature=signature;enrollment.replaceChildren();
-      const heading=make('h2','My Agent on this phone');heading.id='phone-agent-enrollment-title';enrollment.append(heading);
-      if(note)enrollment.append(make('p',note,'phone-agent-feedback'));
-      if(!reachable){enrollment.append(make('p','Reconnect to check your private Agent workspace.'));return;}
-      if(!owner){enrollment.append(make('p','Check whether this phone can receive your private Agent results.'),button('Check Agent access',()=>refreshStatus(true),'secondary'));return;}
+      if(signature===settingsSignature)return;settingsSignature=signature;
+      if(!enrollment.contains(enrollmentContent))enrollment.replaceChildren(enrollmentContent);
+      enrollmentContent.replaceChildren();
+      const heading=make('h2','My Agent on this phone');heading.id='phone-agent-enrollment-title';enrollmentContent.append(heading);
+      if(note)enrollmentContent.append(make('p',note,'phone-agent-feedback'));
+      if(!reachable){enrollmentContent.append(make('p','Reconnect to check your private Agent workspace.'));return;}
+      if(!owner){enrollmentContent.append(make('p','Check whether this phone can receive your private Agent results.'),button('Check Agent access',()=>refreshStatus(true),'secondary'));return;}
       if(owner.state==='sign_in_required'){
-        enrollment.append(make('p','Sign in as the account owner to receive your private Agent results and review email on this phone.'));
+        enrollmentContent.append(make('p','Sign in as the account owner to receive your private Agent results and review email on this phone.'));
         const link=make('a','Sign in to your account');const url=new URL('login.php',location.href);url.searchParams.set('return_to',new URL('phone-location.php',location.href).pathname);link.href=url.href;
-        const actions=make('div','','phone-agent-enrollment-actions');actions.append(link,button('Check sign-in',()=>refreshStatus(true),'secondary'));enrollment.append(actions);return;
+        const actions=make('div','','phone-agent-enrollment-actions');actions.append(link,button('Check sign-in',()=>refreshStatus(true),'secondary'));enrollmentContent.append(actions);return;
       }
-      if(!owner.owner_eligible||owner.state==='unavailable'){enrollment.append(make('p','Private Agent access is unavailable for this connection. Your existing phone features are still available.'),button('Check again',()=>refreshStatus(true),'secondary'));return;}
+      if(!owner.owner_eligible||owner.state==='unavailable'){enrollmentContent.append(make('p','Private Agent access is unavailable for this connection. Your existing phone features are still available.'),button('Check again',()=>refreshStatus(true),'secondary'));return;}
       const select=make('select');select.setAttribute('aria-label','Main Agent for this phone');
       for(const candidate of owner.agents){const option=make('option',candidate.name);option.value=String(candidate.id);select.append(option);}
-      select.value=String(owner.agent?.id??0);const field=make('label','','phone-agent-setting');field.append(make('span','Main Agent'),select);enrollment.append(field);
+      select.value=String(owner.agent?.id??0);const field=make('label','','phone-agent-setting');field.append(make('span','Main Agent'),select);enrollmentContent.append(field);
       if(owner.state==='ready'){
-        enrollment.append(make('p','Your private Agent results and email decisions are available in the Agent tab.'));
+        enrollmentContent.append(make('p','Your private Agent results and email decisions are available in the Agent tab.'));
         const actions=make('div','','phone-agent-enrollment-actions');actions.append(button('Use selected Agent',()=>changeEnrollment('select_agent',{agent_id:Number(select.value)}),'secondary'),
-          button('Open Agent',()=>shell.openAgent(),'secondary'));enrollment.append(actions);
+          button('Open Agent',()=>shell.openAgent(),'secondary'));enrollmentContent.append(actions);
         const label=make('label'),toggle=make('input');toggle.type='checkbox';toggle.checked=owner.preferences.notifications_enabled;
         label.append(toggle,make('span','Notify this phone about new Agent items. Phone notification permission is managed in Info.'));
-        toggle.addEventListener('change',event=>{if(event.isTrusted)void changeEnrollment('preferences',{notifications_enabled:toggle.checked});});enrollment.append(label,
+        toggle.addEventListener('change',event=>{if(event.isTrusted)void changeEnrollment('preferences',{notifications_enabled:toggle.checked});});enrollmentContent.append(label,
           button('Remove Agent access',()=>changeEnrollment('revoke',{}),'text-button'));
+        mountCallSettings();
       }else{
         const label=make('label'),confirm=make('input');confirm.type='checkbox';label.append(confirm,make('span','This is my phone. Allow it to show my private Agent results and email reviews while I am signed in.'));
         const enroll=button('Connect my Agent',()=>{if(confirm.checked)return changeEnrollment('enroll',{confirmed:true,agent_id:Number(select.value)});});enroll.disabled=true;
-        confirm.addEventListener('change',()=>{enroll.disabled=!confirm.checked||writing;});enrollment.append(label,enroll);
+        confirm.addEventListener('change',()=>{enroll.disabled=!confirm.checked||writing;});enrollmentContent.append(label,enroll);
       }
-      for(const control of enrollment.querySelectorAll('button,select,input'))if(writing)control.disabled=true;
+      if(callSettingsHost)callSettingsHost.inert=writing;
+      for(const control of enrollmentContent.querySelectorAll('button,select,input'))if(writing)control.disabled=true;
     }
     function acceptStatus(value){
       const previousCounts=owner?.counts;
@@ -360,10 +444,11 @@
       const changed=!next||!scope||scope.device_id!==next.device_id||scope.scope_revision!==next.scope_revision||scope.enrollment_revision!==next.enrollment_revision;
       if(changed)clearPrivate();value.counts=value.counts||(!changed&&previousCounts)||{unread:0,needs_action:0,complete:false};owner=value;
       if(next){scope=changed?next:Object.assign(scope,next);model.bind([next.device_id,next.enrollment_revision,next.scope_revision].join('/'));heading.textContent=value.agent.name||'Your Agent';
-        setCounts(value.counts);shell.setAgent({enabled:true,unread:value.counts.unread,countsComplete:value.counts.complete,defaultView:true});}
+        setCounts(value.counts);shell.setAgent({enabled:true,unread:value.counts.unread,countsComplete:value.counts.complete,defaultView:true});setupCalls();}
       settingsSignature='';renderEnrollment();
       if(next&&visible&&!opened&&(!rows.length||changed))void loadFeed();
       else if(next&&visible&&opened)void auditOpenSource();
+      if(next)void refreshCalls();
       if(next&&pendingNotification){const ref=pendingNotification;pendingNotification=null;void shell.openAgent().then(ok=>{if(ok)void openItem(ref,{notification:true});});}
     }
     async function refreshStatus(force=false){
@@ -374,7 +459,7 @@
       finally{if(serial===statusSerial)statusLoading=false;}
     }
     async function changeEnrollment(action,body){
-      if(!reachable||writing||!owner?.owner_eligible||!await canClose())return;
+      if(!reachable||writing||!owner?.owner_eligible||!await canClose()||callSettings&&!await callSettings.requestClose())return;
       const held=device.id,revision=owner.revision;writing=true;statusSerial++;statusLoading=false;renderEnrollment();
       try{const result=await api(action,{expected_revision:revision,...body});if(device?.id!==held)return;
         writing=false;acceptStatus(status(result,held));statusAt=Date.now();if(action==='enroll')void shell.openAgent();}
@@ -388,7 +473,7 @@
       enrollment.hidden=!device;if(!device)return;
       renderEnrollment();controls();if(reachable)void refreshStatus(!wasReachable||changed);
     }
-    function setVisible(value){visible=value===true;if(visible){void refreshStatus();if(live()&&!opened&&!rows.length)void loadFeed();}}
+    function setVisible(value){visible=value===true;if(visible){void refreshStatus();if(live()&&!opened&&!rows.length)void loadFeed();}void refreshCalls();}
     async function openNotification(ref){
       if(!reference(ref))return false;pendingNotification=ref;
       if(live()){pendingNotification=null;if(await shell.openAgent())return openItem(ref,{notification:true});return false;}
@@ -396,11 +481,13 @@
     }
     document.addEventListener('visibilitychange',()=>{
       if(document.hidden){model.cancel();statusSerial++;listSerial++;detailSerial++;statusLoading=loading=false;}
-      else{statusAt=0;void refreshStatus(true);}
+      else{statusAt=0;callAt=0;void refreshStatus(true);}
     });
     window.addEventListener('pagehide',()=>{statusSerial++;statusLoading=false;owner=null;clearPrivate();enrollment.replaceChildren();});
-    window.addEventListener('pageshow',()=>{statusAt=0;void refreshStatus(true);});
+    window.addEventListener('pageshow',()=>{statusAt=0;callAt=0;void refreshStatus(true);});
     setInterval(()=>{if(device&&reachable&&!document.hidden)void refreshStatus();},30000);
+    setInterval(()=>void refreshCalls(),10000);
+    panel.addEventListener('scroll',()=>{if(!opened)void refreshCalls();},{passive:true});
     async function leave(){if(!await canClose())return false;if(opened)resetDetail();return true;}
     return Object.freeze({bind,setVisible,canClose,leave,openNotification,refresh:()=>refreshStatus(true)});
   };

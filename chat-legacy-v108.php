@@ -9,6 +9,7 @@ if (isset($_SERVER['SCRIPT_FILENAME']) && realpath($_SERVER['SCRIPT_FILENAME']) 
 }
 
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__ . '/includes/music-song-metadata-form-v1.php';
 require_permission('chat.access');
 
 if (!access_schema_ready()) {
@@ -26,6 +27,26 @@ if (agent_brain_schema_ready()) {
 }
 $teamChatEnabled = team_chat_role_allowed($user);
 $pdo = db();
+$chatMusicWorkspaces = [];
+$chatMusicAlbums = [];
+$chatCanCreateTrack = false;
+$chatMusicMetadataReady = false;
+if ($pdo && music_workspace_resources_v330_schema_ready($pdo)) {
+    foreach (music_workspace_resources_v330_accessible_workspaces($pdo, $user) as $musicWorkspace) {
+        $musicWorkspaceId = (int)$musicWorkspace['id'];
+        if (!music_workspace_resources_v330_can_manage($pdo, $musicWorkspaceId, 'tracks', $user)) continue;
+        $chatMusicWorkspaces[] = $musicWorkspace;
+        if (artist_music_v185_schema_ready()) {
+            foreach (artist_music_v185_albums($pdo, $musicWorkspaceId, true) as $musicAlbum) {
+                $musicAlbum['workspace_id'] = $musicWorkspaceId;
+                $chatMusicAlbums[] = $musicAlbum;
+            }
+        }
+    }
+    $chatCanCreateTrack = $chatMusicWorkspaces !== [];
+    $chatMusicMetadataReady = artist_music_v185_schema_ready()
+        && artist_media_v182_schema_ready() && music_song_metadata_v1_schema_ready($pdo);
+}
 $recent = [];
 $chatInitialConversationId = 0;
 $chatNotificationCount = notification_unread_count($user);
@@ -52,13 +73,13 @@ $chatCanAccessAccount = has_permission('account.access', $user);
 $chatCanCreatePlaylist = permission_v105_has('playlists.manage', $user);
 $chatArtistProfileUrl = artist_workspace_v181_profile_url_for_user($user);
 
-if (has_permission('tracks.manage', $user)) {
+if ($chatCanCreateTrack) {
     $chatCreateItems[] = [
         'label'=>'Track',
-        'meta'=>'Music + Stem Studio',
+        'meta'=>'Song details, credits + Studio',
         'icon'=>'♪',
         'type'=>'track',
-        'url'=>url('/admin/tracks.php?new=1#track-form'),
+        'url'=>url('/music-library.php?new=1#editor'),
     ];
 }
 
@@ -589,6 +610,7 @@ foreach ($chatPosts as $post) {
 <link rel="stylesheet" href="<?= e(url('/chat-media-v93.css?v=93')) ?>">
 <link rel="stylesheet" href="<?= e(url('/agent-proactive-v93.css?v=93')) ?>">
 <link rel="stylesheet" href="<?= e(url('/chat-v97.css?v=99')) ?>">
+<?php if ($chatCanCreateTrack): ?><link rel="stylesheet" href="<?= e(url('/assets/css/music-song-metadata-form-v1.css?v=1')) ?>"><?php endif; ?>
 </head>
 <body>
 <div class="chat-app">
@@ -2116,15 +2138,20 @@ foreach ($chatPosts as $post) {
     <div
       class="chat-create-modal-status"
       id="chatCreateModalStatus"
+      role="status"
+      aria-live="polite"
+      tabindex="-1"
       hidden
     ></div>
 
     <div class="chat-create-modal-body">
 
-      <?php if (has_permission('tracks.manage', $user)): ?>
+      <?php if ($chatCanCreateTrack): ?>
       <form
         class="chat-create-form"
         data-chat-create-form="track"
+        data-song-metadata-endpoint="<?= e(url('/api/music-song-metadata-v1.php')) ?>"
+        data-song-library-url="<?= e(url('/music-library.php')) ?>"
         enctype="multipart/form-data"
         hidden
       >
@@ -2134,10 +2161,17 @@ foreach ($chatPosts as $post) {
         <div class="chat-create-form-intro">
           <span>Music</span>
           <h3>Add Track</h3>
-          <p>Create a playable track now. Open the full editor afterward for Producer sharing and REAPER/Stem Studio setup.</p>
+          <p>Choose the artist workspace, add song details and save a draft. Audio can be added before publishing; Studio and REAPER tools remain available afterward.</p>
         </div>
 
         <div class="chat-create-fields">
+          <label class="wide song-workspace-select">
+            <span>Music Workspace</span>
+            <select name="workspace_id" required data-song-workspace>
+              <option value="">Choose the workspace for this song</option>
+              <?php foreach ($chatMusicWorkspaces as $musicWorkspace): ?><option value="<?= (int)$musicWorkspace['id'] ?>"><?= e((string)$musicWorkspace['workspace_name']) ?></option><?php endforeach; ?>
+            </select>
+          </label>
           <label>
             <span>Title</span>
             <input name="title" maxlength="190" required>
@@ -2145,15 +2179,14 @@ foreach ($chatPosts as $post) {
 
           <label>
             <span>Album</span>
-            <select name="album_id">
-              <option value="0">No managed album</option>
-              <?php foreach ($chatAlbums as $albumOption): ?>
-                <option value="<?= (int)$albumOption['id'] ?>">
+            <select name="album_id" data-song-album disabled>
+              <option value="0">Single / unassigned</option>
+              <?php foreach ($chatMusicAlbums as $albumOption): ?>
+                <option value="<?= (int)$albumOption['id'] ?>" data-workspace-id="<?= (int)$albumOption['workspace_id'] ?>" disabled hidden>
                   <?= e((string)$albumOption['title']) ?>
                 </option>
               <?php endforeach; ?>
             </select>
-            <input type="hidden" name="album" value="Stonefellow">
           </label>
 
           <label>
@@ -2208,11 +2241,11 @@ foreach ($chatPosts as $post) {
           </label>
 
           <label class="wide">
-            <span>Credits</span>
+            <span>Additional public production credits</span>
             <textarea
               name="credits"
               rows="3"
-              placeholder="Songwriter, producer, performers, engineers."
+              placeholder="Additional public production credits. Add structured writers and performers below; use private rights notes for private details."
             ></textarea>
           </label>
 
@@ -2226,12 +2259,11 @@ foreach ($chatPosts as $post) {
           </label>
 
           <label>
-            <span>Audio File</span>
+            <span>Audio file (optional for a draft)</span>
             <input
               name="audio_file"
               type="file"
               accept=".mp3,.m4a,.wav,.ogg,audio/*"
-              required
             >
           </label>
 
@@ -2250,13 +2282,15 @@ foreach ($chatPosts as $post) {
           </label>
         </div>
 
+        <?php music_song_metadata_form_v1(music_song_metadata_form_blank_v1($chatMusicMetadataReady), 'chat-song'); ?>
+
         <label class="chat-create-check">
-          <input name="is_published" type="checkbox" value="1" checked>
-          <span>Published</span>
+          <input name="is_published" type="checkbox" value="1">
+          <span>Publish this song (audio required)</span>
         </label>
 
         <div class="chat-create-form-actions">
-          <button type="submit">Add Track</button>
+          <button type="submit" data-song-save <?= !$chatMusicMetadataReady?'disabled':'' ?>>Save song</button>
           <button type="button" class="secondary" data-close-chat-create>Cancel</button>
         </div>
       </form>
@@ -2913,6 +2947,8 @@ window.STONEFELLOW_PLAYER = {
 };
 </script>
 <link rel="stylesheet" href="<?= e(url('/chat-v100.css?v=100')) ?>">
+<?php if ($chatCanCreateTrack): ?><script src="<?= e(url('/assets/js/music-song-metadata-form-v1.js?v=1')) ?>" defer></script><?php endif; ?>
+<?php // Preserve chat.php's insertion anchor; its content hashes version both Chat JS and CSS. ?>
 <script src="<?= e(url('/chat.js?v=101')) ?>"></script>
 <script src="<?= e(url('/chat-v100.js?v=100')) ?>"></script>
 <script src="<?= e(url('/chat-media-v86.js?v=95')) ?>"></script>

@@ -32,7 +32,9 @@ function vp3_operator_recording_bind_call_v1(PDO $pdo,array $attempt,array $plan
         ->execute([$public,(int)$attempt['owner_user_id'],(int)$attempt['event_id'],(int)$attempt['start_epoch']]);
     $q->execute([$sid]);$call=$q->fetch(PDO::FETCH_ASSOC);
     if(function_exists('vp3_phone_workspace_delivery_v1')){
-        $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$public,isset($plan['opening'])?'Operator initiated a phone call.':'Scheduled Operator call submitted.');
+        $label=isset($plan['owner_email_request_id'])?'Operator submitted a call to review pending Gmail work.':
+            (isset($plan['opening'])?'Operator initiated a phone call.':'Scheduled Operator call submitted.');
+        $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$public,$label);
         $pdo->prepare('UPDATE phone_browser_calls_v1 SET chat_message_id=? WHERE id=?')->execute([(int)$delivery['message_id'],(int)$call['id']]);
     }
     return $call;
@@ -45,7 +47,7 @@ function vp3_operator_recording_saved_policy_v1(PDO $pdo,array $call,string $rec
         JOIN phone_operator_occurrences_v1 o ON o.owner_user_id=a.owner_user_id AND o.event_id=a.event_id AND o.start_epoch=a.start_epoch
         WHERE a.owner_user_id=? AND a.provider_sid=? AND a.call_public_id=?");
     $q->execute([(int)$call['owner_user_id'],(string)$call['provider_call_sid'],(string)$call['public_id']]);$row=$q->fetch(PDO::FETCH_ASSOC);
-    $consented=in_array((string)($row['reason']??''),['answer_consented','conversation_active','conversation_completed','conversation_silent',
+    $consented=in_array((string)($row['reason']??''),['answer_consented','conversation_active','conversation_completed','conversation_silent','conversation_opted_out',
         'conversation_reply_withheld','conversation_model_failed','conversation_turn_limit','conversation_ended'],true);
     if(!$row||!$consented||(int)$row['recording_started_epoch']<1
         ||!in_array($row['recording_state'],['started','received'],true)||!is_string($row['recording_sid'])
@@ -76,9 +78,17 @@ function vp3_operator_recording_start_v1(PDO $pdo,int $owner,string $sid,int $no
             WHERE owner_user_id=? AND event_id=? AND start_epoch=? AND recording_state='none'")
             ->execute([vp3_phone_recording_json_v1($policy),$now,$owner,$attempt['event_id'],$attempt['start_epoch']]);
         $pdo->prepare("UPDATE phone_browser_calls_v1 SET state='answered',updated_epoch=? WHERE id=?")->execute([$now,$call['id']]);
-        return ['state'=>'starting','claimed'=>true,'account'=>(string)vp3_phone_twilio_state_v100()['account_sid']];
+        return ['state'=>'starting','claimed'=>true,'account'=>(string)vp3_phone_twilio_state_v100()['account_sid'],
+            'owner_email'=>isset($current['owner_email_request_id'])];
     });
     if(empty($snapshot['claimed']))return $snapshot;
+    if(!empty($snapshot['owner_email'])&&!vp3_operator_owner_email_refresh_call_v1($pdo,$owner,$sid,$now)){
+        section12_owner_transaction($pdo,$owner,static function()use($pdo,$owner,$sid):void{
+            $pdo->prepare("UPDATE phone_operator_carrier_attempts_v1 SET recording_state='blocked' WHERE owner_user_id=? AND provider_sid=? AND recording_state='starting'")
+                ->execute([$owner,$sid]);
+        });
+        return ['state'=>'blocked'];
+    }
     $carrier??='vp3_phone_twilio_http_v100';$account=$snapshot['account'];$result=null;
     try{$result=$carrier('POST','/2010-04-01/Accounts/'.$account.'/Calls/'.$sid.'/Recordings.json',[
         'RecordingChannels'=>'dual','RecordingTrack'=>'both','Trim'=>'do-not-trim','PlayBeep'=>'true',
