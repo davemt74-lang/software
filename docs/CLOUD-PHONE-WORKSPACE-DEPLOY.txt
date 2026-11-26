@@ -168,6 +168,9 @@ Operator scheduled call occurrences
   To place scheduled calls when the browser is closed, add --dispatch to that same cron
   command after configuring the assigned Twilio line, public HTTPS callbacks, recording
   worker and the owner and recipient permissions. Remove --dispatch to stop new submissions.
+  In Agent Chat, open ddd and inspect Operator > Scheduled call worker. Check the last
+  run time, outcome and whether that run allowed dialing. A preparation-only run leaves
+  calls undialed. A preview leaves this status untouched. Older runs can show mode unknown.
   The recipient hears the recording and transcription disclosure and chooses whether to
   continue. An uncertain carrier receipt counts as an error and retains its reservation.
   When the connected-phone holder has enabled call memory, the Agent may receive up to
