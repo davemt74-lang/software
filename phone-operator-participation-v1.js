@@ -53,7 +53,12 @@
     }
     observe(receipts){
       if(!this.alive()||!this.token||!Array.isArray(receipts))return;
-      this.receipts=receipts.slice(-8).map(item=>({...item}));this.pump();
+      this.receipts=receipts.slice(-8).map(item=>({...item}));
+      const seq=this.receipts.at(-1)?.seq;
+      if(this.receipts.some(item=>item.seq===seq&&typeof item.text==='string'&&/^(?:hey[, ]+)?(?:vp3|agent|assistant)[,.:]?\s+(?:please\s+)?(?:stop|leave(?:\s+the\s+call)?|be\s+quiet)\b/i.test(item.text.trim()))){
+        this.stop('Agent removed at a participant’s request. The human call and captions continue.');return;
+      }
+      this.pump();
     }
     activity(){
       if(!this.alive()||!this.token)return;

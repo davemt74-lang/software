@@ -75,7 +75,7 @@ await test('existing paid reservations remain spent when conversation mode start
 await test('a verified participant stop closes conversation without speech',async()=>{
  const f=fixture({request:(action,fields)=>action==='participation_decide'?{call_id:'a'.repeat(32),based_on_seq:fields.receipts.at(-1).seq,state:'stopped'}:undefined});
  await f.c.start();f.c.observe(f.receipts(1,'Agent, stop.'));await f.advance(900);
- assert.equal(f.c.snapshot.phase,'closed');assert.equal(f.plays.length,0);assert.equal(f.calls.some(x=>x.action==='voice_prepare'),false);
+ assert.equal(f.c.snapshot.phase,'closed');assert.equal(f.plays.length,0);assert.equal(f.calls.length,1,'A verified stop bypasses quiet-gap and model-spend gates');
 });
 await test('a late start grant is revoked after Remove instead of restoring the Agent',async()=>{
  const gate=deferred(),f=fixture({request:action=>action==='participation_start'?gate.promise:undefined});
