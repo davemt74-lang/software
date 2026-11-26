@@ -14,9 +14,10 @@ if(deepLink!==null){
  } else status.textContent='That connection link has an invalid code. Ask your HomeServer Agent for a new link.';
 }
 form.addEventListener('submit',async event=>{
- event.preventDefault();const value=code.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
+ event.preventDefault();if(root.getAttribute('aria-busy')==='true')return;
+ const value=code.value.toUpperCase().replace(/[^A-Z0-9]/g,'');
  if(!/^[A-HJ-NP-Z2-9]{12}$/.test(value)){status.textContent='Enter the 12-character code shown in your HomeServer Agent Chat.';return;}
- button.disabled=true;status.textContent='Authorizing this HomeServer…';
+ root.setAttribute('aria-busy','true');button.disabled=true;status.textContent='Authorizing this HomeServer…';
  try{
  const response=await fetch(root.dataset.api,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/json','Accept':'application/json'},body:JSON.stringify({action:'claim',code:value,csrf_token:root.dataset.csrf})});
  const body=await response.json();
@@ -24,5 +25,6 @@ form.addEventListener('submit',async event=>{
  status.textContent='Authorized. Return to the HomeServer Agent Chat canvas; it will finish connecting automatically.';
  code.value='';form.hidden=true;
  }catch(error){status.textContent=error.message;button.disabled=false;}
+ finally{root.setAttribute('aria-busy','false');}
 });
 })();
