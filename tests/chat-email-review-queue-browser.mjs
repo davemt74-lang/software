@@ -167,7 +167,7 @@ async function bounds() {
 }
 try {
   await page.getByRole('button',{name:'Gmail',exact:true}).click();
-  await page.getByRole('button',{name:/Needs review, 23 pending drafts/}).click();
+  await page.getByRole('button',{name:/View drafts, 23 pending drafts/}).click();
   await editor().getByText('23 pending drafts',{exact:true}).waitFor();
   assert.equal(await card(organic).getByText('Reply · Agent prepared',{exact:true}).count(),1);
   await card(organic).getByText('Created 3 days ago',{exact:true}).waitFor();
@@ -285,7 +285,7 @@ try {
   await editor().getByRole('button',{name:'Save draft',exact:true}).click();
   await editor().getByText('Draft saved in this Chat.',{exact:true}).waitFor();releaseSource();await page.waitForTimeout(100);
   assert.equal(await editor().locator('iframe').count(),0,'A late source read cannot paint into a different reviewed revision.');
-  await editor().getByRole('button',{name:'Needs review',exact:true}).click();
+  await editor().getByRole('button',{name:'View drafts',exact:true}).click();
   await card(expired).getByRole('button',{name:'Open draft',exact:true}).click();
   await editor().getByText('This proposal expired. You can review its original email or discard it.',{exact:true}).waitFor();
   assert.equal(await editor().getByRole('button',{name:'Send',exact:true}).isDisabled(),true);

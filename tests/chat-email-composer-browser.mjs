@@ -183,7 +183,7 @@ try {
   await editor().getByRole('button',{name:'Save draft',exact:true}).click();
   await editor().getByText('Draft saved in this Chat.',{exact:true}).waitFor();
   assert.deepEqual(first.attachments.map(a=>a.asset_id),[1,2]);
-  await editor().getByRole('button',{name:'Needs review',exact:true}).click();
+  await editor().getByRole('button',{name:'View drafts',exact:true}).click();
   await editor().getByText('A partial draft',{exact:true}).waitFor();
   await editor().locator('article').filter({hasText:'A partial draft'}).getByRole('button',{name:'Open draft'}).click();
   await editor().getByRole('button',{name:'Remove Fixture image 2'}).waitFor();

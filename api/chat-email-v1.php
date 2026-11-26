@@ -30,6 +30,28 @@ try {
     }
     $pdo = db();
     if (!$pdo) throw new DomainException('Email review storage is unavailable.',503);
+    if (in_array($input['action']??null,['sent_list','sent_open'],true)) {
+        $list = $input['action'] === 'sent_list';
+        $fields = ['action','owner_key','agent_id','conversation_id','csrf_token',...($list ? ['limit','cursor'] : ['item_ref'])];
+        if (array_diff(array_keys($input),$fields) || (!$list && !is_string($input['item_ref']??null))) {
+            throw new DomainException('Choose a valid Sent mailbox action.',422);
+        }
+        $key = $_SESSION['agent_connection_email_review_v1'] ??= bin2hex(random_bytes(32));
+        try {
+            $activeAgent = vp3_agent_chat_resolve_agent_v380($pdo,$user,$agent);
+        } catch (RuntimeException $error) {
+            if ($error instanceof PDOException || $error->getCode()!==0) throw $error;
+            throw new DomainException('This private Agent Chat is no longer available.',403,$error);
+        }
+        $principal = vp3_agent_chat_principal_v380($user,$activeAgent);
+        session_write_close();
+        require_once dirname(__DIR__).'/includes/agent-email-sent-v1.php';
+        $result = $list
+            ? ['sent'=>agent_email_sent_list_v1($pdo,$user,$principal,$conversation,$key,array_intersect_key($input,array_flip(['limit','cursor'])))]
+            : ['message'=>agent_email_sent_open_v1($pdo,$user,$principal,$conversation,$key,$input['item_ref'])];
+        echo json_encode(['ok'=>true]+$result,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
+        exit;
+    }
     if (in_array($input['action']??null,['sender_watchlist','sender_watch'],true)) {
         $change = $input['action'] === 'sender_watch';
         $fields = ['action','owner_key','agent_id','conversation_id','csrf_token'];
@@ -129,7 +151,9 @@ try {
         403,404 => 'Open the original private Agent Chat to review this email.',
         409 => 'The email review or send status changed. Reopen the review to check it.',
         422 => 'Choose a valid email review action.',
-        default => 'The email outcome could not be verified. Open the review again before sending another email.',
+        default => in_array($input['action']??null,['sent_list','sent_open'],true)
+            ? 'The Sent mailbox could not be read. Try again.'
+            : 'The email outcome could not be verified. Open the review again before sending another email.',
     };
     echo json_encode(['ok'=>false,'error'=>$message], JSON_INVALID_UTF8_SUBSTITUTE);
 }

@@ -1,4 +1,4 @@
-# Gmail draft review queue and source-aware review
+# Gmail draft review, Sent mailbox, and shared workspace context
 
 ## Scope
 
@@ -49,3 +49,60 @@ The existing native composer (41), Gmail send ledger (128), and email writing (2
 `tests/chat-email-review-queue-browser.mjs` exercises the actual composer, specialist popup, and isolated reader with mocked network boundaries. The Gmail workflow also runs the original composer, formatted reader, specialist, and inbox browser regressions. Review screenshots are retained under `email-review/` in the workflow artifact for desktop and phone inspection.
 
 CI results and the final acceptance score belong to the pull request for this phase. A release is ready only after the required workflows pass and the generated desktop and phone screenshots have been reviewed. No real email is sent and no paid model/image generation is used by these tests.
+
+## Workspace follow-up: visible drafts and Sent
+
+The Gmail specialist keeps **View drafts** and its pending count at the top of the popup, beside the existing compose entry. The queue heading is **Drafts**. The original pending/all filters and private cross-Chat navigation remain available.
+
+The specialist has **Inbox** and **Sent** tabs. Sent reads the connected Gmail mailbox, including messages sent from Gmail or another client. It does not present the local VP3 draft ledger as the entire Gmail Sent folder. Pages show bounded message previews, recipients, dates, the connected account, and the time of the read. Opening a row uses the existing isolated formatted email reader with a plain-text option. Sent browsing creates no draft, send approval, follow-up watch, or Chat model turn.
+
+Normal inbox refreshes preserve the Sent page, selected message, and keyboard focus. They do not poll the provider's Sent mailbox. Closing the popup or changing owner, Agent, Chat, or participant context aborts pending work and clears private content. A changed mailbox binding or a fresh access rejection clears the old Sent result.
+
+The Chat command **Show my sent emails** opens the same Sent view. In a new Chat, the canonical private conversation is initialized before opening Gmail. A separate typed message is preserved, and unsaved email changes use the existing save/discard navigation decision.
+
+### Sent API contract
+
+Both actions use the existing authenticated POST endpoint, `api/chat-email-v1.php`, and require the current owner key, Agent, private conversation, and CSRF token.
+
+| Action | Additional input | Result |
+| --- | --- | --- |
+| `sent_list` | `limit` (default 10, maximum 20), optional `cursor` | `sent`: account, checked time, mailbox revision, bounded `items`, next cursor, and whether another page exists. |
+| `sent_open` | Exact opaque `item_ref` returned by the list | Read-only `message`: sender, recipients, subject, date, plain text, and optional safe display packet. |
+
+The provider list is constrained to the `SENT` label and excludes Spam/Trash. Every metadata/body response is checked for the expected message/thread and current Sent membership. A fixed before-time boundary carries across pages. The provider's result-size estimate is not shown as an exact total.
+
+Message references and page cursors are encrypted, authenticated, session-bound, and scoped to the owner, Agent, Chat, connection, grant, OAuth application, and mailbox. They expire after 15 minutes. Live private-Chat and Gmail-read authority is checked before and after token refresh and provider reads. Read permission is sufficient for Sent; send permission is independent. This feature uses the existing schema.
+
+Provider reference: [Gmail message listing](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/list) and [exact message retrieval](https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages/get).
+
+## Shared Agent knowledge of Gmail work
+
+`includes/agent-gmail-workspace-context-v1.php` provides one server-resolved workspace snapshot. The main Cloud Chat context, Top of Mind, and Gmail specialist consume the same projection. It contains capability availability, preferences, scan/report state, saved draft counts and bounded previews, locally verified send receipts, and reply-watch state. It performs no Gmail provider calls and no model calls.
+
+| Evidence | Meaning and limits |
+| --- | --- |
+| Inbox scan/report | Saved findings and their observed time/coverage; a scan is not proof that every message in the mailbox was analyzed. |
+| Draft queue | Current saved lifecycle counts for this owner's selected Agent; bounded previews omit bodies and approval tokens. |
+| VP3 send receipt | A verified local send confirmation under its original private Chat and current connection; its receipt time is the time confirmation was recorded. |
+| Gmail Sent view | Live provider messages fetched when requested; these are distinct from the local receipt inventory. |
+| Reply/follow-up watch | Recorded watch/check/delivery state; a waiting or expired watch does not prove that nobody replied. |
+| Preferences and actions | Current permission and policy state; image and writing provider readiness is checked when those actions are requested. |
+
+The capability description explains View drafts, Sent, popup/canvas composition, manual and Agent-assisted writing, image attachments/generation, the reviewed Send flow, and existing follow-up controls. Mail subjects, source reasons, and other user content remain data rather than system instructions.
+
+Automatic Cloud model context is limited to the current private owner Chat with the current capability snapshot and unrestricted Knowledge context. It is suppressed for participant contexts and restricted/off/project Knowledge scopes. Browser-supplied Gmail state cannot replace the server projection. Explicit Gmail tools and owner UI reads continue to use their existing independent grants.
+
+The supported stateless HomeServer delegation route receives at most two compact summaries through its existing surface-event contract. These carry work counts, readiness, preferences, freshness, and coverage, without recipients, subjects, bodies, or the full workspace object. They are added only to the outgoing inference payload, after the canonical Chat context was captured for persistence. Restricted Knowledge and participant contexts omit them. Legacy stateful delegation is not represented as receiving this new context. No HomeServer repository change or new remote protocol is required.
+
+The exact-message writing broker remains isolated to the original message or selected saved draft, current owner direction, and existing email Soul. Broad mailbox context is not inserted into an unrelated outgoing email.
+
+### Additional acceptance gates
+
+- View drafts remains visible above a long inbox report and opens the existing private queue.
+- Sent shows actual mailbox messages, pages correctly, opens styled content, and preserves its selected page during inbox refresh.
+- Current grant, OAuth, account, Chat, and participant changes invalidate retained mailbox content and references.
+- Cloud context, Top of Mind, and the popup share verified work state with explicit coverage; unavailable data is not reported as zero work or a successful outcome.
+- Supported HomeServer delegation receives only the bounded server summary, without changing saved history or broadening restricted Knowledge scope.
+- Desktop/phone screenshots and existing composer, send, voice, and shared Chat regressions pass.
+
+The added focused fixtures are `tests/agent-email-sent-v1.php`, `tests/agent-gmail-workspace-context-v1.php`, `tests/agent-gmail-homeserver-context-v1.php`, and `tests/gmail-sent-browser.mjs`. Final counts and exact-head workflow results are recorded in the pull request after validation.

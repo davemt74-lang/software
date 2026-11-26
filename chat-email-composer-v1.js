@@ -690,7 +690,7 @@
     const heading = node('div');heading.append(node('small','Gmail'));
     state.title = node('h2','Compose email');state.title.id = 'vp3EmailComposeTitle';state.title.tabIndex = -1;heading.append(state.title);
     const toolbar = node('div','','vp3-email-compose-toolbar');
-    state.listButton = button('Needs review',() => navigate(state,() => void openDrafts({surface:state.surface,replace:true})));
+    state.listButton = button('View drafts',() => navigate(state,() => void openDrafts({surface:state.surface,replace:true})));
     state.newButton = button('+ New',() => navigate(state,() => void openCompose({surface:state.surface,replace:true})));
     state.newButton.setAttribute('aria-label','Compose another new email');
     state.surfaceButton = button(surface === 'canvas' ? 'Pop out' : 'Open in canvas',() => changeSurface(state,state.surface === 'canvas' ? 'popup' : 'canvas'));
@@ -948,7 +948,7 @@
   }
   async function openDrafts(options = {}) {
     const state = await start(options);if (!state) return false;
-    state.title.textContent = 'Needs review';state.list.hidden = false;
+    state.title.textContent = 'Drafts';state.list.hidden = false;
     state.queuePage = 0;state.queueCursors = [null];state.queueNextCursor = null;
     const top = node('div','','vp3-email-compose-queue-top');
     state.queueTotals = node('div','','vp3-email-compose-queue-totals');state.queueTotals.setAttribute('aria-live','polite');
@@ -1000,8 +1000,10 @@
     if (typeof text !== 'string' || !sameScope(context,scope(true))) return null;
     const requested = text.trim();
     const command = requested.replace(/^(?:(?:please\s+)|(?:(?:can|could|would) you\s+))+/iu,'').replace(/[.!?]+$/u,'').trim();
-    if (/^(?:show|open|list|review)(?: me)?(?: my| the)?(?: gmail| email)? (?:drafts|draft queue|needs review(?: queue)?)$/iu.test(command))
+    if (/^(?:show|open|list|view|review)(?: me)?(?: my| the)?(?: gmail| email)? (?:drafts|draft queue|needs review(?: queue)?)$/iu.test(command))
       return Object.freeze({kind:'queue',requested});
+    if (/^(?:show|open|list|view)(?: me)?(?: my| the)?(?: gmail)? sent (?:emails?|mail|messages?)$/iu.test(command))
+      return Object.freeze({kind:'sent',requested});
     const selection = selectedDraft();
     if (!selection) return null;
     if (/^save (?:it|(?:(?:this|the|my|current) )?(?:email )?draft)$/iu.test(command))
@@ -1027,15 +1029,25 @@
     const currentMatch = matchInstruction(text,context);
     if (!currentMatch || currentMatch.kind !== match.kind || currentMatch.instruction !== match.instruction)
       return rejected('Select the exact email draft before applying this instruction.');
-    if (match.kind === 'queue') {
+    if (match.kind === 'queue' || match.kind === 'sent') {
       const state = active;
       if (state && current(state) && (state.busy || state.uploading)) return rejected('Wait for the current email action to finish.');
+      const open = async () => {
+        if (!sameScope(context,scope(true))) return false;
+        if (match.kind === 'queue') return openDrafts({surface:state?.surface || 'canvas',replace:true});
+        const sent = window.VP3AgentActivityHub?.openGmailSent;
+        if (typeof sent !== 'function') return false;
+        if (state && current(state)) release(state,{rememberEdits:false});
+        return sent(context);
+      };
       if (state && current(state) && dirty(state)) {
-        navigate(state,() => void openDrafts({surface:state.surface,replace:true}));
-        return rejected('Choose how to handle your unsaved email changes before opening Needs review.');
+        navigate(state,() => void open());
+        return rejected('Choose how to handle your unsaved email changes before opening '+(match.kind === 'sent' ? 'Sent.' : 'View drafts.'));
       }
-      const ok = await openDrafts({surface:state?.surface || 'canvas',replace:true});
-      return {handled:true,ok,message:ok ? 'Opened the Gmail draft review queue.' : 'The draft review queue could not be opened. Your instruction is kept.'};
+      const ok = await open();
+      return {handled:true,ok,message:match.kind === 'sent'
+        ? ok ? 'Opened Gmail Sent.' : 'Gmail Sent could not be opened. Your instruction is kept.'
+        : ok ? 'Opened the Gmail draft review queue.' : 'The draft review queue could not be opened. Your instruction is kept.'};
     }
     if (!sameSelection(match.selection)) return rejected('The selected draft changed. Review its current version, then repeat your instruction.');
     const state = active;

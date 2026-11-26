@@ -5434,13 +5434,13 @@
       emailInstructionTurn = turn;send.disabled = true;input.disabled = true;
       if (inputMode === 'voice') stopVoiceRecognition();
       try {
-        if (emailInstruction.kind === 'queue' && emailScope.conversation_id === 0) {
+        if (['queue','sent'].includes(emailInstruction.kind) && emailScope.conversation_id === 0) {
           // Chat initialization owns its own async lock and requires busy=false.
           // The email turn token prevents a competing submit during that wait.
           const ensured = await ensureConversationPa3();
           if (!currentEmailIdentity()) return;
           if (!Number.isSafeInteger(ensured) || ensured < 1 || ensured !== Number(conversationId || 0)) {
-            showChatTurnNotice('The private Chat could not be opened. Your text is kept; try opening the Gmail review queue again.');
+            showChatTurnNotice('The private Chat could not be opened. Your text is kept; try opening the Gmail view again.');
             return;
           }
           emailScope.conversation_id = ensured;

@@ -284,14 +284,14 @@ for(const voiceFailure of ['offline','rejected','network']){
  assert.equal(f.ctx.input.value,'A separate typed question');assert.equal(f.drafts.get(42),'A separate typed question');
  assert.equal(f.calls,0);checks+=3;
 }
-{
- const f=fixture();f.ctx.conversationId=0;f.ctx.input.value='Show my email drafts';let creates=0,handled=0;
+for(const viewKind of ['queue','sent']){
+ const f=fixture();f.ctx.conversationId=0;f.ctx.input.value=viewKind==='sent'?'Show my sent emails':'Show my email drafts';let creates=0,handled=0;
  f.ctx.initializingConversationPa3=null;f.ctx.window.clearTimeout=()=>{};
  vm.runInContext(chatFunction('ensureConversationPa3'),f.ctx);
  f.reply(async payload=>{assert.equal(payload.action,'new');creates++;return {ok:true,conversation_id:73};});
- f.ctx.window.VP3EmailComposerV1={matchInstruction:()=>({kind:'queue'}),handleChatInstruction:async(text,scope)=>{
+ f.ctx.window.VP3EmailComposerV1={matchInstruction:()=>({kind:viewKind}),handleChatInstruction:async(text,scope)=>{
   handled++;assert.equal(scope.conversation_id,73);assert.equal(f.ctx.busy,true);checks+=2;
-  return {handled:true,ok:true,message:'Opened the email review queue.'};
+  return {handled:true,ok:true,message:'Opened the Gmail view.'};
  }};
  const pending=f.ctx.submit(f.ctx.input.value);
  await f.ctx.submit(f.ctx.input.value);await pending;

@@ -475,6 +475,10 @@ function agent_surface_v131_comparison_context_items(?array $observations): arra
 function agent_surface_v131_context_items(array $context): array
 {
     $safe=agent_surface_v131_sanitize($context);
+    // The workspace projection is rehydrated below; browser events cannot supply it.
+    $safe['events']=array_values(array_filter($safe['events'],static fn(array $event):bool=>
+        ($event['source']??'')!=='gmail_workspace_context' && ($event['event_kind']??'')!=='gmail_workspace'
+        && !str_starts_with((string)($event['id']??''),'gmail-workspace-')));
     try{
         $pdo=db();$user=current_user();
         if($pdo&&is_array($user)){
@@ -494,6 +498,19 @@ function agent_surface_v131_context_items(array $context): array
         else unset($safe['working_context_ref']);
     }
     unset($safe['screen_observations']);
+    if($safe['surface']==='chat'&&isset($pdo,$user)&&$pdo&&is_array($user)){
+        try{
+            require_once __DIR__.'/agent-gmail-workspace-context-v1.php';
+            require_once __DIR__.'/studio-participants.php';
+            $participants=$safe['participants'];
+            if(studio_participants_schema_ready())$participants=studio_participants_context($pdo,$user,(int)$safe['conversation_id'],0);
+            $capabilities=vp3_capability_current_v1($user);
+            if(empty($participants['count'])&&$capabilities!==null){
+                $gmail=agent_gmail_workspace_model_item_v1($pdo,$user,(int)$capabilities['agent_id'],(int)$safe['conversation_id']);
+                if($gmail!==null)$items[]=$gmail;
+            }
+        }catch(Throwable $error){/* Optional private context fails closed. Explicit Gmail tools recheck their own authority. */}
+    }
     $browserShareText='';
     $browserShareId=agent_surface_v131_browser_share_id($safe);
     if($browserShareId!==''&&function_exists('vp3_browser_share_agent_context_v2020')){
