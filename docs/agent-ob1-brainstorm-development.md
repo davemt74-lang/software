@@ -61,6 +61,10 @@ byte-matched canonical receipts; unchanged-context suppression; actual OB1 model
 handoff and admission; stale/malformed/cross-owner rejection; SQLite/MySQL and
 existing runtime/UI regression coverage. The new end-to-end gate has 22 additional
 checks after the 107-check Canvas fixture and runs in SQLite and native MySQL.
+Cold status requests explicitly load the specialist catalog. A domain-only
+installation can omit workflow storage without failing its own report reader.
+Fresh creative exploration yields to ready Media invitations; aged creative work
+receives a bounded promotion without outranking urgent specialist follow-through.
 The existing supervisor, tools, source, Top of Mind and live-context gates remain
 part of the consolidated CI. Release certification still requires GitHub checks.
 

@@ -212,6 +212,7 @@ function vp3_brainstorm_result_current_v1(PDO $pdo,array $user,array $binding,ar
 /** Return one receipt-verified, currently authorized creative report to OB1. */
 function vp3_brainstorm_report_v1(PDO $pdo,array $user,array $binding): ?array
 {
+    if(!function_exists('agent_job_engine_schema_ready_v1900')||!agent_job_engine_schema_ready_v1900($pdo))return null;
     $sqlite=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite';$binary=$sqlite?'BLOB':'BINARY';
     $tool="JSON_EXTRACT(CASE WHEN JSON_VALID(r.goal) THEN r.goal ELSE '{}' END,'$.tool')";
     if(!$sqlite)$tool="JSON_UNQUOTE($tool)";

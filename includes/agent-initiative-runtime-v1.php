@@ -53,6 +53,7 @@ function vp3_initiative_runtime_runs_v1(PDO $pdo,int $uid,int $agentId,array $po
     $agedCutoff=time()-120;
     $priority=$pending?"CASE
         WHEN ".$value('$.followthrough')." IS NOT NULL THEN 0
+        WHEN $lane='brainstorm' THEN CASE WHEN ($oldest+0)<=$agedCutoff THEN 8 ELSE 10 END
         WHEN ($oldest+0)<=$agedCutoff THEN 1
         WHEN r.source_key LIKE 'coordination:%' AND ".$value('$.coordination_route.specialist')."='casual' THEN 9
         WHEN r.source_key LIKE 'connected-sites-scan:%' THEN 9
@@ -159,6 +160,7 @@ function vp3_initiative_runtime_assessment_rows_v1(PDO $pdo,int $owner,int $agen
 
 function vp3_initiative_runtime_assessment_v1(array $row): ?array
 {
+    require_once __DIR__.'/agent-initiative-specialist-registry-v1.php';
     $failed=$row['status']==='failed';
     if(!in_array($row['status'],['completed','failed'],true)||$row['action_status']!==$row['status']
         ||$row['error_class']!==($failed?'assessment_unverified':'')||!is_string($row['result_json'])

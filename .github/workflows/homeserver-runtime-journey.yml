@@ -235,6 +235,7 @@ jobs:
       - name: Connected Initiative in normal Agent Chat
         run: |
           php tests/agent-initiative-roles-v1.php
+          php tests/agent-initiative-assessment-bootstrap-v1.php
           php tests/agent-initiative-brainstorm-v1.php
           php tests/agent-initiative-brainstorm-pipeline-v1.php
           php tests/agent-initiative-brainstorm-specialist-v1.php

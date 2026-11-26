@@ -465,7 +465,7 @@ function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array
         if(($payload['coordination_route']['specialist']??null)==='transcripts'&&!isset($payload['followthrough']))$priority=8;
         if(in_array($payload['coordination_route']['specialist']??null,['casual','curiosity'],true))$priority=1;
         if(($payload['tool']??null)==='connected-sites.scan')$priority=6;
-        if(($payload['tool']??null)==='brainstorm.explore')$priority=1;
+        if(($payload['tool']??null)==='brainstorm.explore')$priority=0;
         $pdo->prepare('UPDATE agent_workflow_runs SET work_priority=? WHERE id=? AND owner_user_id=?')->execute([$priority,$run,$uid]);
     }
     $pdo->prepare("INSERT INTO agent_workflow_actions
