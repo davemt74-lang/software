@@ -277,12 +277,23 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
 /** Insert one ordinary owner Chat delivery; credentials/media URLs never enter its context. */
 function vp3_phone_workspace_delivery_v1(PDO $pdo,array $call,string $kind,string $eventKey,string $text,array $extra=[]): array
 {
-    if(!in_array($kind,['call','voicemail'],true)||!preg_match('/^[a-zA-Z0-9:_.-]{1,145}$/D',$eventKey))throw new InvalidArgumentException('Invalid phone delivery.');
+    if(!in_array($kind,['call','voicemail','scheduled_outcome'],true)||!preg_match('/^[a-zA-Z0-9:_.-]{1,145}$/D',$eventKey))throw new InvalidArgumentException('Invalid phone delivery.');
     return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$call,$kind,$eventKey,$text,$extra){
         $owner=(int)$call['owner_user_id'];$q=$pdo->prepare('SELECT id FROM users WHERE id=? AND is_active=1'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$owner]);if(!$q->fetchColumn())vp3_phone_workspace_error_v1();
-        $q=$pdo->prepare('SELECT * FROM phone_browser_deliveries_v1 WHERE owner_user_id=? AND event_key=?');$q->execute([$owner,$eventKey]);$old=$q->fetch(PDO::FETCH_ASSOC);if($old&&($call['transport_kind']??'')==='managed_callback'&&((int)$old['conversation_id']!==(int)($call['conversation_id']??0)||(int)$old['chat_agent_id']!==(int)($call['chat_agent_id']??0)))vp3_phone_workspace_error_v1('managed_report_scope_changed',409,'The managed call’s original conversation changed.');if($old)return ['message_id'=>(int)$old['chat_message_id'],'conversation_id'=>(int)$old['conversation_id'],'chat_agent_id'=>(int)$old['chat_agent_id']];
-        $cid=(int)($call['conversation_id']??0);$aid=(int)($call['chat_agent_id']??0);$managed=($call['transport_kind']??'')==='managed_callback';$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? AND COALESCE(user_agent_id,0)=?');$q->bindValue(1,$cid,PDO::PARAM_INT);$q->bindValue(2,$owner,PDO::PARAM_INT);$q->bindValue(3,$aid,PDO::PARAM_INT);$q->execute();
-        if(!$q->fetchColumn()){if($managed)vp3_phone_workspace_error_v1('managed_report_scope_changed',409,'The managed call’s original conversation is unavailable.');$aid=0;$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE user_id=? AND user_agent_id IS NULL ORDER BY updated_at DESC,id DESC LIMIT 1');$q->execute([$owner]);$cid=(int)$q->fetchColumn();
+        $q=$pdo->prepare('SELECT * FROM phone_browser_deliveries_v1 WHERE owner_user_id=? AND event_key=?');
+        $q->execute([$owner,$eventKey]);
+        $old=$q->fetch(PDO::FETCH_ASSOC);
+        $strictChat=$kind==='scheduled_outcome'||($call['transport_kind']??'')==='managed_callback';
+        $scopeError=$kind==='scheduled_outcome'?'phone_conversation_changed':'managed_report_scope_changed';
+        if($old){
+            if($strictChat&&((int)$old['conversation_id']!==(int)($call['conversation_id']??0)
+                ||(int)$old['chat_agent_id']!==(int)($call['chat_agent_id']??0))){
+                vp3_phone_workspace_error_v1($scopeError,409,'The original call conversation changed.');
+            }
+            return ['message_id'=>(int)$old['chat_message_id'],'conversation_id'=>(int)$old['conversation_id'],'chat_agent_id'=>(int)$old['chat_agent_id']];
+        }
+        $cid=(int)($call['conversation_id']??0);$aid=(int)($call['chat_agent_id']??0);$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE id=? AND user_id=? AND COALESCE(user_agent_id,0)=?');$q->bindValue(1,$cid,PDO::PARAM_INT);$q->bindValue(2,$owner,PDO::PARAM_INT);$q->bindValue(3,$aid,PDO::PARAM_INT);$q->execute();
+        if(!$q->fetchColumn()){if($strictChat)vp3_phone_workspace_error_v1($scopeError,409,'The original call conversation is unavailable.');$aid=0;$q=$pdo->prepare('SELECT id FROM chat_conversations WHERE user_id=? AND user_agent_id IS NULL ORDER BY updated_at DESC,id DESC LIMIT 1');$q->execute([$owner]);$cid=(int)$q->fetchColumn();
             if(!$cid){$pdo->prepare("INSERT INTO chat_conversations(user_id,user_agent_id,title,created_at,updated_at) VALUES (?,NULL,'Phone',?,?)")->execute([$owner,gmdate('Y-m-d H:i:s'),gmdate('Y-m-d H:i:s')]);$cid=(int)$pdo->lastInsertId();}}
         $context=['phone_v1'=>['kind'=>$kind,'call_id'=>(string)$call['public_id']]];
         foreach(['voicemail_id','transcript_session_id','recording_refs','report','status','browser_route'] as $key)if(array_key_exists($key,$extra))$context['phone_v1'][$key]=$extra[$key];

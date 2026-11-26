@@ -7,7 +7,7 @@ function vp3_operator_schedule_assignment_ready_v1(PDO $pdo): bool
         $pdo->query('SELECT owner_user_id,event_id,start_epoch,started_epoch,state,provider_sid FROM phone_operator_carrier_attempts_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,event_id,contact_id,agent_id,number_id,conversation_id,chat_agent_id,event_revision,destination_hash,line_binding,enabled,revision FROM phone_operator_scheduled_assignments_v1 WHERE 1=0');
         $pdo->query('SELECT next_due_epoch FROM phone_operator_scheduled_assignments_v1 WHERE 1=0');
-        $pdo->query('SELECT owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id FROM phone_operator_occurrences_v1 WHERE 1=0');
+        $pdo->query('SELECT owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id,chat_notice_after FROM phone_operator_occurrences_v1 WHERE 1=0');
         return true;
     }catch(PDOException){return false;}
 }
@@ -42,6 +42,10 @@ function vp3_operator_schedule_assignment_install_v1(PDO $pdo,string $suffix): v
         if(schema_metadata_column_exists($pdo,'phone_operator_occurrences_v1',$column))continue;
         try{$pdo->exec("ALTER TABLE phone_operator_occurrences_v1 ADD COLUMN ".$column." BIGINT NOT NULL DEFAULT 0");}
         catch(PDOException $e){if(!schema_metadata_column_exists($pdo,'phone_operator_occurrences_v1',$column))throw $e;}
+    }
+    if(!schema_metadata_column_exists($pdo,'phone_operator_occurrences_v1','chat_notice_after')){
+        try{$pdo->exec('ALTER TABLE phone_operator_occurrences_v1 ADD COLUMN chat_notice_after BIGINT NOT NULL DEFAULT 0');}
+        catch(PDOException $e){if(!schema_metadata_column_exists($pdo,'phone_operator_occurrences_v1','chat_notice_after'))throw $e;}
     }
     // Historical rows can only be attributed when the exact original assignment still exists.
     $match='a.owner_user_id=phone_operator_occurrences_v1.owner_user_id AND a.event_id=phone_operator_occurrences_v1.event_id
