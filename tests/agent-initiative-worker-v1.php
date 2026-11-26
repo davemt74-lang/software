@@ -337,8 +337,11 @@ $withdrawn = initiative_worker_screen_capture($pdo,$user,9,'PRIVATE-WITHDRAWN-NO
 $pdo->prepare("INSERT INTO agent_screen_reviews_v1(owner_user_id,capture_id,state,note,updated_at) VALUES (1,?,'irrelevant','',?)")
     ->execute([$withdrawn['capture']['capture_id'],gmdate('Y-m-d\TH:i:s\Z')]);
 
-$screenEvidence = static fn() => vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),
-    !empty(vp3_initiative_policy_v1($user)['screen_enabled']));
+// This boundary suite owns screen evidence. A general creative starter can
+// independently exist without granting any screen/Knowledge access.
+$screenEvidence = static fn() => array_filter(vp3_initiative_evidence_v1($pdo,$user,new DateTimeImmutable('now',new DateTimeZone('UTC')),
+    !empty(vp3_initiative_policy_v1($user)['screen_enabled'])),
+    static fn(array $row):bool=>in_array($row['kind'],['screen_followup','workbench_review'],true));
 $screenCommand = static fn(string $command,int $conversationId = 42) => vp3_initiative_chat_v1($pdo,$user,$principal,
     ['conversation_id'=>$conversationId],$command,null);
 $screenRef = $screen['ref'];

@@ -126,11 +126,11 @@ function vp3_initiative_engagement_specialist_jobs_v1(array $engagement,array $h
     $scanAt=strtotime((string)($scans['at']??''))?:0;
     $assessment=$health['latest_assessment_run']??[];
     $verifiedAssessment=$health['last_assessment']??[];
-    $lanes=['app-suggestions'=>'app_suggestions','image-generator'=>'media_images'];
+    $lanes=['app-suggestions'=>'app_suggestions','image-generator'=>'media_images','brainstorm'=>'brainstorm'];
     $monitors=['gmail'=>'Monitoring Gmail findings','planning'=>'Monitoring planning changes','tasks'=>'Monitoring tasks and reminders',
         'media'=>'Monitoring new watch and listen findings','profile'=>'Monitoring verified visitor conversations and follow-ups'];
     $jobs=[];
-    foreach(['gmail','planning','tasks','media','profile','ob1','app-suggestions','coding','image-generator'] as $family){
+    foreach(['gmail','planning','tasks','media','profile','ob1','brainstorm','app-suggestions','coding','image-generator'] as $family){
         $own=$assignments[$family]??null;
         $lane=isset($lanes[$family])?($engagement['opportunity_checks'][$lanes[$family]]['assignment']??null):null;
         $work=$own??$lane??[];
@@ -164,7 +164,7 @@ function vp3_initiative_engagement_specialist_jobs_v1(array $engagement,array $h
         $runId=$work['run_id']??null;
         $at=$work['at']??'';
         $phase=$work['phase']??match($family){
-            'ob1'=>'coordinating','coding','app-suggestions','image-generator'=>'brainstorming',default=>'analyzing',
+            'ob1'=>'coordinating','brainstorm','coding','app-suggestions','image-generator'=>'brainstorming',default=>'analyzing',
         };
         $action=vp3_initiative_engagement_job_action_v1($family,$work,$phase);
         $record=['phase'=>$phase,'action'=>$action];
@@ -241,6 +241,7 @@ function vp3_initiative_engagement_job_action_v1(string $family,array $work,stri
         'tasks'=>'Review a task, list or reminder',
         'profile'=>'Review verified visitor conversations, calls and follow-ups',
         'media'=>($work['step']??null)==='youtube.playback_offer'?'Prepare a playback suggestion':'Review what was watched or played',
+        'brainstorm'=>'Explore ideas across permitted specialist briefs',
         'ob1'=>match($phase){
             'analyzing','reviewing'=>'Review current specialist findings','brainstorming'=>'Find useful next steps across the evidence',
             default=>'Coordinate decisions across specialist inputs',

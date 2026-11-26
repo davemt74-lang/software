@@ -9,6 +9,13 @@ require_once dirname(__DIR__).'/includes/agent-initiative-research-canvas-v1.php
 function pipeline_check(bool $ok,string $label): void {if(!$ok)throw new RuntimeException($label);echo "PASS $label\n";}
 function pipeline_reset(array $user): void {
     scope_command($user,17,170,'off');scope_command($user,17,170,'on');
+    // Isolate this executor suite from the independently tested creative lane.
+    vp3_initiative_in_scope_v1($user,17,static function()use($user):void{
+        $policy=vp3_initiative_policy_v1($user,17);
+        agent_brain_v122_upsert_system_memory($user,'initiative_sweep','opportunity-scheduling','Executor fixture context.',
+            ['conversation_id'=>$policy['conversation_id'],'revision'=>$policy['revision'],
+                'lanes'=>['brainstorm'=>['checked_at'=>time(),'state'=>'no_opportunity']]]);
+    });
     db()->exec("UPDATE agent_activity_state SET context_key='chat:170',details_json='{\"visible\":true,\"conversation_id\":170}',last_heartbeat_at=NOW() WHERE user_id=1;
         UPDATE chat_messages SET created_at='2000-01-01 00:00:00' WHERE conversation_id=170");
 }

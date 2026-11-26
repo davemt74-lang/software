@@ -1260,7 +1260,7 @@
     ['marketing','Marketing'],['commerce','Commerce'],['development','Agent Development'],['app-suggestions','App Suggestions'],
     ['eyes','Agent Eyes'],['operator','Operator'],['ob1','OB1'],['brainstorm','Brainstorming']
   ];
-  const debugOpportunityLanes = {research:'research',mission:'missions','app-suggestions':'app_suggestions','image-generator':'media_images'};
+  const debugOpportunityLanes = {research:'research',mission:'missions','app-suggestions':'app_suggestions','image-generator':'media_images',brainstorm:'brainstorm'};
   const debugCoverage = {ready:'Checked',limited:'Partially checked',unconfigured:'Source inactive',unavailable:'Could not check'};
   const debugHandoff = {working:'Preparing for Chat',queued:'Queued for Chat',waiting:'Ready for delivery',
     posted:'Posted in Chat',skipped:'Already handled',blocked:'Needs attention',unverified:'Delivery unverified'};

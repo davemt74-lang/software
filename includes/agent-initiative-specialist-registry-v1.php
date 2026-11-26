@@ -10,10 +10,11 @@ require_once __DIR__.'/agent-product-marketing-summary-v1.php';
 function vp3_initiative_tool_specialist_v1(string $tool): ?string
 {
     return match ($tool) {
+        'brainstorm.explore' => 'brainstorm',
         'tasks.read', 'tasks.lists.read' => 'tasks',
         'calendar.read', 'reminders.read' => 'planning',
         'artist.research', 'topic.research', 'knowledge.search' => 'research',
-        'youtube.playback_offer' => 'media',
+        'youtube.playback_offer', 'playlist.prepare' => 'media',
         'connected-sites.scan' => 'connected-sites',
         'canvas.prepare' => 'coding',
         'image.prepare', 'workbench.screen.review' => 'image-generator',
@@ -70,12 +71,13 @@ function vp3_initiative_specialist_catalog_v1(array $tools): array
         $catalog[$id]['report_sources'][] = $source;
     }
     $labels = [
+        'eyes'=>'Agent Eyes', 'app-suggestions'=>'App Suggestions',
         'research' => 'Research', 'image-generator' => 'Image Generator', 'coding' => 'Coding', 'mission' => 'Missions',
         'location' => 'Location Specialist', 'operator' => 'Operator Specialist', 'transcripts' => 'Transcripts', 'commerce' => 'Commerce', 'ob1' => 'OB1', 'brainstorm' => 'Brainstorming', 'development' => 'Agent Development',
     ];
     foreach ($labels as $id => $label) {
         $catalog[$id] ??= ['label' => $label, 'state' => match ($id) {
-            'ob1' => 'coordinator', 'development', 'location', 'operator' => 'owner_requested', default => 'no_ready_tool',
+            'ob1' => 'coordinator', 'eyes', 'development', 'location', 'operator' => 'owner_requested', default => 'no_ready_tool',
         }, 'report_sources' => [], 'ready_tools' => []];
     }
     foreach ($tools as $id => $tool) {

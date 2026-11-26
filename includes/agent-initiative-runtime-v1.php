@@ -53,6 +53,7 @@ function vp3_initiative_runtime_runs_v1(PDO $pdo,int $uid,int $agentId,array $po
     $agedCutoff=time()-120;
     $priority=$pending?"CASE
         WHEN ".$value('$.followthrough')." IS NOT NULL THEN 0
+        WHEN $lane='brainstorm' THEN CASE WHEN ($oldest+0)<=$agedCutoff THEN 8 ELSE 10 END
         WHEN ($oldest+0)<=$agedCutoff THEN 1
         WHEN r.source_key LIKE 'coordination:%' AND ".$value('$.coordination_route.specialist')."='casual' THEN 9
         WHEN r.source_key LIKE 'connected-sites-scan:%' THEN 9
@@ -101,7 +102,7 @@ function vp3_initiative_runtime_job_phase_v1(array $run): string
 {
     return match($run['progress_message']??null){
         'Assessing priorities across specialists.','Coordinating specialist findings.','Checking the plan and assigning eligible next steps.'=>'coordinating',
-        'Brainstorming useful opportunities.','Brainstorming a private Canvas concept.'=>'brainstorming',
+        'Exploring ideas across specialist briefs.','Brainstorming useful opportunities.','Brainstorming a private Canvas concept.'=>'brainstorming',
         'Researching the selected source.'=>'researching',
         'Presenting the verified result.'=>'presenting',
         'Reviewing specialist findings.','Connecting current specialist findings.'=>'reviewing',
@@ -159,6 +160,7 @@ function vp3_initiative_runtime_assessment_rows_v1(PDO $pdo,int $owner,int $agen
 
 function vp3_initiative_runtime_assessment_v1(array $row): ?array
 {
+    require_once __DIR__.'/agent-initiative-specialist-registry-v1.php';
     $failed=$row['status']==='failed';
     if(!in_array($row['status'],['completed','failed'],true)||$row['action_status']!==$row['status']
         ||$row['error_class']!==($failed?'assessment_unverified':'')||!is_string($row['result_json'])
@@ -182,7 +184,7 @@ function vp3_initiative_runtime_assessment_v1(array $row): ?array
     $discarded=filter_var($result['opportunities_discarded']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>8]]);
     $activityOmitted=filter_var($result['activity_sources_omitted']??null,FILTER_VALIDATE_INT,['options'=>['min_range'=>1,'max_range'=>8]]);
     $inputs=[];
-    foreach(['gmail','planning','tasks','media'] as $family){
+    foreach(array_keys(vp3_initiative_specialist_catalog_v1([])) as $family){
         $count=$result['initiative_tool_result']['output']['ob1_inputs'][$family]??null;
         if(is_array($count)&&((is_int($count['sources']??null)&&$count['sources']>0)
             ||(is_int($count['reports']??null)&&$count['reports']>0)))$inputs[]=$family;
@@ -461,6 +463,13 @@ function vp3_initiative_worker_health_v1(PDO $pdo,array $user,int $agentId,int $
                 // A history read cannot revoke an already verified policy or stop Chat from advancing work.
                 $health['assessment_read']='unavailable';
                 $health['assessment_diagnostic']=vp3_initiative_health_diagnostic_v1($error,'assessment_read',(int)$live['id'],$agentId,$cid);
+            }
+            try{
+                require_once __DIR__.'/agent-ob1-executive-v1.php';
+                $cycle=vp3_ob1_executive_cycle_v1($pdo,$live,$policy);
+                if($cycle!==null)$health['executive_cycle']=$cycle;
+            }catch(Throwable $error){
+                $health['executive_cycle_read']='unavailable';
             }
             $latest=true;
             $recent=vp3_initiative_runtime_runs_v1($pdo,(int)$live['id'],$agentId,$policy);
