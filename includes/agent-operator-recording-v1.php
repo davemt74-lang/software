@@ -34,7 +34,19 @@ function vp3_operator_recording_bind_call_v1(PDO $pdo,array $attempt,array $plan
     if(function_exists('vp3_phone_workspace_delivery_v1')){
         $label=isset($plan['owner_email_request_id'])?'Operator submitted a call to review pending Gmail work.':
             (isset($plan['opening'])?'Operator initiated a phone call.':'Scheduled Operator call submitted.');
-        $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$public,$label);
+        $extra=[];
+        if(!isset($plan['owner_email_request_id'])){
+            // Carrier I/O has completed. Re-read current evidence before explaining this call.
+            $q=$pdo->prepare('SELECT * FROM phone_operator_occurrences_v1 WHERE owner_user_id=? AND event_id=? AND start_epoch=?');
+            $q->execute([(int)$attempt['owner_user_id'],(int)$attempt['event_id'],(int)$attempt['start_epoch']]);$occurrence=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
+            $fresh=$occurrence?vp3_operator_current_request_v1($pdo,$occurrence,$now,$sid):[];
+            if(($fresh['reason']??'')==='eligible'){
+                $receipt=vp3_operator_question_receipt_v1($fresh['question_preparation']??[],$now);
+                if($receipt){$extra['question_preparation']=$receipt;$label.=' '.vp3_operator_question_receipt_text_v1($receipt);
+                    if($receipt['source_url']!=='')$label.=' Review the finding: '.$receipt['source_url'];}
+            }
+        }
+        $delivery=vp3_phone_workspace_delivery_v1($pdo,$call,'call','call:'.$public,$label,$extra);
         $pdo->prepare('UPDATE phone_browser_calls_v1 SET chat_message_id=? WHERE id=?')->execute([(int)$delivery['message_id'],(int)$call['id']]);
     }
     return $call;
