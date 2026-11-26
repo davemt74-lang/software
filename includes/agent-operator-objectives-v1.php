@@ -64,8 +64,12 @@ function vp3_operator_objectives_bind_v1(PDO $pdo,array $announced,int $now):voi
             if($peer===$call['peer_e164'])$rows[]=$r;
         }$q->closeCursor();
     }catch(PDOException $e){
-        // An optional agenda migration may not yet be installed. Do not run DDL or infer a source.
-        try{$pdo->query('SELECT contact_id,questions FROM phone_operator_agendas_v1 WHERE 1=0');}catch(PDOException){return;}throw $e;
+        // Optional agenda or CRM source migrations may not yet be installed. Do not run DDL or infer a source.
+        try{
+            $pdo->query('SELECT contact_id,questions FROM phone_operator_agendas_v1 WHERE 1=0');
+            $pdo->query('SELECT id,owner_user_id,phone,status FROM crm_contacts WHERE 1=0');
+        }catch(PDOException){return;}
+        throw $e;
     }
     $a=!$overflow&&count($rows)===1?$rows[0]:null;$state=$a?'bound':($overflow||$rows?'ambiguous':'none');
     $pdo->prepare('INSERT INTO phone_operator_call_agendas_v1(call_id,call_public_id,owner_user_id,agent_id,chat_agent_id,conversation_id,contact_id,agenda_revision,agenda_hash,call_binding,source_state,created_epoch) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)')
