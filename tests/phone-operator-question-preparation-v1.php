@@ -97,7 +97,7 @@ $pdo->prepare('INSERT INTO phone_operator_scheduled_assignments_v1(owner_user_id
 $pdo->prepare("INSERT INTO phone_operator_occurrences_v1(owner_user_id,event_id,start_epoch,end_epoch,assignment_revision,state,reason,observed_epoch,contact_id,conversation_id,chat_agent_id) VALUES(1,?,?,?,1,'prepared','awaiting_dispatch_checks',?,?,11,0)")
     ->execute([$eventId,$now-1,$now+599,$now,$ctx['contact']]);
 $row=$pdo->query('SELECT * FROM phone_operator_occurrences_v1')->fetch(PDO::FETCH_ASSOC);$current=vp3_operator_current_request_v1($pdo,$row,$now);
-c($current['reason']==='eligible'&&$current['question_preparation']['reviewed_count']===1&&str_contains($current['objectives'],'Ask who is attending.')&&!str_contains($current['objectives'],'Friday works.'),'real scheduled admission attaches pending questions and preserves the current objective');
+c($current['reason']==='eligible'&&$current['question_preparation']['reviewed_count']===1&&str_contains($current['objectives'],'Ask who is attending.')&&!str_contains($current['objectives'],'Friday works.'),'real scheduled admission attaches pending questions and preserves the current objective ('.$current['reason'].'; '.($current['question_preparation']['state']??'no preparation').')');
 $pdo->prepare('UPDATE phone_operator_contact_policies_v1 SET enabled=0 WHERE contact_id=?')->execute([$ctx['contact']]);
 c(vp3_operator_current_request_v1($pdo,$row,$now)['reason']==='owner_permission','reviewed findings cannot override owner permission');
 $pdo->prepare('UPDATE phone_operator_contact_policies_v1 SET enabled=1 WHERE contact_id=?')->execute([$ctx['contact']]);
@@ -150,7 +150,20 @@ $starts=0;$record=static function($method,$path,$fields)use(&$starts,$carrierSid
 c(str_contains($answer('confirm',['SpeechResult'=>'I agree'],null,$record),'input="speech"')&&$starts===1,'recording is confirmed before the scheduled conversation continues');
 $models=0;$spoken=$answer('turn1',['SpeechResult'=>'Who has confirmed?'],static function($speech,$history,$current)use(&$models):array{$models++;c(str_contains($current['objectives'],'Who will attend?')&&!str_contains($current['objectives'],'Which day works?'),'real model boundary receives only pending agenda questions');return ['ok'=>true,'answer'=>'Let us confirm who will attend.'];});
 c(str_contains($spoken,'Let us confirm who will attend.')&&$models===1,'an unchanged canonical preparation allows one verified reply');
-$withheld=$answer('turn2',['SpeechResult'=>'Please continue.'],static function()use($pdo,$device,&$models):array{$models++;$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_memory=0 WHERE device_id=?')->execute([$device]);return ['ok'=>true,'answer'=>'This late private reply must not be spoken.'];});
-c($withheld===vp3_phone_browser_hangup_v1()&&!str_contains($withheld,'late private reply')&&$models===2,'memory withdrawal during inference withholds late speech');
-$answer('turn2',['SpeechResult'=>'Please continue.'],static function()use(&$models):array{$models++;return ['ok'=>true,'answer'=>'replayed'];});c($models===2&&$sent===1,'a withheld reply cannot trigger another model turn or dial');
+$q=$pdo->prepare('SELECT analysis_json FROM artist_transcript_master_analysis_v237 WHERE session_id=?');$q->execute([(int)$ctx['job']['session_id']]);$originalAnalysis=$q->fetchColumn();
+foreach(['evidence','memory'] as $change){
+    $withheld=$answer('turn2',['SpeechResult'=>'Please continue.'],static function()use($pdo,$device,$ctx,$change,&$models):array{
+        $models++;
+        if($change==='memory')$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_memory=0 WHERE device_id=?')->execute([$device]);
+        else{$map=artist_listening_transcript_page_map(artist_listening_v172_segments($pdo,(int)$ctx['job']['session_id']));$master=artist_listening_v237_analysis_status($pdo,(int)$ctx['job']['session_id'],$map)['master'];transcription_deeper_review_item_v307($pdo,(int)$ctx['job']['session_id'],$master,'qa','qa-answer','unreviewed');}
+        return ['ok'=>true,'answer'=>'This late private reply must not be spoken.'];
+    });
+    c($withheld===vp3_phone_browser_hangup_v1()&&!str_contains($withheld,'late private reply'),$change.' change during inference withholds late speech');
+    $beforeReplay=$models;$answer('turn2',['SpeechResult'=>'Please continue.'],static function()use(&$models):array{$models++;return ['ok'=>true,'answer'=>'replayed'];});
+    c($models===$beforeReplay&&$sent===1,'a '.$change.'-withheld reply cannot trigger another model turn or dial');
+    // Fork the same post-turn-one fixture for the independent revocation scenario.
+    $pdo->prepare('DELETE FROM phone_voice_turns_v140 WHERE call_sid=? AND step_number=2')->execute([$carrierSid]);
+    $pdo->prepare('UPDATE artist_transcript_master_analysis_v237 SET analysis_json=? WHERE session_id=?')->execute([$originalAnalysis,(int)$ctx['job']['session_id']]);
+    $pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET holder_memory=1 WHERE device_id=?')->execute([$device]);
+}
 echo 'OPERATOR_QUESTION_PREPARATION=PASS ('.($checks-$before).' additional checks)'.PHP_EOL;
