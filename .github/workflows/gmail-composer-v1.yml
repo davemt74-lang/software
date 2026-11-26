@@ -9,6 +9,7 @@ on:
       - 'chat.php'
       - 'agent-activity-hub-v1.js'
       - 'agent-activity-hub-v1.css'
+      - 'agent-top-of-mind-v1.js'
       - 'api/chat-email-v1.php'
       - 'includes/*gmail*'
       - 'includes/*email*'
@@ -21,9 +22,14 @@ on:
       - 'includes/homeserver-agent-v025.php'
       - 'includes/ai-settings.php'
       - 'includes/agent-tool-json-v1.php'
+      - 'includes/agent-initiative-model-v1.php'
       - 'tests/*gmail*'
       - 'tests/*email*'
       - 'tests/agent-top-of-mind-session-http.mjs'
+      - 'tests/agent-top-of-mind-followthrough-v1.mjs'
+      - 'tests/agent-initiative-model-v1.php'
+      - 'tests/profile-owner-drafts-provider-v1.php'
+      - 'tests/paired-phone-provider-v1.php'
       - 'tests/fixtures/gmail-email-display-v1.php'
       - '.github/workflows/gmail-composer-v1.yml'
   push:
@@ -35,6 +41,7 @@ on:
       - 'chat.php'
       - 'agent-activity-hub-v1.js'
       - 'agent-activity-hub-v1.css'
+      - 'agent-top-of-mind-v1.js'
       - 'api/chat-email-v1.php'
       - 'includes/*gmail*'
       - 'includes/*email*'
@@ -47,9 +54,14 @@ on:
       - 'includes/homeserver-agent-v025.php'
       - 'includes/ai-settings.php'
       - 'includes/agent-tool-json-v1.php'
+      - 'includes/agent-initiative-model-v1.php'
       - 'tests/*gmail*'
       - 'tests/*email*'
       - 'tests/agent-top-of-mind-session-http.mjs'
+      - 'tests/agent-top-of-mind-followthrough-v1.mjs'
+      - 'tests/agent-initiative-model-v1.php'
+      - 'tests/profile-owner-drafts-provider-v1.php'
+      - 'tests/paired-phone-provider-v1.php'
       - 'tests/fixtures/gmail-email-display-v1.php'
       - '.github/workflows/gmail-composer-v1.yml'
   workflow_dispatch:
@@ -106,6 +118,8 @@ jobs:
           php tests/agent-connection-email-writing-v1.php
           php tests/agent-connection-gmail-v1.php
           php tests/agent-connection-gmail-inbox-initial-summary-v1.php
+          php tests/profile-owner-drafts-provider-v1.php
+          php tests/paired-phone-provider-v1.php
           php tests/agent-initiative-model-v1.php
       - name: PHP syntax and production entry points
         run: |

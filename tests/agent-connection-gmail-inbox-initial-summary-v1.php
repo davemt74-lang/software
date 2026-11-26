@@ -374,4 +374,11 @@ foreach([[],['service'=>'conversation'],['service'=>'initiative','background'=>f
     check_gmail_summary(empty($blocked['ok'])&&count($GLOBALS['gmailSummaryDispatch'])===$callCount,
         'an automatic follow-up cannot bypass the background Initiative service accounting boundary');
 }
+// Profile and Paired Phone also compose this real broker fixture. Preserve
+// their shared ledger, but finish Gmail's independent temporary admission
+// window before the next protocol suite starts. The real 30/min limit stays.
+$gmailRateWindow=ai_v100_runtime_dir().'/rate-'.(int)$owner['id'].'-chat.json';
+if(is_file($gmailRateWindow)&&!unlink($gmailRateWindow)){
+    throw new RuntimeException('Unable to complete the Gmail fixture admission window.');
+}
 echo 'GMAIL_INBOX_INITIAL_SUMMARY_V1=PASS'.PHP_EOL;
