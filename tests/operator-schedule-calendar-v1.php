@@ -147,3 +147,24 @@ $answer('confirm',['Digits'=>'1']);
 $answer('status',['CallStatus'=>'completed']);
 c($read()['last_occurrence']['reason']==='answer_consented'&&$read()['last_occurrence']['state']==='ended','final status preserves the recipient decision');
 echo "PASS signed carrier outcomes and hangup before consent\n";
+
+require_once dirname(__DIR__).'/includes/agent-operator-outcome-chat-v1.php';
+$deliver=static fn(int $at)=>vp3_operator_outcome_chat_tick_v1($pdo,$at);
+$notice='scheduled:'.$eventId.':'.$callTime;
+$messages=$pdo->prepare('SELECT m.* FROM phone_browser_deliveries_v1 d JOIN chat_messages m ON m.id=d.chat_message_id WHERE d.owner_user_id=1 AND d.event_key=?');
+$pdo->prepare('UPDATE chat_conversations SET user_id=2 WHERE id=11')->execute();
+c($deliver($callTime+10)===['delivered'=>0,'deferred'=>1,'errors'=>0],'a changed original Chat defers delivery');
+$messages->execute([$notice]);
+c(!$messages->fetch(),'no private notice was redirected to a fallback Chat');
+$pdo->exec('UPDATE chat_conversations SET user_id=1 WHERE id=11');
+c($deliver($callTime+11)['delivered']===0,'deferred receipts honor their retry time');
+$pdo->exec('ALTER TABLE chat_messages RENAME TO chat_messages_fixture_unavailable');
+try{c($deliver($callTime+311)['errors']===1,'storage failure retains the receipt for another worker run');}
+finally{$pdo->exec('ALTER TABLE chat_messages_fixture_unavailable RENAME TO chat_messages');}
+c($deliver($callTime+612)['delivered']===1&&array_sum($deliver($callTime+613))===0,'closed-browser delivery recovers and repeat workers send once');
+$messages->execute([$notice]);
+$posted=$messages->fetchAll(PDO::FETCH_ASSOC);
+c(count($posted)===1&&(int)$posted[0]['conversation_id']===11&&$posted[0]['role']==='assistant'
+    &&str_contains($posted[0]['message'],'agreed')&&!str_contains($posted[0]['message'],$plan['objectives'])
+    &&!str_contains($posted[0]['context_json'],$carrierForm['CallSid']),'the original Chat receives the outcome without objectives or provider identifiers');
+echo "PASS server-side scheduled call outcome delivery, scope changes, recovery and deduplication\n";

@@ -14,6 +14,11 @@ try{
         exit(0);
     }
     $counts=vp3_operator_occurrences_tick_v1(db(),time());
+    require_once __DIR__.'/includes/agent-operator-outcome-chat-v1.php';
+    $notices=vp3_operator_outcome_chat_tick_v1(db(),time());
+    $counts['chat_delivered']=$notices['delivered'];
+    $counts['chat_deferred']=$notices['deferred'];
+    $counts['errors']+=$notices['errors'];
     vp3_phone_worker_observe_v1(true,$counts['errors']?'failed':'completed');
     echo json_encode($counts,JSON_THROW_ON_ERROR).PHP_EOL;
     exit($counts['errors']?1:0);
