@@ -22,7 +22,7 @@ function vp3_initiative_tool_specialist_v1(string $tool): ?string
         'products.content.prepare', 'workbench.product.review' => 'commerce',
         'workbench.marketing.review' => 'marketing',
         'initiative.plan', 'coordination.review', 'work.prepare_private', 'chat.check_in', 'brain.read',
-        'live.context.read' => 'brainstorm',
+        'live.context.read' => 'ob1',
         default => null,
     };
 }
@@ -46,7 +46,7 @@ function vp3_initiative_goal_specialist_v1(array $goal): ?string
                 'casual:email' => 'gmail',
                 'casual:today' => 'planning',
                 'casual:resume' => 'tasks',
-                default => 'brainstorm',
+                default => 'ob1',
             };
         }
         $specialist = $goal['coordination_work']['specialist'] ?? $route;
@@ -71,11 +71,11 @@ function vp3_initiative_specialist_catalog_v1(array $tools): array
     }
     $labels = [
         'research' => 'Research', 'image-generator' => 'Image Generator', 'coding' => 'Coding', 'mission' => 'Missions',
-        'location' => 'Location Specialist', 'operator' => 'Operator Specialist', 'transcripts' => 'Transcripts', 'commerce' => 'Commerce', 'brainstorm' => 'ob1', 'development' => 'Agent Development',
+        'location' => 'Location Specialist', 'operator' => 'Operator Specialist', 'transcripts' => 'Transcripts', 'commerce' => 'Commerce', 'ob1' => 'OB1', 'brainstorm' => 'Brainstorming', 'development' => 'Agent Development',
     ];
     foreach ($labels as $id => $label) {
         $catalog[$id] ??= ['label' => $label, 'state' => match ($id) {
-            'brainstorm' => 'coordinator', 'development', 'location', 'operator' => 'owner_requested', default => 'no_ready_tool',
+            'ob1' => 'coordinator', 'development', 'location', 'operator' => 'owner_requested', default => 'no_ready_tool',
         }, 'report_sources' => [], 'ready_tools' => []];
     }
     foreach ($tools as $id => $tool) {

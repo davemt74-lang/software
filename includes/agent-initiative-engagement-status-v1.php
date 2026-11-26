@@ -130,7 +130,7 @@ function vp3_initiative_engagement_specialist_jobs_v1(array $engagement,array $h
     $monitors=['gmail'=>'Monitoring Gmail findings','planning'=>'Monitoring planning changes','tasks'=>'Monitoring tasks and reminders',
         'media'=>'Monitoring new watch and listen findings','profile'=>'Monitoring verified visitor conversations and follow-ups'];
     $jobs=[];
-    foreach(['gmail','planning','tasks','media','profile','brainstorm','app-suggestions','coding','image-generator'] as $family){
+    foreach(['gmail','planning','tasks','media','profile','ob1','app-suggestions','coding','image-generator'] as $family){
         $own=$assignments[$family]??null;
         $lane=isset($lanes[$family])?($engagement['opportunity_checks'][$lanes[$family]]['assignment']??null):null;
         $work=$own??$lane??[];
@@ -152,7 +152,7 @@ function vp3_initiative_engagement_specialist_jobs_v1(array $engagement,array $h
                 ?'Checking incoming mail for changes':'Analyzing email contents','at'=>$activity['at'],'expires_at'=>$activity['expires_at']];
             continue;
         }
-        if($family==='brainstorm'&&($work['status']??null)!=='executing'&&($assessment['run_id']??0)>0){
+        if($family==='ob1'&&($work['status']??null)!=='executing'&&($assessment['run_id']??0)>0){
             $work=['status'=>match($assessment['status']??null){
                 'retry_scheduled'=>'approved','completed'=>'completed','queued'=>'queued','paused'=>'paused',
                 'interrupted'=>'interrupted','failed'=>'failed',default=>'unknown',
@@ -164,7 +164,7 @@ function vp3_initiative_engagement_specialist_jobs_v1(array $engagement,array $h
         $runId=$work['run_id']??null;
         $at=$work['at']??'';
         $phase=$work['phase']??match($family){
-            'brainstorm'=>'coordinating','coding','app-suggestions','image-generator'=>'brainstorming',default=>'analyzing',
+            'ob1'=>'coordinating','coding','app-suggestions','image-generator'=>'brainstorming',default=>'analyzing',
         };
         $action=vp3_initiative_engagement_job_action_v1($family,$work,$phase);
         $record=['phase'=>$phase,'action'=>$action];
@@ -172,7 +172,7 @@ function vp3_initiative_engagement_specialist_jobs_v1(array $engagement,array $h
         if(is_string($at)&&$at!=='')$record['at']=$at;
         if(!empty($work['input_specialists']))$record['inputs']=$work['input_specialists'];
         elseif(($work['origin_specialist']??null)==='media')$record['inputs']=['media'];
-        if($family==='brainstorm'&&($verifiedAssessment['run_id']??null)===$runId&&!empty($verifiedAssessment['inputs'])){
+        if($family==='ob1'&&($verifiedAssessment['run_id']??null)===$runId&&!empty($verifiedAssessment['inputs'])){
             $record['inputs']=$verifiedAssessment['inputs'];
         }
         if($status==='executing'&&(strtotime($work['lease_expires_at']??'')?:0)>$now){
@@ -218,9 +218,9 @@ function vp3_initiative_engagement_specialist_jobs_v1(array $engagement,array $h
                 'chat'=>'Delivered a verified Chat update','canvas_draft'=>'Saved a private Canvas draft',
                 'canvas_proposal'=>'Prepared a Canvas proposal','image_proposal'=>'Prepared an image concept',
                 'top_of_mind'=>'Saved a specialist finding to Top of Mind','private_preparation'=>'Saved a private preparation',
-                default=>$family==='brainstorm'?'Finished coordinating verified inputs':'Finished the verified assignment',
+                default=>$family==='ob1'?'Finished coordinating verified inputs':'Finished the verified assignment',
             };
-            $jobs[$family]=['state'=>'completed','phase'=>$family==='brainstorm'?'coordinating':'presenting','action'=>$action]
+            $jobs[$family]=['state'=>'completed','phase'=>$family==='ob1'?'coordinating':'presenting','action'=>$action]
                 +($destination!==null?['destination'=>$destination]:[])
                 +(is_int($post['message_id']??null)&&$post['message_id']>0?['message_id'=>$post['message_id']]:[])
                 +(is_string($post['at']??null)?['at'=>$post['at']]:[])+$record;
@@ -241,7 +241,7 @@ function vp3_initiative_engagement_job_action_v1(string $family,array $work,stri
         'tasks'=>'Review a task, list or reminder',
         'profile'=>'Review verified visitor conversations, calls and follow-ups',
         'media'=>($work['step']??null)==='youtube.playback_offer'?'Prepare a playback suggestion':'Review what was watched or played',
-        'brainstorm'=>match($phase){
+        'ob1'=>match($phase){
             'analyzing','reviewing'=>'Review current specialist findings','brainstorming'=>'Find useful next steps across the evidence',
             default=>'Coordinate decisions across specialist inputs',
         },

@@ -42,7 +42,7 @@ function brainstorm_pipeline_model(?callable $during=null): Closure
             &&$packet['budget']['max_opportunities']===8&&$packet['budget']['max_jobs']===3,
             'the real governed model receives independent thought and execution bounds outside database locks');
         $active=db()->query("SELECT progress_message FROM agent_workflow_runs WHERE capability_key='initiative.plan' AND status='executing' ORDER BY id DESC LIMIT 1")->fetchColumn();
-        canvas_pipeline_check($active==='Brainstorming useful opportunities.','the truthful Brainstorm progress exists only on the actually leased assessment');
+        canvas_pipeline_check($active==='Assessing priorities across specialists.','the truthful Brainstorm progress exists only on the actually leased assessment');
         if($during)$during();
         return json_encode(['jobs'=>[['tool'=>'work.prepare_private','primary'=>'task:20001','refs'=>['task:20001'],
             'focus'=>'Prepare options for the recurring review','report'=>false]],'opportunities'=>[

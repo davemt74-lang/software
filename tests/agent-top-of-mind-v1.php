@@ -88,8 +88,8 @@ feed_check($assessmentFeed['coordination']['phase']==='analyzing'&&$assessment['
     'a claimed assessment begins with analysis and no fabricated completion percentage');
 $assessed=vp3_initiative_execute_v1($pdo,$user,$planClaim,static function()use($pdo,$user):string{
     $work=vp3_top_of_mind_work_v1($pdo,$user,0,42,true);
-    feed_check($work['coordination']['phase']==='brainstorming'&&!empty($work['coordination']['lease_expires_at']),
-        'the LLM assessment runs during the verified brainstorming phase');
+    feed_check($work['coordination']['phase']==='coordinating'&&!empty($work['coordination']['lease_expires_at']),
+        'the LLM assessment runs during the verified OB1 coordination phase');
     return '{"jobs":[]}';
 });
 $assessmentDone=feed_item(vp3_top_of_mind_v1($pdo,$user,0,42),$planRun);
