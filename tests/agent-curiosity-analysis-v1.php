@@ -212,7 +212,17 @@ $pdo->prepare('DELETE FROM agent_memory_items WHERE id=(SELECT memory_id FROM ag
 canvas_pipeline_check(vp3_curiosity_screen_briefs_v1($pdo,$owner,7)===[],
     'Withdrawing the retained Brain memory withdraws the visual input without creating a copied findings store');
 // Location Specialist contributes only explicit, opted-in repeat visits.
-vp3_phone_schema_v1($pdo);
+// This analyst fixture has simplified conversation IDs. Install only its actual
+// location inputs; the complete Phone schema is covered by native phone tests.
+$locationOptions=$mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':'';
+$pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_devices_v1(
+    id CHAR(32) NOT NULL PRIMARY KEY,owner_user_id INT UNSIGNED NOT NULL,
+    token_hash CHAR(64) NOT NULL,device_name VARCHAR(48) NOT NULL,device_role VARCHAR(12) NOT NULL,
+    device_status VARCHAR(12) NOT NULL,allow_location SMALLINT NOT NULL,generation BIGINT NOT NULL,
+    location_state VARCHAR(12) NOT NULL,created_at BIGINT NOT NULL,expires_at BIGINT NOT NULL,last_seen_at BIGINT NOT NULL,
+    UNIQUE(owner_user_id,id)
+)".$locationOptions);
+vp3_phone_checkin_install_v1($pdo,$locationOptions);
 $locationDevice=str_repeat('9',32);$locationNow=time();
 $pdo->prepare("INSERT INTO vp3_phone_devices_v1(id,owner_user_id,token_hash,device_name,device_role,device_status,allow_location,generation,location_state,created_at,expires_at,last_seen_at) VALUES(?,1,?,'Private phone','owner','approved',1,1,'live',?,?,?)")
     ->execute([$locationDevice,str_repeat('8',64),$locationNow,$locationNow+86400,$locationNow]);
