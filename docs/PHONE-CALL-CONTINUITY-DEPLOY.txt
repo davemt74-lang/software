@@ -58,7 +58,11 @@ in the background does not mark them as seen in the visible conversation.
 The Canvas builder/editor again displays the same native Chat footer; the full
 app playback view retains its available viewport.
 
-Member pages outside Chat use the personal activity bridge and Orb. Admin keeps
+All member pages, including main Chat, use the personal activity bridge and Orb.
+Messages from another owned phone conversation announce without changing the
+current Chat or copying their private contents into it. A Chat popup delegates
+personal announcements to its same-account parent to avoid duplicate notices.
+Admin keeps
 its own Agent interface and receives personal Phone/connected-phone activity;
 this does not add the public Chat footer, Transcriptions or public Orb to Admin.
 The durable private Chat post remains in its original conversation. No private

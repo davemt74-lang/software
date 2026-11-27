@@ -5663,6 +5663,16 @@
     if (conversationFeedActiveV1()) void pollAgentActivity();
   });
 
+  window.addEventListener('vp3:personal-phone-activity',event => {
+    const update=event.detail;
+    if(update?.owner_id!==Number(cfg.userId)||update.agent_id!==Number(cfg.agentId||0)
+      ||update.conversation_id!==conversationId||!initiativeIdentityMatchesV1()||historyParticipant
+      ||window.VP3ParticipantContinuity?.selectedContext?.())return;
+    // The shared bridge already announced the notice. Read its canonical post
+    // without switching tools, copying another thread or speaking it again.
+    void syncConversationMessagesV101(conversationId)?.catch(()=>{});
+  });
+
   function cancelChatReads() {
     activityRequest?.abort();
     conversationMessageSync?.controller.abort();

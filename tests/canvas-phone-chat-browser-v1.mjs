@@ -93,6 +93,11 @@ try{
     await page.waitForFunction(expected=>spoken.length===expected,3+index);
     assert.equal(await message(8+index).isVisible(),false,'Other Agent tools retain their view while Chat loads');
   }
+  saved.push({id:11,role:'assistant',message:'Canonical shared-bridge phone post'});
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('vp3:personal-phone-activity',{detail:{owner_id:1,agent_id:7,conversation_id:42,message_id:11}})));
+  await message(11).waitFor({state:'attached'});assert.equal(await page.evaluate(()=>spoken.length),5,'The shared bridge post is read without a second announcement');
+  await page.evaluate(()=>dispatchEvent(new CustomEvent('vp3:personal-phone-activity',{detail:{owner_id:1,agent_id:7,conversation_id:777,message_id:12}})));
+  assert.ok(requests.filter(r=>r.path==='/api/chat.php'&&r.action==='messages_after').every(r=>r.conversation_id===42),'Other phone conversations never get copied into the current Chat');
   assert.ok(requests.filter(r=>r.path==='/api/coding').every(r=>['list','open','resume'].includes(r.action)),'Background refresh cannot save, rebuild or apply Canvas source');
   assert.deepEqual(errors,[]);
   console.log('CANVAS_PHONE_CHAT_BROWSER_V1=PASS (live background posts, announcements, unsaved editor/Chat drafts, mobile footer and exact scope)');
