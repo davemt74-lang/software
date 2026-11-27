@@ -504,6 +504,12 @@
 .vp3-coding-source-context { display:flex;flex-wrap:wrap;gap:.5rem;padding:.75rem;border:1px solid #187561;border-radius:.6rem; }
 .vp3-coding-source-context p { flex-basis:100%; }
 .vp3-coding-source-controls { align-items:stretch; }
+.vp3-coding-workflow { margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--line,#dbe4e0);min-width:0; }
+.vp3-coding-workflow h4 { margin:0 0 .6rem; }
+.vp3-coding-workflow-row { padding:.5rem 0;overflow-wrap:anywhere; }
+.vp3-coding-workflow-builder { display:grid;gap:.65rem;margin-top:.75rem; }
+.vp3-coding-workflow-builder label { display:grid;gap:.3rem;min-width:0; }
+.vp3-coding-workflow-builder input:not([type="checkbox"]) { box-sizing:border-box;width:100%;min-width:0;font-size:16px; }
 @media (max-width:760px) {
   .vp3-coding-canvas .vp3-coding-source-input,.vp3-coding-canvas .vp3-coding-source-field pre { font-size:16px; }
   .vp3-coding-canvas-preview iframe { height:clamp(15rem,45dvh,27rem); }

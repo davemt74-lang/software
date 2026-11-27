@@ -35,18 +35,41 @@ try {
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Canvas storage is unavailable.', 503);
     $user = vp3_coding_canvas_scope_v1($pdo, $user, $aid, $cid);
-    vp3_coding_canvas_authority_v1($pdo, $user, $aid, in_array($action, ['build', 'repair', 'retry','save_source','recover_source'], true));
+    vp3_coding_canvas_authority_v1($pdo, $user, $aid, in_array($action, ['build', 'repair', 'retry','save_source','save_checks','begin_check','finish_check','check_repair','recover_source'], true));
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
     $canvasId = $input->canvas_id ?? null;
     $revision = $input->revision ?? null;
-    if (in_array($action, ['open', 'repair', 'test', 'apply', 'save_state', 'save_source', 'delete', 'email_data',
+    if (in_array($action, ['open', 'repair', 'test', 'apply', 'save_state', 'save_source','save_checks','begin_check','finish_check','check_repair', 'delete', 'email_data',
         'phone_targets','phone_send','command_grants','save_command_grants','command_data','publication_status','publish','unpublish','set_hidden','save_library_image'], true)
         && !is_string($canvasId)) throw new InvalidArgumentException('Choose a saved Canvas.');
-    if (($revision !== null || in_array($action, ['repair', 'test', 'apply', 'save_state', 'save_source', 'email_data','command_data','publish','save_library_image'], true))
+    if (($revision !== null || in_array($action, ['repair', 'test', 'apply', 'save_state', 'save_source','save_checks','begin_check','finish_check','check_repair', 'email_data','command_data','publish','save_library_image'], true))
         && (!is_int($revision) || $revision < 1)) throw new InvalidArgumentException('Choose an exact Canvas revision.');
 
-    if(in_array($action,['received_source','recover_source'],true)){
+    if(in_array($action,['save_checks','begin_check','finish_check','check_repair'],true)){
+        require_once dirname(__DIR__).'/includes/coding-canvas-checks-v1.php';
+        if(defined('VP3_PHONE_AGENT_NATIVE_V1'))throw new RuntimeException('Open the owner Canvas editor to manage workflow checks.',403);
+        if(!is_string($input->request_id??null))throw new InvalidArgumentException('Choose an exact workflow check request.',422);
+        if($action==='save_checks'){
+            if(!is_array($input->workflow_checks??null)||!is_string($input->source_hash??null)||property_exists($input,'artifact')||property_exists($input,'commands'))throw new InvalidArgumentException('Choose saved source and declarative workflow checks.',422);
+            foreach(['expected_active_revision','expected_draft_revision'] as $key){
+                if(!property_exists($input,$key)||($input->$key!==null&&(!is_int($input->$key)||$input->$key<1)))throw new InvalidArgumentException('Open the current Canvas before saving checks.',422);
+            }
+            $checks=json_decode(json_encode($input->workflow_checks,JSON_THROW_ON_ERROR),true,12,JSON_THROW_ON_ERROR);
+            $saved=vp3_coding_canvas_read_v1($pdo,$user,$aid,$canvasId,$revision);
+            $result=vp3_coding_canvas_source_save_v1($pdo,$user,$aid,$cid,$canvasId,$revision,$input->source_hash,$input->request_id,
+                $saved['revision']['artifact'],$input->expected_draft_revision,$input->expected_active_revision,$checks);
+        }elseif($action==='begin_check'){
+            if(!is_string($input->source_hash??null)||!is_string($input->state_revision??null)||(($input->expected_image??null)!==null&&!is_string($input->expected_image)))throw new InvalidArgumentException('Open the saved Canvas and its current data before checking it.',422);
+            $result=vp3_coding_canvas_check_begin_v1($pdo,$user,$aid,$cid,$canvasId,$revision,$input->request_id,$input->source_hash,$input->state_revision,$input->expected_image??null);
+        }elseif($action==='finish_check'){
+            if(!($input->result??null) instanceof stdClass)throw new InvalidArgumentException('Choose a complete workflow check result.',422);
+            $result=vp3_coding_canvas_check_finish_v1($pdo,$user,$aid,$cid,$canvasId,$revision,$input->request_id,(array)$input->result);
+        }else{
+            if(!is_string($input->repair_request_id??null))throw new InvalidArgumentException('Choose an exact repair request.',422);
+            $result=vp3_coding_canvas_check_repair_v1($pdo,$user,$aid,$cid,$canvasId,$revision,$input->request_id,$input->repair_request_id);
+        }
+    } elseif(in_array($action,['received_source','recover_source'],true)){
         if(defined('VP3_PHONE_AGENT_NATIVE_V1'))throw new RuntimeException('Open the owner Canvas editor to view received code.',403);
         if($cid<1||!is_int($input->run_id??null)||$input->run_id<1)throw new InvalidArgumentException('Choose an exact Coding Agent run.');
         require_once dirname(__DIR__).'/includes/coding-canvas-response-v1.php';
@@ -197,7 +220,7 @@ try {
             }
         }
     }
-        if (in_array($action,['open','test','apply','save_library_image','save_source','recover_source'],true)) {
+        if (in_array($action,['open','test','apply','save_library_image','save_source','save_checks','begin_check','finish_check','recover_source'],true)) {
             require_once dirname(__DIR__).'/includes/coding-canvas-email-v1.php';
             $result['email_source'] = vp3_coding_canvas_email_binding_v1($pdo,$user,$aid,$canvasId,$result['revision']['id']) !== null;
             $canvas=vp3_coding_canvas_require_row_v1($pdo,(int)$user['id'],$aid,vp3_coding_canvas_id_v1($canvasId));
@@ -208,7 +231,12 @@ try {
             }
             $result['source_editor']=['ready'=>vp3_coding_canvas_source_ready_v1($pdo),
                 'can_edit'=>!defined('VP3_PHONE_AGENT_NATIVE_V1')&&personal_capability_has_v242('personal_knowledge.manage',$user)];
+            $result['workflow_testing']=['ready'=>vp3_coding_canvas_checks_ready_v1($pdo),
+                'can_edit'=>!defined('VP3_PHONE_AGENT_NATIVE_V1')&&personal_capability_has_v242('personal_knowledge.manage',$user)];
         }
+    if(defined('VP3_PHONE_AGENT_NATIVE_V1')&&isset($result['revision'])){
+        unset($result['revision']['workflow_checks'],$result['revision']['workflow_result']);
+    }
     echo json_encode(['ok' => true] + $result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $error) {
     $code = $error->getCode();

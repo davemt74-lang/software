@@ -365,3 +365,66 @@ remain deployment acceptance rather than claims made by synthetic tests.
 Provider event contracts:
 - https://platform.claude.com/docs/en/build-with-claude/streaming
 - https://developers.openai.com/api/reference/resources/responses/streaming-events
+
+## Section 5: saved workflow checks and one-pass repair
+
+A preview starting successfully does not prove that a button, form or save works.
+The owner editor can now record a workflow using the real isolated app controls,
+name its expected visible result, and optionally require that result after a
+reload. Recording uses empty disposable app data and sample connected sources.
+Password input values are not recorded. Generated new apps may also propose
+checks; the owner can inspect and remove them. Existing apps without saved checks
+keep the legacy startup test and can add a recorded workflow when useful.
+
+A saved source revision may carry at most three declarative cases, twelve actions
+per case and twenty-four total actions. Actions are click, fill and check; expected
+results are visible text, a control value or a checkbox state. Text, selector and
+JSON sizes are bounded. Definitions contain no executable assertion scripts,
+network targets, secrets supplied by VP3 or authority to change grants. They are
+private owner-authored/sample test data, stored with the immutable source and
+included in its native source hash. Saving/removing checks creates a new untested
+draft through the existing idempotent manual-save path. Manual source edits and
+Coding repairs inherit the same acceptance checks; a repair cannot remove or
+weaken them to manufacture success.
+
+The trusted iframe harness invokes the existing worker callback bridge. Each
+step waits for its callbacks, acknowledged sample saves and a short quiet render
+interval. It checks a visible result, then starts a fresh runtime with only the
+acknowledged disposable state when persistence is required. Test mode has no
+openable email/source targets, no live data refresh and no live app-data writes.
+Worker faults, missing/ambiguous controls, missing click handlers, failed expected
+results and timeouts produce bounded reason/step codes. Untrusted synthetic
+browser events cannot add recording steps.
+
+Test preview runs saved workflows without inference. Test & repair explicitly
+allows one existing Coding Agent job if a check fails. The native failed report
+stores that exact run identity, so replay after a lost admission cannot create a
+second repair. The owner job still pins its model/funding, uses the native meter,
+and saves a separate draft. The current editor retests that new draft with repair
+disabled. A failed retest remains a failed draft and stops the cycle. Stop repair
+cancels the native run; Stop check cancels the local test. Changed source, app
+state, Chat/Agent/account context or unsaved manual edits fence delayed results.
+A recovery import of received provider code also inherits the original checks.
+
+Reports live in nullable `workflow_result_json` on the canonical version table.
+Database Upgrade adds it explicitly; live operations do not migrate storage. Begin
+and finish share an exact request identity and are idempotent. Reports bind the
+source hash, check hash, app-state revision, active/draft pointers, image token,
+Agent and original Chat. Finishing an obsolete check cannot test a newer source or
+newer app records. A version with saved checks needs a current passed report before
+it can be marked tested. Email-connected apps additionally retain the existing
+native sample-email proof and original Chat. Use/Restore and publishing continue
+to use the existing activation and publication controls; tests do not activate or
+publish code. Publication strips test plans and reports from its source projection.
+
+Section acceptance targets 10/10 for these bounded gates: declarative validation;
+immutable versioned plans; real recorded actions; sample-only data and no external
+requests; acknowledged save/reload verification; exact native test proofs; one
+explicit repair admission; retest without another paid loop; preserved active
+code/data/email/publication boundaries; and desktop/phone/context-loss behavior.
+Local coverage includes SQLite and MySQL, actual controller POSTs and real Chromium
+workers. Runtime Journey runs the new native, HTTP, runtime and editor browser
+checks. This establishes the check system's behavior, not that an arbitrary model
+has written a complete specification or that passing selected examples proves all
+possible app behavior. Live provider quality and installation process limits still
+need the owner's normal deployment test.

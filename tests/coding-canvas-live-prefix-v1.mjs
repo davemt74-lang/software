@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import vm from 'node:vm';
+const scope={window:{}};vm.runInNewContext(fs.readFileSync(new URL('../coding-canvas-live-source-v1.js',import.meta.url),'utf8'),scope);
+const parse=scope.window.VP3CanvasLiveSourceV1.sourcePrefix;
+const value={title:'Example',html:'<h1>New 🎨</h1>',css:'p{color:green}',js:'const text="quoted";\nCanvasUI.text("#result",text);'};
+assert.equal(parse(JSON.stringify(value)).js,value.js);
+assert.equal(parse('{"title":"Example","html":"<h1>Working').html,'<h1>Working');
+assert.equal(parse('{"html":"\\u00').html,'');
+assert.equal(parse('{"html":"\\u0041').html,'A');
+assert.equal(parse(JSON.stringify({workflow_checks:[{name:'A ] bracket',steps:[{value:'"js":"not source"'}]}],...value})).js,value.js);
+assert.equal(parse('```json\n'+JSON.stringify(value)+'\n```').html,value.html);
+assert.equal(parse(JSON.stringify({title:'Example',html:'"js":"not source"'})).js,'');
+console.log('Canvas live prefix passed: partial strings, escapes, Unicode, fenced source, optional workflow arrays and quoted-key isolation.');

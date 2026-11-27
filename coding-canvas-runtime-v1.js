@@ -86,7 +86,7 @@
   }
 
   // This function runs in the trusted opaque iframe, with no app JavaScript on its DOM thread.
-  function hostRuntime(payload, workerBootstrap, captureThumbnail) {
+  function hostRuntime(payload, workerBootstrap, captureThumbnail, workflowBootstrap) {
     'use strict';
     const {channel,nonce,parentOrigin,artifact,state,workerKey,maxText,stateLimit,email,emailCheck,gmail,canSaveState,
       sources,openableSources,libraryImage} = payload;
@@ -122,9 +122,11 @@
     let heartbeat = Date.now();
     let windowStarted = heartbeat;
     let operations = 0;
-
     const send = (kind,data = {}) => parent.postMessage({channel,nonce,kind,...data},parentOrigin);
     const reply = (kind,data = {}) => worker?.postMessage({key:workerKey,kind,...data});
+    const workflow=payload.workflowMode&&typeof workflowBootstrap==='function'?workflowBootstrap(root,{
+      send,dispatch:dispatchControl,select,pending,healthy:()=>healthy,ready:()=>started&&!root.inert,mode:payload.workflowMode,
+    }):null;
     const releaseUrls = () => {
       if (appUrl) URL.revokeObjectURL(appUrl);
       if (workerUrl) URL.revokeObjectURL(workerUrl);
@@ -171,6 +173,7 @@
       if (++operations > 200) { fault('render'); return; }
       if (data.kind === 'heartbeat') heartbeat = Date.now();
       if (data.kind === 'error') fault(data.reason);
+      if (data.kind === 'event_done') workflow?.done(data.gesture,data.id);
       if (data.kind === 'ready' && !started) {
         started = true;
         releaseUrls();
@@ -216,6 +219,7 @@
           nodes.forEach(el => { el.hidden = !data.value; });
         }
         placeLibraryImage();
+        workflow?.changed();
         let contentLength = root.textContent.length;
         for (const control of root.querySelectorAll('input,select,textarea,output')) contentLength += control.value.length;
         if (contentLength > 3 * maxText || root.querySelectorAll('*').length > 1500) throw new Error('Canvas markup is too large.');
@@ -258,7 +262,7 @@
         JSON.stringify(JSON.stringify(state)) + ',' + JSON.stringify(appUrl) + ',' + maxText + ',' + stateLimit + ',' +
         JSON.stringify(JSON.stringify(email ?? null)) + ',' + JSON.stringify(JSON.stringify(gmail ?? null)) + ',' +
         JSON.stringify(canSaveState === true) + ',' + JSON.stringify(JSON.stringify(sources ?? {})) + ',' +
-        JSON.stringify(JSON.stringify(openableSources ?? {})) + ');';
+        JSON.stringify(JSON.stringify(openableSources ?? {})) + ','+JSON.stringify(Boolean(workflow))+');';
       workerUrl = URL.createObjectURL(new Blob([workerSource],{type:'text/javascript'}));
       try { worker = new Worker(workerUrl); }
       catch (_error) { fault('worker_start'); return; }
@@ -274,30 +278,36 @@
       for (const type of events) {
         root.addEventListener(type,event => {
           if (!healthy || !started || !event.isTrusted || !(event.target instanceof Element)) return;
-          for (const [id,activation] of issued) if (activation.expires < Date.now()) issued.delete(id);
-          const gesture = crypto.randomUUID?.() || Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-');
-          issued.set(gesture,{expires:Date.now() + 1500,type});
-          if (issued.size > 50) issued.delete(issued.keys().next().value);
-          for (const [id,entry] of listeners) {
-            if (entry.event !== type) continue;
-            const el = event.target.closest(entry.selector);
-            if (!el || !root.contains(el)) continue;
-            reply('event',{id,gesture,event:{value:String(el.value ?? '').slice(0,maxText),checked:Boolean(el.checked),id:el.id,dataset:{...el.dataset}}});
-          }
+          workflow?.record(event.target,type);
+          dispatchControl(event.target,type);
         });
       }
       addEventListener('message',event => {
         if (event.source !== parent || event.origin !== parentOrigin || event.data?.channel !== channel || event.data?.nonce !== nonce) return;
         const {id,kind,value,error} = event.data;
-        if (kind === 'saved' && pending.delete(id)) reply('saved',{id,value,error});
+        if (kind === 'saved' && pending.delete(id)) {workflow?.saved(value,error);reply('saved',{id,value,error});}
+        if (kind === 'workflow_run' && payload.workflowMode==='check') void workflow?.run(event.data);
+        if (kind === 'workflow_record_stop' && payload.workflowMode==='record') send('workflow_record',{steps:workflow?.stopRecord()??[]});
       });
     } catch (_error) {
       fault('render');
     }
+    function dispatchControl(target,type) {
+      for(const [id,activation] of issued)if(activation.expires<Date.now())issued.delete(id);
+      const gesture=crypto.randomUUID?.()||Array.from(crypto.getRandomValues(new Uint32Array(4))).join('-');
+      issued.set(gesture,{expires:Date.now()+1500,type});if(issued.size>50)issued.delete(issued.keys().next().value);
+      const ids=[];
+      for(const [id,entry] of listeners){
+        if(entry.event!==type)continue;
+        const el=target.closest(entry.selector);if(!el||!root.contains(el))continue;
+        ids.push(id);reply('event',{id,gesture,event:{value:String(el.value??'').slice(0,maxText),checked:Boolean(el.checked),id:el.id,dataset:{...el.dataset}}});
+      }
+      return {gesture,ids};
+    }
   }
 
   // This function is the only code prepended to generated worker source.
-  function workerRuntime(key,initialState,appUrl,maxText,stateLimit,emailSource,gmailSource,canSaveState,sourceData,sourceControls) {
+  function workerRuntime(key,initialState,appUrl,maxText,stateLimit,emailSource,gmailSource,canSaveState,sourceData,sourceControls,workflowEnabled) {
     'use strict';
     let state = JSON.parse(initialState);
     const email = JSON.parse(emailSource);
@@ -353,7 +363,8 @@
         gesture = data.gesture;
         try {
           const result = callbacks.get(data.id)?.(data.event);
-          if (result?.catch) result.catch(() => send('error',{reason:'source_runtime'}));
+          if(workflowEnabled)Promise.resolve(result).then(()=>send('event_done',{gesture:data.gesture,id:data.id}),()=>send('error',{reason:'source_runtime'}));
+          else if(result?.catch)result.catch(()=>send('error',{reason:'source_runtime'}));
         } catch (_error) {
           send('error',{reason:'source_runtime'});
         } finally {
@@ -458,7 +469,8 @@
       '<meta http-equiv="Content-Security-Policy" content="' + csp + '">' +
       '<style nonce="' + nonce + '">:root{color-scheme:light;font:16px system-ui,sans-serif}body{margin:' + (payload.fullPage === true ? '0' : '1rem') + '}[hidden]{display:none!important}.vp3-canvas-library-image{display:block;max-width:100%;max-height:420px;object-fit:contain;margin:0 auto 1rem}</style>' +
       '</head><body><main id="app"></main><script nonce="' + nonce + '">(' + hostRuntime.toString() + ')(' +
-      scriptData({...payload,libraryImage}) + ',' + workerRuntime.toString() + (capture ? ',' + capture.toString() : '') +
+      scriptData({...payload,libraryImage}) + ',' + workerRuntime.toString() + (capture ? ',' + capture.toString() : ',null') +
+      (window.VP3CanvasWorkflowRuntimeV1?.createHost ? ','+window.VP3CanvasWorkflowRuntimeV1.createHost.toString() : '') +
       ');<\/script></body></html>';
   }
 

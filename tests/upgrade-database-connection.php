@@ -33,6 +33,7 @@ $partialSpeech=[
     'partial-canvas-edit-origin'=>['vp3_coding_canvas_versions_v1','edit_origin_revision'],
     'partial-canvas-edit-request'=>['vp3_coding_canvas_versions_v1','edit_request_id'],
     'partial-canvas-edit-hash'=>['vp3_coding_canvas_versions_v1','edit_request_hash'],
+    'partial-canvas-workflow-report'=>['vp3_coding_canvas_versions_v1','workflow_result_json'],
     'partial-coding-response'=>['agent_workflow_runs','coding_provider_result_json'],
 ];
 $phoneContactModes=['phone-contacts-old-get','phone-contacts-old-post','phone-contacts-new-post','phone-contacts-ready-get'];
@@ -92,6 +93,7 @@ if($phoneContacts){
     }
 }
 require dirname(__DIR__).'/includes/tv-watching-v1.php';
+require dirname(__DIR__).'/includes/coding-canvas-checks-schema-v1.php';
 require dirname(__DIR__).'/includes/coding-canvas-response-schema-v1.php';
 $fixture->exec('CREATE TABLE agent_workflow_runs(id INTEGER PRIMARY KEY,goal TEXT)');
 $canvasDdl=file_get_contents(dirname(__DIR__).'/includes/coding-canvas-store-v1.php');

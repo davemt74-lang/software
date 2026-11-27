@@ -60,7 +60,7 @@ function vp3_coding_canvas_edit_context_v1(mixed $context, ?array $source = null
 
 /** Owner-authored edits use no model, never activate code and never replace app records. */
 function vp3_coding_canvas_source_save_v1(PDO $pdo,array $user,int $agentId,int $cid,string $id,int $base,
-    string $sourceHash,string $requestId,array $artifact,?int $expectedDraft,?int $expectedActive): array
+    string $sourceHash,string $requestId,array $artifact,?int $expectedDraft,?int $expectedActive,?array $workflowChecks=null): array
 {
     $agent=vp3_coding_canvas_authority_v1($pdo,$user,$agentId,true);
     if (!vp3_coding_canvas_source_ready_v1($pdo)) throw new RuntimeException('Run Database Upgrade to enable source editing.',503);
@@ -69,12 +69,15 @@ function vp3_coding_canvas_source_save_v1(PDO $pdo,array $user,int $agentId,int 
         || ($expectedDraft!==null&&$expectedDraft<1) || ($expectedActive!==null&&$expectedActive<1)) throw new InvalidArgumentException('Open the saved source again.',422);
     $id=vp3_coding_canvas_id_v1($id);$requestId=vp3_coding_canvas_id_v1($requestId);
     $artifact=vp3_coding_canvas_artifact_v1($artifact);
+    if($workflowChecks!==null)$workflowChecks=vp3_coding_canvas_checks_v1($workflowChecks);
     $owner=(int)$user['id'];
-    return vp3_coding_canvas_atomic_v1($pdo,$owner,static function()use($pdo,$user,$agentId,$cid,$id,$base,$sourceHash,$requestId,$artifact,$expectedDraft,$expectedActive,$owner):array{
+    return vp3_coding_canvas_atomic_v1($pdo,$owner,static function()use($pdo,$user,$agentId,$cid,$id,$base,$sourceHash,$requestId,$artifact,$expectedDraft,$expectedActive,$owner,$workflowChecks):array{
         $row=vp3_coding_canvas_require_row_v1($pdo,$owner,$agentId,$id,true);
         $selected=vp3_coding_canvas_details_v1($pdo,$row,$base);
         if (!hash_equals($selected['revision']['source_hash'],$sourceHash)) throw new RuntimeException('The saved source changed. Reopen this version.',409);
-        $hash=hash('sha256',json_encode([$cid,$base,$sourceHash,$expectedDraft,$expectedActive,$artifact,$selected['revision']['commands']],JSON_THROW_ON_ERROR));
+        $request=[$cid,$base,$sourceHash,$expectedDraft,$expectedActive,$artifact,$selected['revision']['commands']];
+        if($workflowChecks!==null)$request[]=['workflow_checks'=>$workflowChecks];
+        $hash=hash('sha256',json_encode($request,JSON_THROW_ON_ERROR));
         $q=$pdo->prepare('SELECT revision,edit_request_hash FROM vp3_coding_canvas_versions_v1 WHERE canvas_id=? AND edit_request_id=?');
         $q->execute([$id,$requestId]);$previous=$q->fetch(PDO::FETCH_ASSOC);
         if ($previous) {
@@ -94,11 +97,12 @@ function vp3_coding_canvas_source_save_v1(PDO $pdo,array $user,int $agentId,int 
         if ((int)$row['conversation_id']!==$cid && vp3_coding_canvas_email_binding_v1($pdo,$user,$agentId,$id,$base)!==null) {
             throw new RuntimeException('Open the original Chat to edit this email-connected Canvas.',409);
         }
-        if ($artifact===$selected['revision']['artifact']) return $selected+['source_saved'=>false];
+        $checks=$workflowChecks??$selected['revision']['workflow_checks'];
+        if ($artifact===$selected['revision']['artifact']&&$checks===$selected['revision']['workflow_checks']) return $selected+['source_saved'=>false];
         $q=$pdo->prepare('SELECT edit_origin_revision FROM vp3_coding_canvas_versions_v1 WHERE canvas_id=? AND revision=?');
         $q->execute([$id,$base]);$origin=$q->fetchColumn();$origin=$origin===null||$origin===false?$base:(int)$origin;
         if ($origin<1||$origin>$base)throw new RuntimeException('This source history could not be verified.',409);
-        $saved=vp3_coding_canvas_save_draft_v1($pdo,$user,$agentId,(int)$row['conversation_id'],$id,$row['title'],$artifact,[],0,$expectedDraft,$expectedActive,$selected['revision']['commands']);
+        $saved=vp3_coding_canvas_save_draft_v1($pdo,$user,$agentId,(int)$row['conversation_id'],$id,$row['title'],$artifact,[],0,$expectedDraft,$expectedActive,$selected['revision']['commands'],$checks);
         $q=$pdo->prepare('UPDATE vp3_coding_canvas_versions_v1 SET edit_base_revision=?,edit_origin_revision=?,edit_request_id=?,edit_request_hash=? WHERE canvas_id=? AND revision=? AND run_id IS NULL');
         $q->execute([$base,$origin,$requestId,$hash,$id,$saved['revision']['id']]);
         return vp3_coding_canvas_details_v1($pdo,vp3_coding_canvas_require_row_v1($pdo,$owner,$agentId,$id),$saved['revision']['id'])+['source_saved'=>true];

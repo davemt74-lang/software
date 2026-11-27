@@ -161,7 +161,7 @@ function vp3_coding_canvas_queue_v1(
     ?array $commands = null, ?int $retryOf = null, ?array $editContext = null
 ): array {
     if (!agent_job_engine_schema_ready_v1900($pdo) || !agent_job_control_ready_v1900($pdo)
-        || !vp3_ai_service_usage_ready_v1($pdo)||!vp3_coding_canvas_response_ready_v1($pdo)) {
+        || !vp3_ai_service_usage_ready_v1($pdo)||!vp3_coding_canvas_response_ready_v1($pdo)||!vp3_coding_canvas_checks_ready_v1($pdo)) {
         throw new RuntimeException('Coding Agent requires Database Upgrade.', 503);
     }
     if ($conversationId < 1) throw new InvalidArgumentException('Choose a current Chat.');
@@ -326,6 +326,7 @@ function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?call
         }
         $commands = vp3_coding_canvas_command_list_v1($goal['commands'] ?? $source['revision']['commands'] ?? []);
         $attribution = ['agent_id'=>$agentId,'conversation_id'=>$cid];
+        if($source!==null)$attribution['workflow_checks']=$source['revision']['workflow_checks'];
         require_once __DIR__.'/coding-canvas-response-v1.php';
         $lastHeartbeat=microtime(true);
         $attribution['before_dispatch']=static function()use($pdo,$user,$claim,$agentId,$cid,$goal,$runId,$source):bool{
@@ -371,7 +372,8 @@ function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?call
         $saved = vp3_coding_canvas_save_draft_v1(
             $pdo, $user, $agentId, $source['canvas']['conversation_id'] ?? $cid, $canvasId,
             $source['canvas']['title'] ?? $draft['title'], $draft['artifact'], [], $runId,
-            $goal['expected_draft'], $goal['expected_active'], $commands
+            $goal['expected_draft'], $goal['expected_active'], $commands,
+            $source!==null?$source['revision']['workflow_checks']:vp3_coding_canvas_checks_v1($draft['workflow_checks']??[])
         );
         $result = [
             'canvas_id' => $canvasId, 'canvas_revision' => $saved['revision']['id'],
