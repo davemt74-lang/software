@@ -18,7 +18,7 @@ try{
   const [owner,other]=preparePhoneSite(repo,site,sessions,php);
   const canvas=JSON.parse(execFileSync(php,['-d','session.save_path='+sessions,path.join(repo,'tests/fixtures/phone-agent-paired-http-v1.php'),site],{encoding:'utf8'}));
   const port=await localPort(),baseURL='http://127.0.0.1:'+port;
-  server=spawn(php,['-d','session.save_path='+sessions,'-d','display_errors=0','-S','127.0.0.1:'+port,'-t',site],{stdio:['ignore','ignore','pipe']});
+  server=spawn(php,['-d','session.save_path='+sessions,'-d','display_errors=0','-d','log_errors=1','-d','error_reporting=-1','-S','127.0.0.1:'+port,'-t',site],{stdio:['ignore','ignore','pipe']});
   server.stderr.on('data',b=>{logs+=b;});
   const ready=await request.newContext({baseURL});
   for(let i=0;i<60;i++){try{if((await ready.get('/health.txt')).ok())break;}catch{}await delay(100);}
