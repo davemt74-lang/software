@@ -52,7 +52,7 @@
       &&raw.scope_revision===scope.scope_revision,'Your phone or Agent authorization changed. Refresh the connection.');
   }
   function status(raw,deviceId){
-    check(isObject(raw)&&raw.ok===true&&raw.device_id===deviceId&&['sign_in_required','not_enrolled','ready','unavailable'].includes(raw.state)
+    check(isObject(raw)&&raw.ok===true&&raw.device_id===deviceId&&['sign_in_required','approval_required','not_enrolled','ready','unavailable'].includes(raw.state)
       &&typeof raw.enrolled==='boolean'&&typeof raw.owner_eligible==='boolean'&&integer(raw.revision)
       &&integer(raw.enrollment_revision)&&raw.enrollment_revision===raw.revision);
     const value={state:raw.state,enrolled:raw.enrolled,owner_eligible:raw.owner_eligible,device_id:deviceId,
@@ -71,6 +71,7 @@
       value.agent={id:raw.agent.id,name:raw.agent.name};value.conversation_id=raw.conversation_id;
       value.scope_revision=raw.scope_revision;value.counts=raw.counts===null?null:counts(raw.counts);value.preferences={notifications_enabled:raw.preferences.notifications_enabled};
     }else check(raw.scope_revision===null);
+    if(raw.authorization_mode==='paired_device')value.authorization_mode='paired_device';
     return value;
   }
   function page(raw,scope){
@@ -132,7 +133,11 @@
     const callBanner=make('aside','','phone-agent-email-call-banner');callBanner.hidden=true;callBanner.setAttribute('aria-label','Exact email call review');
     const feed=make('div');feed.append(head,callBanner,filterBar,list,empty,more);
     const detailHost=make('div','','phone-agent-detail');detailHost.hidden=true;
-    host.append(feedback,feed,detailHost);
+    const gate=make('section','','phone-agent-approval');
+    gate.append(make('h1','AGENT'),make('p','Email drafts, custom canvases, images and private Agent results arrive here.'));
+    const gateStatus=make('p');gateStatus.setAttribute('role','status');
+    gate.append(gateStatus,button('Check for approval',()=>refreshStatus(true),'secondary'));
+    host.append(gate,feedback,feed,detailHost);
     function message(value,error=false){feedback.textContent=value;feedback.dataset.error=String(error);}
     function live(){return reachable&&device?.status==='approved'&&owner?.state==='ready'&&scope!==null&&!document.hidden;}
     function captured(){return {fence:model.capture(),device:device?.id,scope};}
@@ -173,7 +178,7 @@
       if([401,403,404,409,419].includes(error.status)||error.code==='invalid_workspace_response'){
         const deniedScope=scope?[scope.device_id,scope.enrollment_revision,scope.scope_revision].join('/'):'',recover=Boolean(deniedScope&&deniedScope!==recoveredScope&&[401,403,404,409,419].includes(error.status));
         if(recover)recoveredScope=deniedScope;
-        statusSerial++;statusLoading=false;statusAt=0;invalidate('Your private Agent workspace changed. Check your connection and sign in again if needed.');
+        statusSerial++;statusLoading=false;statusAt=0;invalidate('Your private Agent workspace changed. Check this phone’s approval in the main app.');
         if(recover)void refreshStatus(true);
       }else message(error.message||'The Agent workspace is temporarily unavailable. Try Refresh.',true);
     }
@@ -402,6 +407,8 @@
       }catch(error){failure(error,capture);return false;}
     }
     function renderEnrollment(note=''){
+      gate.hidden=owner?.state==='ready';
+      if(!gate.hidden){feed.hidden=true;gateStatus.textContent=reachable?'In the main app, open Phone Tracking, select this phone, then Permissions → Allow AGENT. No login is needed on this phone.':'Reconnect to check AGENT approval.';}
       enrollment.hidden=!device||device.status!=='approved';if(enrollment.hidden)return;
       const signature=JSON.stringify([device.id,reachable,owner?.state,owner?.revision,owner?.scope_revision,owner?.agents,owner?.preferences,writing,note]);
       if(signature===settingsSignature)return;settingsSignature=signature;
@@ -411,12 +418,19 @@
       if(note)enrollmentContent.append(make('p',note,'phone-agent-feedback'));
       if(!reachable){enrollmentContent.append(make('p','Reconnect to check your private Agent workspace.'));return;}
       if(!owner){enrollmentContent.append(make('p','Check whether this phone can receive your private Agent results.'),button('Check Agent access',()=>refreshStatus(true),'secondary'));return;}
+      if(owner.state==='approval_required'){enrollmentContent.append(make('p','Approve AGENT access for this phone in the main app’s Phone Tracking permissions. You do not need to sign in on the phone.'),button('Check for approval',()=>refreshStatus(true),'secondary'));return;}
       if(owner.state==='sign_in_required'){
         enrollmentContent.append(make('p','Sign in as the account owner to receive your private Agent results and review email on this phone.'));
         const link=make('a','Sign in to your account');const url=new URL('login.php',location.href);url.searchParams.set('return_to',new URL('phone-location.php',location.href).pathname);link.href=url.href;
         const actions=make('div','','phone-agent-enrollment-actions');actions.append(link,button('Check sign-in',()=>refreshStatus(true),'secondary'));enrollmentContent.append(actions);return;
       }
       if(!owner.owner_eligible||owner.state==='unavailable'){enrollmentContent.append(make('p','Private Agent access is unavailable for this connection. Your existing phone features are still available.'),button('Check again',()=>refreshStatus(true),'secondary'));return;}
+      if(owner.authorization_mode==='paired_device'){
+        enrollmentContent.append(make('p','AGENT access was approved from the main app. No phone login is required.'),button('Open Agent',()=>shell.openAgent(),'secondary'));
+        const label=make('label'),toggle=make('input');toggle.type='checkbox';toggle.checked=owner.preferences.notifications_enabled;
+        label.append(toggle,make('span','Notify this phone about new Agent items.'));toggle.addEventListener('change',e=>{if(e.isTrusted)void changeEnrollment('preferences',{notifications_enabled:toggle.checked});});
+        enrollmentContent.append(label,button('Remove Agent access',()=>changeEnrollment('revoke',{}),'text-button'));return;
+      }
       const select=make('select');select.setAttribute('aria-label','Main Agent for this phone');
       for(const candidate of owner.agents){const option=make('option',candidate.name);option.value=String(candidate.id);select.append(option);}
       select.value=String(owner.agent?.id??0);const field=make('label','','phone-agent-setting');field.append(make('span','Main Agent'),select);enrollmentContent.append(field);
@@ -425,7 +439,7 @@
         const actions=make('div','','phone-agent-enrollment-actions');actions.append(button('Use selected Agent',()=>changeEnrollment('select_agent',{agent_id:Number(select.value)}),'secondary'),
           button('Open Agent',()=>shell.openAgent(),'secondary'));enrollmentContent.append(actions);
         const label=make('label'),toggle=make('input');toggle.type='checkbox';toggle.checked=owner.preferences.notifications_enabled;
-        label.append(toggle,make('span','Notify this phone about new Agent items. Phone notification permission is managed in Info.'));
+        label.append(toggle,make('span','Notify this phone about new Agent items. Phone notification permission is managed in Phone.'));
         toggle.addEventListener('change',event=>{if(event.isTrusted)void changeEnrollment('preferences',{notifications_enabled:toggle.checked});});enrollmentContent.append(label,
           button('Remove Agent access',()=>changeEnrollment('revoke',{}),'text-button'));
         mountCallSettings();
@@ -443,7 +457,7 @@
         agent_id:value.agent.id,agent_name:value.agent.name,conversation_id:value.conversation_id,csrf_token:value.csrf_token}:null;
       const changed=!next||!scope||scope.device_id!==next.device_id||scope.scope_revision!==next.scope_revision||scope.enrollment_revision!==next.enrollment_revision;
       if(changed)clearPrivate();value.counts=value.counts||(!changed&&previousCounts)||{unread:0,needs_action:0,complete:false};owner=value;
-      if(next){scope=changed?next:Object.assign(scope,next);model.bind([next.device_id,next.enrollment_revision,next.scope_revision].join('/'));heading.textContent=value.agent.name||'Your Agent';
+      if(next){gate.hidden=true;feed.hidden=Boolean(opened);scope=changed?next:Object.assign(scope,next);model.bind([next.device_id,next.enrollment_revision,next.scope_revision].join('/'));heading.textContent=value.agent.name||'Your Agent';
         setCounts(value.counts);shell.setAgent({enabled:true,unread:value.counts.unread,countsComplete:value.counts.complete,defaultView:true});setupCalls();}
       settingsSignature='';renderEnrollment();
       if(next&&visible&&!opened&&(!rows.length||changed))void loadFeed();

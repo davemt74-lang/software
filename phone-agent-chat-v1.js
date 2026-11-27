@@ -31,7 +31,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
     if(!tabItems.some(([key])=>key===view)&&view!=='info')view='connection';
     if(['home','requests'].includes(view)&&!deviceId)view='connection';
     if(view==='chat'&&!deviceId)view='connection';
-    if(view==='agent'&&(!deviceId||!agentEnabled))view='connection';
+    if(view==='agent'&&!deviceId)view='connection';
     if(view!=='chat'){notificationRequest=null;focusNotification=false;}
     selectedTab=view;
     for(const [key,tab,panel] of tabItems){
@@ -56,7 +56,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
   async function navigateTab(view,{focus=false}={}){
     const version=++navigationVersion;
     if(selectedTab==='agent'&&view!=='agent'&&(await apps.leaveAgent?.())===false)return false;
-    if(version!==navigationVersion||view==='agent'&&!agentEnabled)return false;
+    if(version!==navigationVersion||view==='agent'&&!deviceId)return false;
     navigated=true;selectTab(view);
     if(focus)tabItems.find(([key])=>key===selectedTab)?.[1].focus({preventScroll:true});
     return true;
@@ -288,6 +288,7 @@ window.VP3PhoneAgentChat = function (request, apps) {
       transcript.replaceChildren();
       empty.hidden = false;
       tabs.hidden = !id;
+      if(agentTab)agentTab.hidden=!id;
       dock.hidden = !id;
       if (id) connection.setAttribute('role','tabpanel');
       else connection.removeAttribute('role');
@@ -316,10 +317,10 @@ window.VP3PhoneAgentChat = function (request, apps) {
   }
   function setAgent({enabled=false,unread=0,countsComplete=true,defaultView=false}={}){
     agentEnabled=enabled===true&&Boolean(deviceId)&&Boolean(agentTab);
-    if(agentTab){agentTab.hidden=!agentEnabled;agentTab.setAttribute('aria-label',unread>0?'Agent, '+(countsComplete?'':'at least ')+unread+' unread':'Agent');}
+    if(agentTab){agentTab.hidden=!deviceId;agentTab.setAttribute('aria-label',unread>0?'Agent, '+(countsComplete?'':'at least ')+unread+' unread':'Agent');}
     if(agentUnread){agentUnread.hidden=!agentEnabled||!Number.isSafeInteger(unread)||unread<1;agentUnread.textContent=unread>99?'99+':String(unread)+(countsComplete?'':'+');}
     if(agentEnabled)main.dataset.agentReady='true';else delete main.dataset.agentReady;
-    if(!agentEnabled&&selectedTab==='agent'){navigationVersion++;selectTab('connection');}
+    if(!deviceId&&selectedTab==='agent'){navigationVersion++;selectTab('connection');}
     else if(agentEnabled&&defaultView&&!navigated&&['home','connection'].includes(selectedTab))selectTab('agent');
   }
   return {bind,setAgent,selectedTab:()=>selectedTab,openAgent:()=>navigateTab('agent'),openInfo:openGuide,

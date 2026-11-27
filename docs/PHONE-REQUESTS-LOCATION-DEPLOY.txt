@@ -10,8 +10,11 @@ Home is the simple landing view. Chat has its own composer. Requests contains
 the existing private Information Exchange. Phone contains connection settings,
 Location Specialist check-in/out, saved location creation when owner-enabled,
 and notification setup. The header user menu opens account, VP3, Phone settings
-and Help & setup. Owner-enrolled phones retain their private AGENT tab and exact
-email/call review protections. A holder credential never grants that workspace.
+and Help & setup. Every approved phone can find AGENT. In the main app, select
+the phone > Permissions > Allow AGENT on this phone without signing in. Private
+email/call review keeps its exact-source checks. Pairing alone grants no private
+workspace. The Canvas editor can also send a saved Canvas and approve this scope.
+See PHONE-AGENT-WORKSPACE-V1.txt for the no-login setup and revocation behavior.
 
 INFORMATION REQUEST DELETION
 On the main account's Phone Tracking page, select a phone, open Information,

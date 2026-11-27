@@ -6,7 +6,7 @@ require_once dirname(__DIR__) . '/includes/media-collections-v1.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store');
 
-$user = current_user();
+$user = defined('VP3_PHONE_AGENT_NATIVE_V1')&&function_exists('vp3_phone_agent_native_user_v1')?vp3_phone_agent_native_user_v1():current_user();
 if (!$user || !has_permission('chat.access', $user)) {
     http_response_code(403);
     echo json_encode(['ok'=>false,'error'=>'Media library access is not available for this account.']);

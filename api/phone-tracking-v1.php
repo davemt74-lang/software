@@ -5,6 +5,7 @@ require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-http-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-v1.php';
+require_once dirname(__DIR__).'/includes/phone-agent-workspace-v1.php';
 require_once dirname(__DIR__).'/includes/phone-managed-ui-v1.php';
 require_once dirname(__DIR__).'/includes/phone-tracking-chat-v1.php';
 require_once dirname(__DIR__).'/includes/participant-updates-v1.php';
@@ -40,7 +41,7 @@ try {
         }
         $action = $input['action'] ?? null;
         if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences',
-            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','information_create','information_cancel','information_delete','information_create_file','information_download','dialer_send','dialer_cancel','managed_prepare','managed_cancel','managed_reconcile','managed_end','managed_pilot_dispatch','managed_recording_withdraw','handoff_approve','handoff_owner_cancel'], true)) {
+            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','agent_access','information_create','information_cancel','information_delete','information_create_file','information_download','dialer_send','dialer_cancel','managed_prepare','managed_cancel','managed_reconcile','managed_end','managed_pilot_dispatch','managed_recording_withdraw','handoff_approve','handoff_owner_cancel'], true)) {
             throw new RuntimeException('Unknown action.', 422);
         }
         unset($input['action'], $input['csrf_token']);
@@ -52,6 +53,7 @@ try {
     if (!$pdo || !vp3_phone_schema_ready_v1($pdo)) throw new RuntimeException('Upgrade required.', 503);
     $owner = (int)$user['id'];
     $result = match ($action) {
+        'agent_access'=>vp3_phone_agent_device_owner_action_v1($pdo,$user,$input),
         'information_list','information_create','information_cancel','information_delete','information_create_file','information_download' => vp3_phone_information_owner_v1($pdo,$owner,$action,$input),
         'dialer_send','dialer_cancel' => vp3_phone_dialer_owner_v1($pdo,$owner,$action,$input),
         'managed_prepare','managed_cancel','managed_reconcile','managed_end','managed_pilot_dispatch','managed_recording_withdraw' => vp3_managed_ui_owner_action_v1($pdo,$user,$action,$input,time()),
@@ -64,14 +66,16 @@ try {
         default => vp3_phone_owner_v1($pdo,$owner,$action,$input)
     };
     if ($action === 'state') {
+        $result['agent_choices']=[vp3_phone_agent_workspace_agent_v1($pdo,$owner,0)];
+        if(schema_metadata_table_exists($pdo,'user_agents'))foreach(vp3_phone_sql_v1($pdo,'SELECT id,display_name FROM user_agents WHERE owner_user_id=? AND is_active=1 ORDER BY display_name,id LIMIT 100',[$owner])->fetchAll(PDO::FETCH_ASSOC) as $candidate)$result['agent_choices'][]=['id'=>(int)$candidate['id'],'name'=>$candidate['display_name']];
         $result['devices']=vp3_paired_phone_owner_links_v1($pdo,$owner,$result['devices']);
         if (vp3_participant_scope_v1()===null) {
             $result['devices']=vp3_phone_camera_map_devices_v1($pdo,$owner,$result['devices']);
             $result['devices']=vp3_phone_communication_map_v1($pdo,$owner,$result['devices'],time());
-            if(vp3_phone_handoff_ready_v1($pdo)||vp3_phone_push_ready_v1($pdo)){
+            if(vp3_phone_handoff_ready_v1($pdo)||vp3_phone_push_ready_v1($pdo)||vp3_phone_agent_workspace_ready_v1($pdo)){
                 foreach($result['devices'] as &$public){
                     $q=$pdo->prepare('SELECT * FROM vp3_phone_devices_v1 WHERE owner_user_id=? AND id=?');$q->execute([$owner,$public['id']]);$d=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
-                    if($d){$public['handoff']=vp3_phone_handoff_view_v1($pdo,$d,time(),true);$public['push']=vp3_phone_push_view_v1($pdo,$d,time(),false);}
+                    if($d){$public['handoff']=vp3_phone_handoff_view_v1($pdo,$d,time(),true);$public['push']=vp3_phone_push_view_v1($pdo,$d,time(),false);$public['agent_access']=vp3_phone_agent_device_owner_view_v1($pdo,$d);}
                 }unset($public);
             }
         }

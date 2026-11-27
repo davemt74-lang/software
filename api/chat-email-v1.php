@@ -20,7 +20,7 @@ try {
         || array_diff(array_keys($input),['action','owner_key','agent_id','conversation_id','draft_id','csrf_token','confirmed','review_token','watch_replies','subject','body','sender','enabled','watchlist_key','instruction','message_id','item_ref','request_id','to','attachment_ids','queue_scope','filter','limit','cursor','edit_revision','followthrough','followthrough_ref','expected_revision','operation','deadline_at','time_zone','prepare_if_overdue','priority','capture_id','proposal_id','proposal_revision','soul_revision','preference','text','version'])) {
         throw new DomainException('Choose an email review action.',422);
     }
-    $user = current_user();
+    $user = defined('VP3_PHONE_AGENT_NATIVE_V1')&&function_exists('vp3_phone_agent_native_user_v1')?vp3_phone_agent_native_user_v1():current_user();
     if (!$user || !has_permission('chat.access',$user)) throw new DomainException('Sign in to review email in Agent Chat.',403);
     if (($input['owner_key']??null) !== (string)$user['id']) throw new DomainException('The Chat account changed. Refresh the page.',409);
     if (!is_string($input['csrf_token']??null) || !hash_equals(csrf_token(),$input['csrf_token'])) {

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
-import { chromium } from 'playwright';
+import {createRequire} from 'node:module';
+const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
 
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH;
 const browser = await chromium.launch({headless:true,args:['--no-sandbox'],...(executablePath ? {executablePath} : {})});
@@ -90,6 +91,15 @@ await page.route('https://canvas.test/api/**',async route => {
       }
       return result({job:current});
     }
+    case 'phone_targets':
+      assert.equal(body.canvas_id,canvas.id);assert.equal(body.revision,1);
+      return result({canvas_id:canvas.id,revision:1,agent:{id:7,name:'Research Agent'},phones:[
+        {id:'a'.repeat(32),name:'My iPhone',generation:2,agent_access:{enabled:false,revision:0,agent_id:0}},
+        {id:'b'.repeat(32),name:'Office phone',generation:3,agent_access:{enabled:true,revision:4,agent_id:7}}]});
+    case 'phone_send':
+      assert.equal(body.device_id,'a'.repeat(32));assert.equal(body.generation,2);assert.equal(body.expected_revision,0);
+      assert.equal(body.confirmed,true);assert.match(body.request_id,/^[a-f0-9-]{36}$/);
+      return result({phone_delivery:{device_id:body.device_id,item_ref:'e'.repeat(32),revision:1,duplicate:false}});
     case 'list': {
       if (listGate) {
         const {started,released} = listGate;
@@ -294,6 +304,24 @@ try {
   await preview.getByRole('checkbox',{name:'Ready'}).check();
   await preview.getByText('Saved',{exact:true}).waitFor();
   assert.equal(records('save_state').length,0,'Draft interactions stay in the preview');
+  assert.equal(records('phone_send').length,0,'Opening an ordinary Canvas never sends it to a phone.');
+  await page.setViewportSize({width:390,height:844});
+  await panel.getByRole('button',{name:'Send Canvas to Connected Phone',exact:true}).click();
+  const phoneDialog=page.getByRole('dialog',{name:'Send Canvas to Connected Phone',exact:true});
+  await phoneDialog.getByText('Saved Canvas version 1 · Research Agent',{exact:true}).waitFor();
+  const phoneConfirm=phoneDialog.getByRole('button',{name:'Send Canvas',exact:true});
+  assert.equal(await phoneConfirm.isDisabled(),true,'A phone without AGENT approval requires explicit consent.');
+  await phoneDialog.getByLabel('Connected phone',{exact:true}).selectOption('b'.repeat(32));
+  assert.equal(await phoneConfirm.isEnabled(),true,'A currently approved phone preserves its selected Agent consent.');
+  await phoneDialog.getByLabel('Connected phone',{exact:true}).selectOption('a'.repeat(32));
+  assert.equal(await phoneConfirm.isDisabled(),true);
+  const dialogBounds=await phoneDialog.evaluate(n=>({width:n.getBoundingClientRect().width,scroll:n.scrollWidth,client:n.clientWidth}));
+  assert.ok(dialogBounds.width<=390&&dialogBounds.scroll<=dialogBounds.client+1,'The phone selector fits a narrow display without horizontal scrolling.');
+  await phoneDialog.getByRole('checkbox').check();await phoneConfirm.click();
+  await phoneDialog.waitFor({state:'hidden'});
+  await panel.getByText('Canvas version 1 is available in AGENT on My iPhone.',{exact:true}).waitFor();
+  assert.equal(records('phone_send').length,1);
+  await page.setViewportSize({width:1280,height:900});
   await panel.getByRole('button',{name:'Test preview'}).click();
   await status.getByText('Preview loaded successfully.',{exact:false}).waitFor();
   assert.equal(records('test').length,1);

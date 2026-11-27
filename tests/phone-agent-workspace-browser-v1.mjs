@@ -241,7 +241,7 @@ try{
   await page.goto('https://phone-agent.test/phone-location.php');
   await page.getByRole('tab',{name:'Phone',exact:true}).click();
   await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
-  assert.equal(await page.locator('#phone-tab-agent').isVisible(),false,'A role=owner pairing does not grant private Agent access.');
+  assert.equal(await page.locator('#phone-tab-agent').isVisible(),true,'A paired phone can find the AGENT approval screen before private access is granted.');
   assert.ok(requests.every(input=>input.action==='status'),'An unauthenticated holder never requests feed or detail.');
   assert.match(await page.getByRole('link',{name:'Sign in to your account'}).getAttribute('href'),/login\.php\?return_to=%2Fphone-location\.php/);
   signedIn=true;await page.getByRole('button',{name:'Check sign-in'}).click();
@@ -312,7 +312,7 @@ try{
   await nativeFrame().getByLabel('Message',{exact:true}).fill(original+'\nSaved on the phone.');await back().click();
   await nativeFrame().getByRole('button',{name:'Save draft and leave',exact:true}).click();await card(id(1)).waitFor();assert.match(draft.body,/Saved on the phone/);assert.equal(emailRequests.filter(input=>input.action==='confirm').length,0);
   const savedBeforeDenial=draft.body;await card(id(1)).getByRole('button',{name:'Review email'}).click();await nativeFrame().getByLabel('Message',{exact:true}).fill('These unsaved edits must clear when access is lost.');await back().click();
-  denySave=true;await nativeFrame().getByRole('button',{name:'Save draft and leave',exact:true}).click();await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
+  denySave=true;await nativeFrame().getByRole('button',{name:'Save draft and leave',exact:true}).click();await page.locator('.phone-agent-approval').waitFor();await page.getByRole('tab',{name:'Phone',exact:true}).click();await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
   assert.equal(await page.locator('.phone-agent-native-frame').count(),0,'Denied dirty Save-and-leave clears the private native view.');assert.equal(draft.body,savedBeforeDenial);assert.equal(emailRequests.filter(input=>input.action==='confirm').length,0);
   signedIn=true;await page.getByRole('button',{name:'Check sign-in'}).click();await page.getByRole('button',{name:'Open Agent',exact:true}).click();await card(id(1)).waitFor();
   phoneLearning=true;
@@ -471,8 +471,8 @@ try{
   await back().click();await card(id(2)).getByRole('button',{name:'Read result'}).click();await agent().getByRole('button',{name:'Open original Chat'}).click();
   await page.getByRole('heading',{name:'Original private Chat'}).waitFor();assert.match(navigation.at(-1),/chat\.php\?agent=system&conversation_id=42$/);
   await page.goto('https://phone-agent.test/phone-location.php');await card(id(3)).waitFor();await card(id(3)).getByRole('button',{name:'View image'}).click();await nativeFrame().getByRole('img',{name:'Color study'}).waitFor();
-  signedIn=false;await wake();await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
-  assert.equal(await page.locator('#phone-tab-agent').isVisible(),false);assert.equal(await page.locator('.phone-agent-native-frame').count(),0);assert.equal(await agent().locator('article').count(),0);
+  signedIn=false;await wake();await page.locator('.phone-agent-approval').waitFor();await page.getByRole('tab',{name:'Phone',exact:true}).click();await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
+  assert.equal(await page.locator('#phone-tab-agent').isVisible(),true);assert.equal(await page.locator('.phone-agent-native-frame').count(),0);assert.equal(await agent().locator('article').count(),0);
   assert.equal(await page.getByRole('tab',{name:'Chat',exact:true}).isVisible(),true,'Revoking owner workspace authority preserves the holder Chat surface.');
   assert.ok(emailRequests.filter(input=>input.action.startsWith('preference')).every(input=>[id(101),id(102)].includes(input.draft_id)),'Every native writing preference action remains bound to its exact draft.');
   assert.deepEqual(errors,[]);console.log('Phone Agent browser: enrollment, privacy, explicit email-call settings, stable dirty forms, exact call review, explicit writing preference/management with dirty Back and unchanged voice review, filters, receipts, actual native bridge, dirty Gmail save/send, image, sandboxed canvas, push, scope races and phone/desktop layouts passed.');

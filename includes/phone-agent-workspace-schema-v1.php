@@ -23,6 +23,11 @@ function vp3_phone_agent_workspace_install_v1(PDO $pdo): void
         PRIMARY KEY(owner_user_id,device_id), UNIQUE(owner_user_id,device_id,grant_id),
         FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_devices_v1(owner_user_id,id) ON DELETE CASCADE
     )".$tail);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_agent_device_grants_v1(
+        owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,grant_id CHAR(32) NOT NULL,approved_epoch BIGINT NOT NULL,
+        PRIMARY KEY(owner_user_id,device_id),
+        FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_devices_v1(owner_user_id,id) ON DELETE CASCADE
+    )".$tail);
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_agent_items_v1 (
         sequence_id $sequence, item_ref CHAR(32) NOT NULL UNIQUE,
         owner_user_id INT UNSIGNED NOT NULL, agent_id BIGINT UNSIGNED NOT NULL, conversation_id BIGINT UNSIGNED NOT NULL,
@@ -40,6 +45,13 @@ function vp3_phone_agent_workspace_install_v1(PDO $pdo): void
         seen_epoch BIGINT NULL, read_epoch BIGINT NULL, acknowledged_epoch BIGINT NULL, snoozed_until BIGINT NULL,
         updated_epoch BIGINT NOT NULL,
         PRIMARY KEY(owner_user_id,device_id,grant_id,item_ref),
+        FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_devices_v1(owner_user_id,id) ON DELETE CASCADE,
+        FOREIGN KEY(owner_user_id,item_ref) REFERENCES vp3_phone_agent_items_v1(owner_user_id,item_ref) ON DELETE CASCADE
+    )".$tail);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_canvas_deliveries_v1(
+        owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,request_id CHAR(36) NOT NULL,
+        signature CHAR(64) NOT NULL,grant_id CHAR(32) NOT NULL,item_ref CHAR(32) NOT NULL,created_epoch BIGINT NOT NULL,
+        PRIMARY KEY(owner_user_id,request_id),
         FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_devices_v1(owner_user_id,id) ON DELETE CASCADE,
         FOREIGN KEY(owner_user_id,item_ref) REFERENCES vp3_phone_agent_items_v1(owner_user_id,item_ref) ON DELETE CASCADE
     )".$tail);
@@ -76,5 +88,11 @@ function vp3_phone_agent_workspace_worker_ready_v1(PDO $pdo): bool
 {
     if(!vp3_phone_agent_workspace_ready_v1($pdo))return false;
     try{$pdo->query('SELECT owner_user_id,device_id,checked_epoch FROM vp3_phone_agent_ingestion_v1 WHERE 1=0');return true;}
+    catch(PDOException){return false;}
+}
+
+function vp3_phone_agent_device_grants_ready_v1(PDO $pdo):bool
+{
+    try{$pdo->query('SELECT owner_user_id,device_id,grant_id,approved_epoch FROM vp3_phone_agent_device_grants_v1 WHERE 1=0');$pdo->query('SELECT owner_user_id,device_id,request_id,signature,grant_id,item_ref,created_epoch FROM vp3_phone_canvas_deliveries_v1 WHERE 1=0');return true;}
     catch(PDOException){return false;}
 }

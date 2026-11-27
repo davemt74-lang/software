@@ -10,6 +10,20 @@ require_once __DIR__.'/agent-brain-soul-v1.php';
  */
 function agent_email_preferences_http_current_v1(PDO $pdo,array $user,array $principal,int $conversation): Closure
 {
+    $delegated=$GLOBALS['VP3_PHONE_AGENT_NATIVE_EXECUTION_CONTEXT_V1']['context']['scope']??null;
+    if(defined('VP3_PHONE_AGENT_NATIVE_V1')&&is_array($delegated)&&!empty($delegated['paired_access'])){
+        $csrf=$_SESSION['csrf_token']??null;$review=$_SESSION['agent_connection_email_review_v1']??null;$session=session_id();
+        if((int)$delegated['user']['id']!==(int)$user['id']||!is_string($csrf)||$csrf===''||!is_string($review)||$review===''||$session==='')throw new DomainException('Phone access changed.',401);
+        return static function()use($pdo,$user,$principal,$conversation,$csrf,$review,$session):bool{
+            $transaction=$pdo->inTransaction();
+            try{
+                if(session_id()!==$session||(!$transaction&&session_status()!==PHP_SESSION_ACTIVE&&!session_start()))throw new DomainException('Phone session changed.',401);
+                if(!hash_equals($csrf,(string)($_SESSION['csrf_token']??''))||!hash_equals($review,(string)($_SESSION['agent_connection_email_review_v1']??'')))throw new DomainException('Phone review changed.',419);
+                vp3_phone_agent_native_execution_current_v1($pdo);
+                agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);return true;
+            }finally{if(!$transaction&&session_status()===PHP_SESSION_ACTIVE)session_write_close();}
+        };
+    }
     $owner=(int)($user['id']??0);$session=session_id();
     $fingerprint=$_SESSION['auth_password_fingerprint']??null;
     $csrf=$_SESSION['csrf_token']??null;

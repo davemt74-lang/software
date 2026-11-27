@@ -355,6 +355,26 @@ try{
     pas_check(!vp3_phone_push_source_current_v1($pdo,$device,$attentionEventSource,$clock+31),
         'resolving important Gmail work invalidates its queued notification before transport');
     $_SESSION=$session;
+
+    // Explicit main-app Canvas delivery creates a separately approved no-login device grant.
+    require_once dirname(__DIR__).'/includes/coding-canvas-phone-v1.php';
+    session_id('phone-source-main-'.bin2hex(random_bytes(12)));session_start();$_SESSION=$session;
+    $beforeCanvas=$pdo->query('SELECT * FROM vp3_coding_canvases_v1')->fetchAll();
+    $beforeKnowledge=$pdo->query('SELECT * FROM knowledge_items')->fetchAll();
+    $targets=vp3_coding_canvas_phone_v1($pdo,$owner,7,12,$canvasId,2,'phone_targets',[]);
+    pas_check(count($targets['phones'])===1&&!$targets['phones'][0]['agent_access']['enabled'],'legacy phone enrollment is never migrated into no-login permission silently');
+    $delivery=vp3_coding_canvas_phone_v1($pdo,$owner,7,12,$canvasId,2,'phone_send',[
+        'device_id'=>$deviceId,'generation'=>(int)$device['generation'],'expected_revision'=>$targets['phones'][0]['agent_access']['revision'],
+        'request_id'=>'30000000-0000-4000-8000-000000000001','confirmed'=>true]);
+    pas_check($beforeCanvas===$pdo->query('SELECT * FROM vp3_coding_canvases_v1')->fetchAll()
+        &&$beforeKnowledge===$pdo->query('SELECT * FROM knowledge_items')->fetchAll(),
+        'actual private Canvas delivery preserves canonical code, app state, revision and publication state');
+    $anonymous=['csrf_token'=>'paired-source-csrf','phone_agent_workspace_key_v1'=>bin2hex(random_bytes(32)),
+        'agent_connection_email_review_v1'=>bin2hex(random_bytes(32))];$_SESSION=$anonymous;
+    $paired=vp3_phone_agent_workspace_request_v1($pdo,null,$token,['action'=>'status','device_id'=>$deviceId],$clock+31);
+    pas_check($paired['state']==='ready'&&$paired['authorization_mode']==='paired_device'&&!isset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']),
+        'actual native sources are available through approved pairing without manufacturing a main-app session');
+
     // The wrapper's earlier authorization cannot outlive owner-mode revocation at the actual canonical send boundary.
     $sendDraft=pas_draft();$sendSource=$read('gmail_draft',$sendDraft['id']);
     $sendRefs=vp3_phone_agent_workspace_ingest_v1($pdo,1,7,[$sendSource],$clock+31);
@@ -365,9 +385,25 @@ try{
     $confirmation=['action'=>'confirm','draft_id'=>$sendDraft['id'],'confirmed'=>true,'watch_replies'=>false,'review_token'=>$review['review_token'],
         'agent_id'=>7,'conversation_id'=>11];
     vp3_phone_agent_native_action_v1($pdo,$sendContext,'email',$confirmation);
-    session_id('phone-source-native-'.bin2hex(random_bytes(12)));session_start();$_SESSION=$session;session_write_close();
+    session_id('phone-source-native-'.bin2hex(random_bytes(12)));session_start();$_SESSION=$anonymous;session_write_close();
     $GLOBALS['VP3_PHONE_AGENT_NATIVE_EXECUTION_CONTEXT_V1']=['context'=>$sendContext,'kind'=>'email'];
     define('VP3_PHONE_AGENT_NATIVE_V1','email');
+
+    vp3_phone_agent_native_execution_current_v1($pdo);
+    $saved=agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,[
+        'action'=>'compose_save','draft_id'=>$sendDraft['id'],'review_token'=>$review['review_token'],
+        'to'=>'recipient@example.test','subject'=>'Reviewed on my paired phone','body'=>'Saved without a phone login.','attachment_ids'=>[]],$approvalKey);
+    pas_check($saved['subject']==='Reviewed on my paired phone'&&$saved['body']==='Saved without a phone login.'
+        &&!isset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']),
+        'an anonymous approved phone saves edits through the real Gmail composer without sending');
+    pas_reject(409,fn()=>agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,$confirmation,$approvalKey),
+        'a no-login phone must review its changed email again before confirming a send');
+    $review=agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,['action'=>'review','draft_id'=>$sendDraft['id']],$approvalKey);
+    $confirmation['review_token']=$review['review_token'];
+    require_once dirname(__DIR__).'/includes/agent-email-preferences-http-v1.php';
+    session_start();$preferencesCurrent=agent_email_preferences_http_current_v1($pdo,$owner,$principal,11);session_write_close();
+    pas_check($preferencesCurrent()&&!isset($_SESSION['user_id']),
+        'writing preference review retains the same anonymous session and exact native draft authority');
     $pdo->prepare('UPDATE vp3_phone_agent_enrollments_v1 SET enabled=0,revision=revision+1 WHERE device_id=?')->execute([$deviceId]);
     $sendHttpCalls=0;$sendHttp=static function(...$args)use(&$sendHttpCalls):array{$sendHttpCalls++;throw new RuntimeException('A revoked phone must never dispatch Gmail.');};
     pas_reject(403,fn()=>agent_connection_email_chat_action_v1($pdo,$owner,$principal,11,$confirmation,$approvalKey,$sendHttp),

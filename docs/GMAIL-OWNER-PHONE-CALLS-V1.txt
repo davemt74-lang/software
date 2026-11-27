@@ -18,9 +18,9 @@ Set up the channel
    upgrade.php flow. The existing phone installer also covers fresh setup.php
    installations. Runtime requests only check readiness; they do not migrate
    tables.
-2. Pair and approve the connected phone. Sign in as its owning account and
-   enable its private AGENT workspace. Main Agent is the initial selection;
-   another private Agent can be selected explicitly. The email-call channel
+2. Pair and approve the connected phone. In the signed-in main app, open Phone
+   Tracking > this phone > Permissions and explicitly allow AGENT without a
+   phone login. Select the private Agent. The email-call channel
    uses that phone enrollment's selected Agent and its authorized saved work.
 3. In Account > Agent phone, save the owner's main international number and
    enable requested Agent updates. Set the existing time zone, calling hours,
@@ -30,8 +30,7 @@ Set up the channel
    Both owner and holder calling choices must remain enabled. The assigned
    Agent calling line must have current voice, recording and transcription
    configuration. The owner destination is not a new CRM contact.
-5. Open Gmail specialist > Settings > Email calls, or the phone's Connection
-   settings. Choose the connected phone and assigned calling line. Select
+5. In the main app, open Gmail specialist > Settings > Email calls. Choose the connected phone and assigned calling line. Select
    Urgent incoming email and/or Agent-prepared email drafts ready for review.
    Confirm the recorded/transcribed AI-call permission, then Save email calls.
 6. Keep the existing Operator schedule worker running with --dispatch. The
@@ -98,7 +97,7 @@ updates have a separate revision and do not refresh or replace a dirty email.
 
 Optional voice confirmation
 
-Voice confirmation requires the exact draft to remain open in the signed-in
+Voice confirmation requires the exact draft to remain open in the authorized
 owner's phone review. It is not an offline voice-only Gmail permission.
 
 1. Review the saved recipient, subject, message, attachments and reply-watching
@@ -124,7 +123,8 @@ enabling a new challenge requires the original saved version to remain current.
 
 The carrier callback only records an intent. It has no owner session, native
 Gmail review token or send capability. The still-open authenticated phone
-performs the send with its real session, CSRF and exact paired-device scope.
+performs the send with its anonymous review session, CSRF and exact approved
+paired-device scope. No phone user login is required.
 The native Gmail path rechecks the call-bound grant at its execution boundary,
 then retains its existing source/current-thread checks, duplicate-send ledger
 and reconciliation behavior. A client-reported success is never send evidence.
