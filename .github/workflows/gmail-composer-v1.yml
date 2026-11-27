@@ -48,6 +48,8 @@ on:
       - 'tests/agent-initiative-model-v1.php'
       - 'tests/profile-owner-drafts-provider-v1.php'
       - 'tests/paired-phone-provider-v1.php'
+      - 'gmail-email-capture-v1.*'
+      - 'api/gmail-email-capture-v1.php'
       - 'tests/fixtures/gmail-email-display-v1.php'
       - '.github/workflows/gmail-composer-v1.yml'
   push:
@@ -98,6 +100,8 @@ on:
       - 'tests/agent-initiative-model-v1.php'
       - 'tests/profile-owner-drafts-provider-v1.php'
       - 'tests/paired-phone-provider-v1.php'
+      - 'gmail-email-capture-v1.*'
+      - 'api/gmail-email-capture-v1.php'
       - 'tests/fixtures/gmail-email-display-v1.php'
       - '.github/workflows/gmail-composer-v1.yml'
   workflow_dispatch:
@@ -159,6 +163,11 @@ jobs:
           php tests/agent-gmail-documents-v1.php
           php tests/agent-gmail-documents-provider-v1.php
           for file in includes/agent-gmail-document*.php api/gmail-documents-v1.php; do php -l "$file"; done
+      - name: Owner-selected email regions, source fences and native action kernels
+        run: |
+          php tests/gmail-email-capture-v1.php
+          php tests/gmail-email-capture-provider-v1.php
+          for file in includes/gmail-email-capture*.php api/gmail-email-capture-v1.php; do php -l "$file"; done
       - name: Private Phone Agent enrollment, native sources, receipts and background push
         run: |
           for file in tests/phone-agent-workspace-*.php; do php "$file"; done
@@ -221,6 +230,12 @@ jobs:
           node tests/email-writing-preferences-browser-v1.mjs
       - name: Attachment summaries, source pages, explicit replies, Phone scope and responsive review
         run: node tests/gmail-documents-browser-v1.mjs
+      - name: Email region selection, cropped photos, action forms and exact HTTP scope
+        env:
+          VP3_GMAIL_CAPTURE_SCREENSHOTS: artifacts/gmail-capture
+        run: |
+          node tests/gmail-email-capture-api.mjs
+          node tests/gmail-email-capture-browser.mjs
       - name: Response deadlines, verified outcomes, pause, resolve and follow-up review
         run: node tests/gmail-followthrough-browser.mjs
       - name: Connected Phone Agent native review, dirty navigation, private canvases and push targets

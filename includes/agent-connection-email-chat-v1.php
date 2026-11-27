@@ -410,7 +410,7 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
             if ($replyOffer) $answer .= "\n\nWant me to draft a reply?";
             if (!empty($mail['answered_in_gmail'])) $answer .= "\n\nYou already replied to this message in Gmail.";
             $presentation = isset($mail['display']) ? ['gmail_message_display_v1'=>[
-                'subject'=>$mail['subject'],'from'=>$mail['from'],'body'=>$mail['body'],'display'=>$mail['display'],
+                'subject'=>$mail['subject'],'from'=>$mail['from'],'body'=>$mail['body'],'display'=>$mail['display'],'capture_source'=>$mail['capture_source']??null,
                 'answered_in_gmail'=>!empty($mail['answered_in_gmail'])]] : [];
             return $result + $replyOffer + $presentation + ['answer'=>$answer,'email_private_read_v1'=>true,
                 'gmail_local_read_aloud'=>$voice && !empty($plan['read_aloud']),
@@ -453,8 +453,10 @@ function agent_connection_email_chat_v1(PDO $pdo, array $user, array $principal,
                 $count = count($lines);
             } else {
                 $mail = agent_connection_gmail_read_v1($access['access_token'], $plan['message_id'], $http, true);
+                require_once __DIR__.'/gmail-email-capture-source-v1.php';
+                $capture=gmail_email_capture_source_v1($pdo,$live,$connectionId,$grant,$mail);
                 if (isset($mail['display'])) $presentation = ['gmail_message_display_v1'=>[
-                    'subject'=>$mail['subject'],'from'=>$mail['from'],'body'=>mb_substr($mail['body'],0,6000),'display'=>$mail['display']]];
+                    'subject'=>$mail['subject'],'from'=>$mail['from'],'body'=>mb_substr($mail['body'],0,6000),'display'=>$mail['display'],'capture_source'=>$capture]];
                 $answer = trim(($mail['subject']?:'(No subject)')."\n".'From: '.$mail['from']."\n\n".mb_substr($mail['body'], 0, 6000));
                 $addAction($mail,'Open email');
                 $count = 1;

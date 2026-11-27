@@ -747,6 +747,11 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
         &&($turnControl['gmail_document_review']??false)===true;
     if ((($turnControl['protocol']??'')==='vp3.gmail-document-review.v1'||isset($turnControl['gmail_document']))&&!$gmailDocument)
         return ai_v100_service_failure('Private attachment review access verification is unavailable.','service_usage_unavailable');
+    $gmailCapture=($turnControl['surface']??'')==='tool_json'
+        &&($turnControl['protocol']??'')==='vp3.gmail-email-capture.v1'
+        &&($turnControl['gmail_email_capture']??false)===true;
+    if ((($turnControl['protocol']??'')==='vp3.gmail-email-capture.v1'||isset($turnControl['gmail_capture_input']))&&!$gmailCapture)
+        return ai_v100_service_failure('Private email area access verification is unavailable.','service_usage_unavailable');
     $profileOwnerReply=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.profile-owner-reply-draft.v1';
     $beforeDispatch=match(true){
@@ -759,6 +764,7 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
         $emailPreference=>$turnControl['before_email_preference_dispatch']??null,
         $profileOwnerReply=>$turnControl['before_profile_owner_reply_dispatch']??null,
         $gmailDocument=>$turnControl['before_gmail_document_dispatch']??null,
+        $gmailCapture=>$turnControl['before_gmail_capture_dispatch']??null,
         default=>null,
     };
     if(($turnControl['surface']??'')==='paired_phone_chat')$budget=min($budget,900);
@@ -767,6 +773,7 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
     if($gmailAnalysis)$budget=900;
     if($phoneEmailCall)$budget=128;
     if($emailPreference)$budget=384;
+    if($gmailCapture)$budget=4096;
     if($gmailDocument){
         require_once __DIR__.'/agent-gmail-document-input-v1.php';
         $messages=[['role'=>'user','content'=>agent_gmail_document_provider_content_v1($provider,$turnControl['gmail_document'],$current)]];
@@ -797,13 +804,13 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
         if($openai){
             $result=ai_curl_json('https://api.openai.com/v1/responses',
                 ['Authorization: Bearer '.$apiKey,'Content-Type: application/json'],
-                ['model'=>$model,'instructions'=>$prompt,'input'=>$messages,'max_output_tokens'=>$budget]+($gmailDocument?['store'=>false]:[]),
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$emailPreference||$profileOwnerReply||$gmailDocument,$observer,$beforeDispatch);
+                ['model'=>$model,'instructions'=>$prompt,'input'=>$messages,'max_output_tokens'=>$budget]+(($gmailDocument||$gmailCapture)?['store'=>false]:[]),
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$emailPreference||$profileOwnerReply||$gmailDocument||$gmailCapture,$observer,$beforeDispatch);
         }else{
             $result=ai_curl_json('https://api.anthropic.com/v1/messages',
                 ['x-api-key: '.$apiKey,'anthropic-version: 2023-06-01','Content-Type: application/json'],
                 ['model'=>$model,'max_tokens'=>$budget,'system'=>$prompt,'messages'=>$messages],
-                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$emailPreference||$profileOwnerReply||$gmailDocument,$observer,$beforeDispatch);
+                $complexity==='deep'?75:55,$meter,$target,$own!==null?$apiKey:null,$gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$emailPreference||$profileOwnerReply||$gmailDocument||$gmailCapture,$observer,$beforeDispatch);
         }
         $usage=[];$answer='';
         if(!empty($result['ok'])){
@@ -853,7 +860,7 @@ function ai_hosted_chat_response(string $provider,string $query,array $history,a
             'failure_code'=>'provider_response_empty','status'=>$result['status']??null,
             'stop_service_fallback'=>$meter?->active??false];
         $last['_legacy_usage_key']=$observedKey;
-        if($gmailFollowthrough||$phoneEmailCall||$emailPreference||$profileOwnerReply||$gmailDocument||!empty($last['stop_service_fallback']))return $last;
+        if($gmailFollowthrough||$phoneEmailCall||$emailPreference||$profileOwnerReply||$gmailDocument||$gmailCapture||!empty($last['stop_service_fallback']))return $last;
     }
     return $last;
 }
@@ -927,12 +934,18 @@ function ai_generate_chat_response(
         &&($turnControl['gmail_document_review']??false)===true;
     if ((($turnControl['protocol']??'')==='vp3.gmail-document-review.v1'||isset($turnControl['gmail_document']))&&!$gmailDocument)
         return ai_v100_service_failure('Private attachment review access verification is unavailable.','service_usage_unavailable');
+    $gmailCapture=($turnControl['surface']??'')==='tool_json'
+        &&($turnControl['protocol']??'')==='vp3.gmail-email-capture.v1'
+        &&($turnControl['gmail_email_capture']??false)===true;
+    if ((($turnControl['protocol']??'')==='vp3.gmail-email-capture.v1'||isset($turnControl['gmail_capture_input']))&&!$gmailCapture)
+        return ai_v100_service_failure('Private email area access verification is unavailable.','service_usage_unavailable');
     $profileOwnerReply=($turnControl['surface']??'')==='tool_json'
         &&($turnControl['protocol']??'')==='vp3.profile-owner-reply-draft.v1';
     // Phone callers have no owner-session authority. Never run private Chat
     // context enrichment for this surface, including on a retry.
     if (($turnControl['surface']??'')==='phone_voice') $context=[];
     elseif (($turnControl['surface']??'')==='paired_phone_chat') { $context=[]; $visionImages=[]; }
+    elseif($gmailCapture) $history=$context=[];
     elseif($gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$emailPreference||$profileOwnerReply||$gmailDocument) $history=$context=$visionImages=[];
     elseif($developmentOutline) $context=[];
     elseif(($turnControl['surface']??'')!=='cloud_mission'&&!$initiative
@@ -994,6 +1007,17 @@ function ai_generate_chat_response(
         require_once __DIR__.'/agent-gmail-document-input-v1.php';
         try{agent_gmail_document_input_v1($turnControl['gmail_document']??[]);}
         catch(Throwable){return ai_v100_service_failure('The attachment format could not be verified.','invalid_document');}
+    }
+    if($gmailCapture){
+        if(!$meter?->active||($serviceContext['service']??null)!=='conversation'
+            ||($serviceContext['background']??null)!==false
+            ||!(($turnControl['before_gmail_capture_dispatch']??null) instanceof Closure)
+            ||!function_exists('gmail_email_capture_input_v1'))
+            return ai_v100_service_failure('Email area analysis requires current foreground usage and access verification.','service_usage_unavailable');
+        try{
+            $capture=gmail_email_capture_input_v1((array)($turnControl['gmail_capture_input']??[]));
+            if($visionImages!==($capture['mode']==='photo'?[$capture['image']]:[]))throw new InvalidArgumentException('Capture image mismatch.');
+        }catch(Throwable){return ai_v100_service_failure('The selected email area could not be verified.','invalid_capture');}
     }
     $explicit=!empty($policy['configured']);
     $connection=$user&&function_exists('db')?db():null;
@@ -1076,7 +1100,7 @@ function ai_generate_chat_response(
                 $result['compute_source']='user_provider';
                 $result['system_tokens_charged']=false;
             }
-            if($gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$emailPreference||$profileOwnerReply||$gmailDocument||!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
+            if($gmailSummary||$gmailReply||$gmailAnalysis||$gmailFollowthrough||$phoneEmailCall||$emailPreference||$profileOwnerReply||$gmailDocument||$gmailCapture||!empty($result['ok'])||!empty($result['stop_service_fallback']))break;
         }
 
         if(!$meter?->active&&!$isOwn&&!empty($result['ok'])&&function_exists('subscription_ai_commit_usage')){
