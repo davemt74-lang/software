@@ -83,6 +83,7 @@ function vp3_coding_canvas_job_view_v1(PDO $pdo, array $row): array
         'coding_invalid_source' => 'The model returned code that Canvas could not use. Edit the request or retry the saved request.',
         'coding_provider_unconfirmed' => 'The provider attempt could not be confirmed. Check AI usage before starting another run.',
         'coding_provider_unavailable' => 'The model provider could not complete the request. Check the selected model and retry when available.',
+        'coding_provider_rate_limited' => 'The model provider rate-limited this request. Wait briefly before retrying the saved request.',
         'coding_provider_credits' => 'The selected provider reported insufficient API credits. Add credits or choose another model before retrying.',
         'coding_usage_unconfirmed' => 'The provider did not confirm usage, so this draft could not be saved. Check AI usage before retrying.',
         'coding_result_unavailable' => 'This run finished, but its saved draft is no longer available. Open Saved canvases to choose a current version.',

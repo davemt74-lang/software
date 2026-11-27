@@ -11,7 +11,13 @@ final class Vp3CodingCanvasFailureV1 extends RuntimeException
 {
     public function __construct(public readonly string $failureClass)
     {
-        parent::__construct('The Coding Agent did not produce a complete usable draft.', 502);
+        parent::__construct(match ($failureClass) {
+            'coding_output_incomplete' => 'The Coding Agent did not finish its Canvas. Edit the request into a smaller change.',
+            'coding_invalid_source' => 'The Coding Agent returned an invalid Canvas. Edit the request or retry the saved request.',
+            'coding_usage_unconfirmed' => 'The Coding Agent provider did not confirm usage for this response.',
+            'coding_provider_rate_limited' => 'The model provider rate-limited this Canvas request. Retry when the provider is available.',
+            default => 'The Coding Agent did not produce a complete usable draft.',
+        }, 502);
     }
 }
 
@@ -181,7 +187,7 @@ function vp3_coding_canvas_generate_v1(PDO $pdo,array $user,array $pin,string $j
             'provider_attempt_unconfirmed'=>'coding_provider_unconfirmed',
             'anthropic_credit_balance_low'=>'coding_provider_credits',
             'provider_response_too_large','provider_response_invalid'=>'coding_invalid_source',
-            default=>null,
+            default=>($result['status']??0)===429?'coding_provider_rate_limited':null,
         };
         if($failure!==null)throw new Vp3CodingCanvasFailureV1($failure);
         $code=match($result['failure_code']??''){
