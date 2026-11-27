@@ -101,12 +101,7 @@ if (!$memberHeaderRuntimeRendered):
 ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;window.STONEFELLOW_NOTIFICATION_DRAWER=window.VP3_NOTIFICATION_DRAWER;</script>
 <script data-chat-notification-drawer src="<?= e(url('/chat-notifications-drawer-v240.js?v=' . $memberHeaderNotificationBuild)) ?>"></script>
 <?php endif; ?>
-<?php if (has_permission('artist_listening.access', $memberHeaderUser)): ?>
-<script>window.VP3_RECORDINGS_V198_CONFIG={endpoint:<?= json_encode(url('/api/artist-recordings-v198.php'), JSON_UNESCAPED_SLASHES) ?>,csrf:<?= json_encode(csrf_token(), JSON_UNESCAPED_SLASHES) ?>,artistListeningUrl:<?= json_encode(url('/artist-listening.php'), JSON_UNESCAPED_SLASHES) ?>,persistEndpoint:<?= json_encode(url('/api/chat-recordings-v242.php'), JSON_UNESCAPED_SLASHES) ?>};window.STONEFELLOW_RECORDINGS_V198_CONFIG=window.VP3_RECORDINGS_V198_CONFIG;</script>
-<link rel="stylesheet" data-chat-transcription-canvas href="<?= e(url('/chat-transcription-canvas.css?v=' . $memberHeaderTranscriptionBuild)) ?>">
-<script data-artist-recordings-v198 data-recording-ui-build="<?= e($memberHeaderRecordingUiBuild) ?>" src="<?= e(url('/artist-listening-recordings.js?v=' . $memberHeaderRecordingUiBuild)) ?>"></script>
-<script data-chat-transcription-canvas data-transcription-canvas-build="<?= e($memberHeaderTranscriptionBuild) ?>" src="<?= e(url('/chat-transcription-canvas.js?v=' . $memberHeaderTranscriptionBuild)) ?>"></script>
-<?php endif; ?>
+<?php if(has_permission('artist_listening.access',$memberHeaderUser)){require_once __DIR__.'/member-transcriptions-v1.php';echo vp3_member_transcriptions_runtime_v1($memberHeaderUser);} ?>
 <?php endif;
 
 if ($memberHeaderShowAgentOrb ?? true) require __DIR__.'/agent-orb.php';

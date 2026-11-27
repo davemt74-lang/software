@@ -11,3 +11,6 @@
 .intel-followup{margin-top:9px;padding:9px 11px;border-left:2px solid #8098b5;background:#f4f7fb;color:#25374d;font-size:12px;line-height:1.55;overflow-wrap:anywhere}
 .intel-followup p{margin:4px 0 5px;white-space:pre-wrap}
 .intel-followup a{color:inherit;font-weight:650;text-underline-offset:2px}
+
+/* Member pages can mount this slideout without the main Chat stylesheet. */
+.chat-transcription-canvas-v243,.chat-transcription-canvas-v243 *{box-sizing:border-box}

@@ -251,6 +251,7 @@ function artist_recordings_v198_delete(PDO $pdo, array $user, int $sessionId, st
 
 $user = current_user();
 if (!$user) artist_recordings_v198_json(false, ['error'=>'Sign in to use recording library.'], 401);
+if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])&&!hash_equals(vp3_catch_up_page_binding_v1($user),(string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION']))artist_recordings_v198_json(false,['error'=>'Your account changed. Refresh this page.'],403);
 if (!has_permission('artist_listening.access', $user)) artist_recordings_v198_json(false, ['error'=>'Artist Listening permission is required.'], 403);
 if (!artist_listening_v172_schema_ready()) artist_recordings_v198_json(false, ['error'=>'Artist Listening is not ready.'], 503);
 $pdo = db();

@@ -4,6 +4,7 @@ declare(strict_types=1);
 /** Actual header/runtime rendering against current persisted assignment state. No provider calls. */
 require dirname(__DIR__).'/includes/phone-workspace-v1.php';
 require dirname(__DIR__).'/includes/phone-workspace-ui-v1.php';
+require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
 
 $pdo=new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
@@ -61,6 +62,8 @@ $config=json_decode($match[1],true,512,JSON_THROW_ON_ERROR);
 phone_ui_check(($config['agent_id']??null)===7&&($config['conversation_id']??null)===42,'The rendered configuration preserves the real selected Agent/conversation using the frontend API keys.');
 phone_ui_check(($config['endpoint']??'')==='/installed-vp3/api/phone-workspace-v1.php'&&($config['sdk_url']??'')==='/installed-vp3/assets/twilio-voice-2.18.5.min.js','Subdirectory installations use their own API and vendored SDK paths.');
 phone_ui_check(($config['csrf']??'')===csrf_token()&&!str_contains($match[1],'</script>'),'CSRF survives JSON decoding without breaking out of the inline configuration.');
+phone_ui_check(($config['attention_binding']??'')===vp3_catch_up_page_binding_v1($owner)&&($config['context_endpoint']??'')==='/installed-vp3/api/agent-phone-shell-v1.php','Cross-page context requests use the real account binding and installation path.');
+phone_ui_check(str_contains($runtime,'data-voice-capture-scope="1"')&&strpos($runtime,'voice-lease-v122.js')<strpos($runtime,'<script data-phone-workspace-v1'),'Every page loads the shared owner microphone lease before the Phone client.');
 phone_ui_check(substr_count($runtime,'data-phone-workspace-v1')===2&&preg_match('/\?v=[a-f0-9]{12}/',$runtime)===1,'One render supplies the stylesheet and versioned frontend script.');
 phone_ui_check(str_contains($runtime,'/installed-vp3/phone-operator-voice-mixer-v1.js?v=')&&strpos($runtime,'data-phone-operator-voice-mixer')<strpos($runtime,'<script data-phone-workspace-v1'),'The optional outbound mixer loads before the existing phone client.');
 phone_ui_check(vp3_phone_workspace_runtime_v1($owner,7,42)==='','Repeated shared header calls do not duplicate the Phone runtime.');

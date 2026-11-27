@@ -40,7 +40,7 @@
       tx.oncomplete=()=>resolve(profile);tx.onerror=()=>reject(tx.error);tx.onabort=()=>reject(tx.error||Error('Trained voice enrollment stopped.'));});}finally{db.close();}
   }
   const recording=()=>Boolean(document.querySelector('[data-recording="true"],.is-recording,.chat-media-studio button.recording,[data-agent-state="recording"]'));
-  const state=()=>{const current=window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState;const pending=(!current||current==='idle')&&$('sendChatButton')?.disabled;return {state:audible||current==='speaking'?'speaking':preparing||pending?'thinking':current||'idle',recording:recording()};};
+  const state=()=>{const current=window.VP3ConversationControls?.state().state||document.body.dataset.stonefellowAgentState;const pending=(!current||current==='idle')&&$('sendChatButton')?.disabled;return {state:audible||current==='speaking'?'speaking':preparing||pending?'thinking':current||'idle',recording:recording(),voiceEnabled:window.VP3ConversationControls?.isEnabled?.()??$('chatVoiceButton')?.getAttribute('aria-pressed')==='true'};};
   // Recognition is local. Only a ready, focused owner Chat can export coarse
   // sensor observations to its existing proactive loop.
   function liveSensoryContext(){
@@ -76,6 +76,7 @@
     busy:()=>Boolean(['processing','thinking','speaking','starting'].includes(state().state)||recording()||$('sendChatButton')?.disabled||$('chatInput')?.value.trim()),
     beginVoiceEnrollment:options=>window.VP3ConversationControls?.beginEnrollmentCapture?.(options),
     listen:()=>{if(!window.VP3ConversationControls?.isEnabled?.())$('chatVoiceButton')?.click();},
+    toggleVoice:()=>$('chatVoiceButton')?.click(),
     responseWindow:()=>window.VP3AgentOrb?.listenForResponse?.(),
     cancelResponseWindow:()=>window.VP3AgentOrb?.cancelResponseWindow?.(),
     stop:()=>{window.VP3AgentScreenShare?.stop();voiceEpoch++;preparing=false;audible=false;window.VP3ConversationControls?.stop();window.STONEFELLOW_NOTIFICATION_CENTER?.cancelSpeech();if(recording())window.StonefellowMediaStudio?.close?.();},

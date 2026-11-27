@@ -2,6 +2,7 @@
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
 require_once __DIR__.'/includes/agent-operator-owner-phone-v1.php';
+require_once __DIR__.'/includes/agent-phone-shell-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-v1.php';
 require_once __DIR__ . '/includes/phone-agent-workspace-schema-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-chat-v1.php';
@@ -314,6 +315,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && music_provider_v1_schema_ready($schemaConnection)
         && vp3_phone_sms_assignment_schema_ready_v111($schemaConnection)
         && vp3_phone_workspace_schema_ready_v1($schemaConnection)
+        && vp3_agent_phone_shell_ready_v1($schemaConnection)
         && vp3_managed_control_ready_v1($schemaConnection)
         && vp3_managed_recording_ready_v1($schemaConnection)
         && vp3_native_dialthrough_ready_v1($schemaConnection)

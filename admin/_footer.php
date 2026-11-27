@@ -191,6 +191,14 @@ window.STONEFELLOW_ARTIST_CMS_V186=<?= json_encode([
 </script>
 <script src="<?= e(url('/admin/artist-cms-nav-v186.js')) ?>"></script>
 <?php endif; ?>
-<?php require dirname(__DIR__).'/includes'.'/agent-orb.php'; ?>
+<?php
+// Keep Admin's existing Agent controls. A calling user's personal Phone is a
+// separate account capability and remains available while visiting Admin.
+$adminPersonalPhoneUser=current_user();
+if($adminPersonalPhoneUser&&has_permission('chat.access',$adminPersonalPhoneUser)&&has_permission('account.access',$adminPersonalPhoneUser)){
+    echo vp3_phone_workspace_runtime_v1($adminPersonalPhoneUser);
+    echo vp3_agent_phone_shell_assets_v1($adminPersonalPhoneUser);
+}
+?>
 </body>
 </html>
