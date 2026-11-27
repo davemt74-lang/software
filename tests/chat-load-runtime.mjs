@@ -3,7 +3,7 @@ import vm from 'node:vm';
 import assert from 'node:assert/strict';
 
 const source=fs.readFileSync('chat.js','utf8');
-const poll=source.slice(source.indexOf('  function phoneChatForegroundV1('),source.indexOf('  function startAgentActivityPolling()'));
+const poll=source.slice(source.indexOf('  function conversationFeedActiveV1('),source.indexOf('  function startAgentActivityPolling()'));
 const api=source.slice(source.indexOf('  async function api(payload'),source.indexOf('  function writeActivityCursor('));
 const pendingIds=source.slice(source.indexOf('  function pendingAssistantMessageIds()'),source.indexOf('  function unconfirmedAssistantMessage('));
 const binding=source.slice(source.indexOf('  const initiativePage ='),source.indexOf('  const thread ='));
@@ -19,7 +19,7 @@ const context={AbortController,DOMException,Event,URLSearchParams,location:new U
     conversationId:1,chatRevision:0,lastLoadedMessageId:0,pendingConversationSync:0,busy:false,
     pendingAssistantMessages:new Map(),initiativePosts:new Map(),initiativeReplyTarget:null,initiativeReplyStates:new Set(),
     canvasActivityStatus:null,canvasFallback:null,historyParticipant:0,
-    thread:{dataset:{view:'chat'},querySelectorAll:()=>pendingMeetingReviews},
+    thread:{isConnected:true,dataset:{view:'chat'},querySelectorAll:()=>pendingMeetingReviews},
     contextReady:false,initialRestorePending:true,restoringConversation:1};
 context.window.STONEFELLOW_CHAT=context.cfg;
 // Polling shares the actual reply-state/page fence even when no proposal is
@@ -57,6 +57,14 @@ response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[],conve
 await context.poll(true);
 assert.deepEqual(syncedConversations,[1],'A pending message cannot sync a different conversation returned by activity');
 context.pendingAssistantMessages.clear();
+// A tool view must keep the same saved conversation live, without weakening
+// the detached-page or exact-conversation fences exercised above.
+const beforeToolSync=syncedConversations.length;
+response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[],conversation_id:1,latest_message_id:6})});
+for(const view of ['coding','email','player','marketing']){context.thread.dataset.view=view;await context.poll(true);}
+assert.deepEqual(syncedConversations.slice(beforeToolSync),[1,1,1,1],'All attached Agent tool views keep reading the same canonical conversation');
+context.thread.isConnected=false;await context.poll(true);assert.equal(requestBodies.at(-1).conversation_id,0,'A detached Chat cannot claim a conversation');
+context.thread.isConnected=true;context.thread.dataset.view='chat';syncedConversations.length=beforeToolSync;
 // A saved review can change status without receiving a new message ID.
 response=async()=>({ok:true,json:async()=>({ok:true,latest_id:9,updates:[],conversation_id:1,latest_message_id:5})});
 pendingMeetingReviews.push({closest:()=>({dataset:{chatMessageId:'3'}})});

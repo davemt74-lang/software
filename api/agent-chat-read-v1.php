@@ -28,6 +28,12 @@ $method=strtoupper((string)($_SERVER['REQUEST_METHOD']??'GET'));
 if(!in_array($method,['GET','POST'],true))vp3_chat_read_api_json_v1(405,['ok'=>false,'error'=>'method_not_allowed']);
 try{
     $input=$_GET;
+    if($method==='GET'&&($input['action']??'')==='sidebar'){
+        $raw=$input['conversation_ids']??null;
+        if(!is_string($raw)||strlen($raw)>1000)throw new InvalidArgumentException('invalid_conversation_ids');
+        $state=vp3_chat_read_sidebar_v1($pdo,$user,$raw===''?[]:explode(',',$raw));
+        vp3_chat_read_api_json_v1(200,['ok'=>true]+$state);
+    }
     if($method==='POST'){
         $raw=(string)file_get_contents('php://input');
         if(strlen($raw)>16384)vp3_chat_read_api_json_v1(413,['ok'=>false,'error'=>'payload_too_large']);

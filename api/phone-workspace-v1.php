@@ -4,10 +4,13 @@ require dirname(__DIR__).'/includes/bootstrap.php';
 require_once dirname(__DIR__).'/includes/phone-workspace-v1.php';
 require_once dirname(__DIR__).'/includes/phone-browser-v1.php';
 require_once dirname(__DIR__).'/includes/phone-recording-pipeline-v1.php';
+require_once dirname(__DIR__).'/includes/phone-call-continuity-v1.php';
 header('Content-Type: application/json; charset=UTF-8');
 header('Cache-Control: no-store, private');
 header('X-Content-Type-Options: nosniff');
 try{
+    if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])&&!vp3_phone_call_binding_matches_v1(current_user(),(string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION']))
+        vp3_phone_workspace_error_v1('phone_account_changed',403,'Your account changed. Refresh Phone.');
     $method=(string)($_SERVER['REQUEST_METHOD']??'');$input=$_GET;
     if($method==='POST'){
         if(!str_starts_with(strtolower((string)($_SERVER['CONTENT_TYPE']??'')),'application/json'))vp3_phone_workspace_error_v1('unsupported_media_type',415,'Phone actions require JSON.');

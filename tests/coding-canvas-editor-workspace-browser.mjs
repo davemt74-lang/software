@@ -97,6 +97,7 @@ async function layout(width){
   assert.ok(measurements.tabs.every(height=>height>=44),'Tabs retain touch-sized targets');
   if(width<=1100)assert.ok(measurements.pickers.every(height=>height>=44)&&measurements.instructionTarget>=44,'Phone selectors and instructions retain touch-sized targets: '+JSON.stringify(measurements));
   assert.equal(measurements.editorColumns,width>1100?2:1);
+  assert.equal(await page.locator('#chatComposerShell').isVisible(),true,'The native Chat footer stays available in the Canvas editor');
 }
 
 try{

@@ -33,26 +33,31 @@
     catch {return null;}
   };
   function report(message) {status.textContent = message;status.hidden = !message;}
+  const retryOpen=node('button','Try opening again');retryOpen.type='button';retryOpen.className='phone-agent-open-retry';retryOpen.hidden=true;status.after(retryOpen);
+  let opening=false;
   function clearPrivate() {
     window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
     content.replaceChildren();thread.replaceChildren();canvas = null;
+    retryOpen.hidden=true;
   }
   window.addEventListener('vp3:phone-agent-access-changed',() => {
     clearPrivate();report('Your private workspace access changed. Return to Agent and sign in again.');post('changed');
   });
   async function api(endpoint,action,fields = {}) {
     const url = local(endpoint);if (!url || closed) throw new Error('This private view is unavailable.');
-    const response = await fetch(url,{method:'POST',credentials:'same-origin',cache:'no-store',signal:life.signal,
+    let response;
+    try{response = await fetch(url,{method:'POST',credentials:'same-origin',cache:'no-store',signal:life.signal,
       headers:{'Content-Type':'application/json'},body:JSON.stringify({action,csrf_token:cfg.csrf,
         ...(endpoint === cfg.imageEndpoint ? {owner_key:cfg.ownerKey} : {agent_id:cfg.agentId,conversation_id:cfg.conversationId}),
-        ...(endpoint === cfg.emailEndpoint ? {owner_key:cfg.ownerKey} : {}),...fields})});
+        ...(endpoint === cfg.emailEndpoint ? {owner_key:cfg.ownerKey} : {}),...fields})});}
+    catch(cause){if(cause.name==='AbortError')throw cause;const error=new Error('The connection was interrupted. Reopen this item to check its current saved state.');error.transportFailure=true;throw error;}
     const result = await response.json().catch(() => null);
     if (closed) throw new DOMException('This view closed.','AbortError');
     if (!response.ok || result?.ok !== true) {
       if ([401,403,419].includes(response.status) || cfg.kind !== 'gmail_draft' && [404,409].includes(response.status)) {
         clearPrivate();post('changed');
       }
-      throw new Error(result?.error || 'The saved item could not be verified. Return to Agent and reopen it.');
+      const error=new Error(result?.error || 'The saved item could not be verified. Return to Agent and reopen it.');error.status=response.status;throw error;
     }
     return result;
   }
@@ -263,7 +268,7 @@
     const runtime = window.VP3CanvasRuntimeV1;
     if (!runtime) throw new Error('The private Canvas runtime is unavailable.');
     const input = {canvas_id:target.canvas_id,revision:target.revision};
-    const result = await api(cfg.canvasEndpoint,'open',input);
+    const result = await canvasRead('open',input);
     if (result.canvas?.id !== target.canvas_id || result.revision?.id !== target.revision || !result.revision.artifact || !result.state) {
       throw new Error('This Canvas version changed. Return to Agent and reopen it.');
     }
@@ -276,7 +281,7 @@
     const reads = commands.filter(command => active && (command === 'gmail' ? grants?.gmail?.app_access === true
       : Object.hasOwn(runtime.sourceKeys,command) && (runtime.publicSourceKeys.includes(runtime.sourceKeys[command]) || grants?.sources?.[command] === true)));
     await Promise.all(reads.map(async command => {
-      const reply = await api(cfg.canvasEndpoint,'command_data',{...input,command});
+      const reply = await canvasRead('command_data',{...input,command});
       if (command === 'gmail') gmail = reply.source;
       else if (runtime.sourceKeys[command]) {
         const normalized = runtime.normalizeSource(command,reply.source,cfg.basePath);
@@ -285,7 +290,7 @@
       }
     }));
     if (result.email_source && active) {
-      const reply = await api(cfg.canvasEndpoint,'email_data',input);
+      const reply = await canvasRead('email_data',input);
       // Source receipts remain in the trusted owner host, never in generated app code.
       email = reply.email ? {...reply.email,rows:(reply.email.rows || []).map(({source_ref,...row}) => row)} : runtime.unavailableSource;
     }
@@ -334,7 +339,15 @@
     window.addEventListener('message',receive,{signal:life.signal});
     content.replaceChildren(heading,frame);
   }
-  document.addEventListener('DOMContentLoaded',async () => {
+  function interrupted(error){return error?.transportFailure===true||[502,503,504].includes(error?.status);}
+  async function canvasRead(action,input){
+    for(let attempt=0;attempt<2;attempt++){
+      try{return await api(cfg.canvasEndpoint,action,input);}
+      catch(error){if(attempt!==0||!interrupted(error)||closed||life.signal.aborted)throw error;await new Promise(resolve=>setTimeout(resolve,250));}
+    }
+  }
+  async function loadSavedItem(){
+    if(opening||closed)return;opening=true;retryOpen.hidden=true;report('Opening your private item…');
     try {
       if (cfg.kind === 'gmail_draft') {
         if (!window.VP3EmailComposerV1) throw new Error('The Gmail review view is unavailable.');
@@ -345,7 +358,9 @@
       else if (cfg.kind === 'image') await openImage();
       else if (cfg.kind === 'canvas') await openCanvas();
       else throw new Error('This item type is unavailable.');
-    } catch(error) {if (error.name !== 'AbortError') report(error.message || 'This private item could not open.');}
-    finally {post('ready');}
-  },{once:true});
+    } catch(error) {if (error.name !== 'AbortError') {report(cfg.kind==='canvas'&&interrupted(error)?'This Canvas could not load because the connection was interrupted. Check your connection and try opening it again.':error.message || 'This private item could not open.');retryOpen.hidden=cfg.kind!=='canvas'||!interrupted(error);}}
+    finally {opening=false;post('ready');}
+  }
+  retryOpen.addEventListener('click',event=>{if(event.isTrusted&&!opening&&!canvas&&!saving)void loadSavedItem();});
+  document.addEventListener('DOMContentLoaded',loadSavedItem,{once:true});
 })();

@@ -40,3 +40,4 @@ body.phone-agent-canvas #phoneAgentItemContent header p { margin:4px 0 0; font-s
 .phone-agent-call-actions button {min-height:44px;padding:10px 14px;border:1px solid #607595;border-radius:8px;background:#fff;color:#17243a;font:inherit;cursor:pointer;}
 .phone-agent-call-actions button:focus-visible {outline:3px solid #3873c8;outline-offset:2px;}
 .phone-agent-call-actions button:disabled {opacity:.6;cursor:default;}
+.phone-agent-open-retry{min-height:44px;margin:0 12px 12px;padding:10px 14px;border:1px solid #607595;border-radius:8px;background:#fff;color:#17243a;font:inherit;cursor:pointer}.phone-agent-open-retry[hidden]{display:none}

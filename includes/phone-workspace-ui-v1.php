@@ -23,20 +23,24 @@ function vp3_phone_workspace_runtime_v1(array $user,int $agentId=0,int $conversa
     if(!$pdo instanceof PDO||!vp3_phone_workspace_available_v1($pdo,$user))return '';
     $GLOBALS['VP3_PHONE_WORKSPACE_RUNTIME_V1']=true;
     $root=dirname(__DIR__);
-    $build=substr(hash('sha256',hash_file('sha256',$root.'/phone-workspace-v1.js').hash_file('sha256',$root.'/phone-workspace-v1.css').hash_file('sha256',$root.'/phone-operator-capture-v1.js').hash_file('sha256',$root.'/phone-voicemail-capture-v1.js').hash_file('sha256',$root.'/phone-operator-voice-mixer-v1.js').hash_file('sha256',$root.'/phone-operator-participation-v1.js')),0,12);
+    $build=substr(hash('sha256',hash_file('sha256',$root.'/phone-workspace-v1.js').hash_file('sha256',$root.'/phone-workspace-v1.css').hash_file('sha256',$root.'/phone-call-continuity-v1.js').hash_file('sha256',$root.'/phone-call-window-v1.css').hash_file('sha256',$root.'/phone-operator-capture-v1.js').hash_file('sha256',$root.'/phone-voicemail-capture-v1.js').hash_file('sha256',$root.'/phone-operator-voice-mixer-v1.js').hash_file('sha256',$root.'/phone-operator-participation-v1.js')),0,12);
     $config=['endpoint'=>url('/api/phone-workspace-v1.php'),'urlbase'=>url('/'),'csrf'=>csrf_token(),
         'operator_live_endpoint'=>url('/api/phone-operator-live-v1.php'),'operator_capture_url'=>url('/phone-operator-capture-v1.js?v='.$build),
         'build'=>$build,'owner_id'=>(int)$user['id'],'agent_id'=>max(0,$agentId),'conversation_id'=>max(0,$conversationId),
         'global_surface'=>!in_array(basename((string)($_SERVER['SCRIPT_NAME']??'')),['chat.php','chat-legacy-v108.php'],true),
         'context_endpoint'=>url('/api/agent-phone-shell-v1.php'),'attention_binding'=>vp3_catch_up_page_binding_v1($user),
+        'continuity_role'=>!empty($GLOBALS['VP3_PHONE_CONTINUITY_OWNER_V1'])?'owner':'view',
+        'continuity_url'=>url('/phone-call-window-v1.php?owner='.(int)$user['id']),
         'greeting_endpoint'=>url('/api/phone-voicemail-greeting-v1.php'),'greeting_capture_url'=>url('/phone-voicemail-capture-v1.js?v='.$build),
         'sdk_url'=>url('/assets/twilio-voice-2.18.5.min.js'),
         'sdk_integrity'=>'sha384-LUG7DmzDPWNKRYoqyGpV4d/IByMLiya/oUhMSc/4/6hi0wbzO/8PffM4lzeFEYS8'];
     return '<link rel="stylesheet" data-phone-workspace-v1 href="'.e(url('/phone-workspace-v1.css?v='.$build)).'">'
+        .'<link rel="stylesheet" href="'.e(url('/phone-call-window-v1.css?v='.$build)).'">'
         .'<script>window.VP3_PHONE_WORKSPACE_V1='.json_encode($config,JSON_THROW_ON_ERROR|JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
         .'<script data-voice-capture-scope="'.(int)$user['id'].'" src="'.e(url('/voice-lease-v122.js?v='.substr(hash_file('sha256',$root.'/voice-lease-v122.js'),0,12))).'" defer></script>'
         .'<script data-phone-operator-voice-mixer src="'.e(url('/phone-operator-voice-mixer-v1.js?v='.$build)).'" defer></script>'
         .'<script data-phone-operator-participation src="'.e(url('/phone-operator-participation-v1.js?v='.$build)).'" defer></script>'
+        .'<script src="'.e(url('/phone-call-continuity-v1.js?v='.$build)).'" defer></script>'
         .'<script data-phone-workspace-v1 src="'.e(url('/phone-workspace-v1.js?v='.$build)).'" defer></script>';
 }
 
@@ -51,7 +55,13 @@ function vp3_agent_phone_shell_assets_v1(array $user,bool $activity=true): strin
         'voice_enabled'=>member_agent_voice_enabled($user),'voice_script'=>url('/premium-voice-v117.js?v='.substr(hash_file('sha256',$root.'/premium-voice-v117.js'),0,12)),
         'drawer_script'=>url('/chat-notifications-drawer-v240.js?v='.substr(hash_file('sha256',$root.'/chat-notifications-drawer-v240.js'),0,12)),
         'notifications_endpoint'=>url('/api/chat-notifications-brain-v240.php'),'chat_endpoint'=>url('/api/chat.php')];
+    // The authenticated Agent bootstrap already owns the account binding.
+    // Keep the navigation template free of Agent runtime dependencies, and
+    // leave Admin's separate Agent/chat list untouched.
+    $sidebar=$config['admin_surface']?'':'<link rel="stylesheet" href="'.e(url('/chat-sidebar-unread-v1.css?v='.substr(hash_file('sha256',$root.'/chat-sidebar-unread-v1.css'),0,12))).'">'
+        .'<script>window.VP3_CHAT_SIDEBAR_UNREAD_V1='.json_encode(['owner_id'=>$config['owner_id'],'binding'=>$config['binding'],'endpoint'=>url('/api/agent-chat-read-v1.php')],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR).';</script>'
+        .'<script src="'.e(url('/chat-sidebar-unread-v1.js?v='.substr(hash_file('sha256',$root.'/chat-sidebar-unread-v1.js'),0,12))).'" defer></script>';
     return '<link rel="stylesheet" href="'.e(url('/agent-composer-v1.css?v='.substr(hash_file('sha256',$root.'/agent-composer-v1.css'),0,12))).'">'
         .'<script>window.VP3_AGENT_PHONE_SHELL_V1='.json_encode($config,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR).';</script>'
-        .'<script src="'.e(url('/agent-phone-shell-v1.js?v='.substr(hash_file('sha256',$root.'/agent-phone-shell-v1.js'),0,12))).'" defer></script>';
+        .'<script src="'.e(url('/agent-phone-shell-v1.js?v='.substr(hash_file('sha256',$root.'/agent-phone-shell-v1.js'),0,12))).'" defer></script>'.$sidebar;
 }

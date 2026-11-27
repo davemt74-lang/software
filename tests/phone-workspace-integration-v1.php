@@ -5,6 +5,7 @@ declare(strict_types=1);
 require dirname(__DIR__).'/includes/phone-workspace-v1.php';
 require dirname(__DIR__).'/includes/phone-workspace-ui-v1.php';
 require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
+require_once dirname(__DIR__).'/includes/member-navigation.php';
 
 $pdo=new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
@@ -63,6 +64,8 @@ phone_ui_check(($config['agent_id']??null)===7&&($config['conversation_id']??nul
 phone_ui_check(($config['endpoint']??'')==='/installed-vp3/api/phone-workspace-v1.php'&&($config['sdk_url']??'')==='/installed-vp3/assets/twilio-voice-2.18.5.min.js','Subdirectory installations use their own API and vendored SDK paths.');
 phone_ui_check(($config['csrf']??'')===csrf_token()&&!str_contains($match[1],'</script>'),'CSRF survives JSON decoding without breaking out of the inline configuration.');
 phone_ui_check(($config['attention_binding']??'')===vp3_catch_up_page_binding_v1($owner)&&($config['context_endpoint']??'')==='/installed-vp3/api/agent-phone-shell-v1.php','Cross-page context requests use the real account binding and installation path.');
+phone_ui_check(($config['continuity_role']??'')==='view'&&($config['continuity_url']??'')==='/installed-vp3/phone-call-window-v1.php?owner=1','Member and Admin runtimes point to the account-bound persistent Phone window.');
+phone_ui_check(strpos($runtime,'phone-call-continuity-v1.js')<strpos($runtime,'<script data-phone-workspace-v1'),'Call ownership is established before the native SDK client can initialize.');
 phone_ui_check(str_contains($runtime,'data-voice-capture-scope="1"')&&strpos($runtime,'voice-lease-v122.js')<strpos($runtime,'<script data-phone-workspace-v1'),'Every page loads the shared owner microphone lease before the Phone client.');
 phone_ui_check(substr_count($runtime,'data-phone-workspace-v1')===2&&preg_match('/\?v=[a-f0-9]{12}/',$runtime)===1,'One render supplies the stylesheet and versioned frontend script.');
 phone_ui_check(str_contains($runtime,'/installed-vp3/phone-operator-voice-mixer-v1.js?v=')&&strpos($runtime,'data-phone-operator-voice-mixer')<strpos($runtime,'<script data-phone-workspace-v1'),'The optional outbound mixer loads before the existing phone client.');
@@ -80,6 +83,16 @@ phone_ui_reset_runtime();
 phone_ui_check(vp3_phone_workspace_button_v1($owner)===''&&vp3_phone_workspace_runtime_v1($owner)==='','Revoking the last assignment removes both entry point and runtime on the next render.');
 phone_ui_check(vp3_phone_workspace_button_v1(phone_ui_user(2))!=='','The actual current assignee receives the entry point.');
 phone_ui_check(!vp3_phone_workspace_available_v1($pdo,phone_ui_user(999)),'A deleted account cannot use a stale assignment/session.');
+
+unset($GLOBALS['VP3_AGENT_PHONE_SHELL_ASSETS_V1']);$_SERVER['SCRIPT_NAME']='/chat.php';
+$memberAssets=vp3_agent_phone_shell_assets_v1($owner);
+phone_ui_check(str_contains($memberAssets,'chat-sidebar-unread-v1.js')&&str_contains($memberAssets,'chat-sidebar-unread-v1.css'),'The existing authenticated Agent bootstrap supplies member sidebar assets.');
+phone_ui_check(preg_match('/window\.VP3_CHAT_SIDEBAR_UNREAD_V1=(.*?);<\/script>/s',$memberAssets,$sidebarMatch)===1,'The member sidebar receives an authenticated count configuration.');
+$sidebarConfig=json_decode($sidebarMatch[1],true,512,JSON_THROW_ON_ERROR);
+phone_ui_check($sidebarConfig===['owner_id'=>1,'binding'=>vp3_catch_up_page_binding_v1($owner),'endpoint'=>'/installed-vp3/api/agent-chat-read-v1.php'],'Sidebar counts reuse the native owner/session binding and installation path.');
+unset($GLOBALS['VP3_AGENT_PHONE_SHELL_ASSETS_V1']);$_SERVER['SCRIPT_NAME']='/admin/phone.php';
+$adminAssets=vp3_agent_phone_shell_assets_v1($owner);
+phone_ui_check(!str_contains($adminAssets,'chat-sidebar-unread-v1')&&str_contains($adminAssets,'agent-phone-shell-v1.js'),'Admin keeps personal phone activity without the public member Chat badge widget.');
 
 foreach($argv as $arg)if(str_starts_with($arg,'--emit-ui=')){
     $target=substr($arg,10);
