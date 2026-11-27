@@ -210,6 +210,8 @@ function agent_connection_youtube_results_cleanup_v1(PDO $pdo): int
     $deleted = $stmt->rowCount();
     require_once __DIR__.'/agent-initiative-youtube-playlist-v1.php';
     vp3_initiative_youtube_playlist_cleanup_v1($pdo);
+    require_once __DIR__.'/music-chat-library-v1.php';
+    if (vp3_music_chat_ready_v1($pdo)) vp3_music_chat_cleanup_v1($pdo);
     return $deleted;
 }
 

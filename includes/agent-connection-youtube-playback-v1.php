@@ -6,6 +6,8 @@ require_once __DIR__.'/agent-connection-youtube-chat-v1.php';
 const VP3_YOUTUBE_MAX_WATCH_SECONDS_V1 = 14400;
 const VP3_YOUTUBE_MAX_POSITION_MS_V1 = 604800000;
 const VP3_YOUTUBE_PLAYLIST_LIMIT_V1 = 25;
+// Saved music lists support the unified music request limit; ordinary search remains eight.
+const VP3_YOUTUBE_SAVED_ITEMS_LIMIT_V1 = 25;
 const VP3_YOUTUBE_PLAYLIST_CACHE_SECONDS_V1 = 7*86400;
 
 function vp3_youtube_playback_install_v1(PDO $pdo): void
@@ -256,7 +258,7 @@ function vp3_youtube_playlist_save_v1(PDO $pdo, int $owner, int $messageId): ?st
         $payload = $source ? json_decode($source['payload_json'],true) : null;
         if (($payload['suggestion_kind'] ?? '') !== 'playlist') return null;
         $videos = [];
-        foreach (array_slice((array)($payload['videos'] ?? []),0,VP3_YOUTUBE_MAX_RESULTS_V1) as $video) {
+        foreach (array_slice((array)($payload['videos'] ?? []),0,VP3_YOUTUBE_SAVED_ITEMS_LIMIT_V1) as $video) {
             $id = $video['video_id'] ?? '';
             if (is_string($id) && preg_match('/\A[A-Za-z0-9_-]{11}\z/',$id)) $videos[$id] = $video;
         }
@@ -292,6 +294,7 @@ function vp3_youtube_playlist_provider_v1(array $ids, ?callable $http): array
     $ids = array_values(array_unique(array_filter($ids,static fn($id): bool => is_string($id)
         && preg_match('/\A[A-Za-z0-9_-]{11}\z/',$id))));
     if (!$ids) return [];
+    $ids = array_slice($ids,0,VP3_YOUTUBE_SAVED_ITEMS_LIMIT_V1);
     $items = agent_connection_youtube_video_details_v1($ids,$http);
     $videos = [];
     foreach ($items as $item) {
@@ -336,7 +339,7 @@ function vp3_youtube_playlist_open_v1(PDO $pdo, int $owner, string $playlist, ?c
         WHERE owner_user_id=? AND playlist_id=? AND references_until>? AND retry_after<=?');
     $claim->execute([$lease,$owner,$playlist,$now,$now]);
     if ($claim->rowCount() !== 1) throw new AgentConnectionYoutubeExceptionV1('Playlist refresh is in progress. Try again shortly.',409);
-    $videos = vp3_youtube_playlist_provider_v1(array_slice((array)json_decode($row['ordered_ids_json'],true),0,VP3_YOUTUBE_MAX_RESULTS_V1),$http);
+    $videos = vp3_youtube_playlist_provider_v1(array_slice((array)json_decode($row['ordered_ids_json'],true),0,VP3_YOUTUBE_SAVED_ITEMS_LIMIT_V1),$http);
     if (!vp3_youtube_playlist_row_v1($pdo,$owner,$playlist)) return null;
     $now = time();
     $until = $now+VP3_YOUTUBE_PLAYLIST_CACHE_SECONDS_V1;

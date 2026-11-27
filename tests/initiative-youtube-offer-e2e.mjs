@@ -16,7 +16,7 @@ const port=probe.address().port;
 await new Promise(resolve=>probe.close(resolve));
 const base=`http://127.0.0.1:${port}`;
 const apis=['agent-activity-v94.php','agent-activity-hub-v1.php','cognitive-presentation-v510.php','chat-v236.php','chat-stream-v121.php',
-  'player-library-v76.php','playback.php'];
+  'player-library-v76.php','playback.php','music-chat-v1.php'];
 mkdirSync(join(temp,'api'));
 for(const name of apis)cpSync(join(repo,'api',name),join(temp,'api',name));
 cpSync(join(repo,'includes'),join(temp,'includes'),{recursive:true});
@@ -52,6 +52,7 @@ require_once __DIR__.'/recommendations.php';
 require_once __DIR__.'/player-v76.php';
 require_once __DIR__.'/music-catalog.php';
 require_once __DIR__.'/music-listening-v1.php';
+require_once __DIR__.'/music-chat-library-v1.php';
 function agent_brain_archive_and_parse(array $user,int $cid,int $messageId,string $role,string $message,string $mode):int{return 0;}
 if(!table_exists('user_agent_preferences')){
     db()->exec('CREATE TABLE user_agent_preferences(user_id INTEGER, preference_key TEXT, preference_value TEXT);
@@ -73,6 +74,7 @@ if(!agent_connection_youtube_results_ready_v1(db())){
 initiative_media_http_install_v1(db());
 db()->exec('PRAGMA foreign_keys=ON');
 if(!music_listening_v1_schema_ready(db()))music_listening_v1_install(db());
+if(!vp3_music_chat_ready_v1(db()))vp3_music_chat_schema_v1(db());
 `);
 const pcm=Buffer.alloc(8000*2*60);
 const wav=Buffer.alloc(44+pcm.length);
@@ -95,7 +97,7 @@ const router=join(temp,'router.php');
 writeFileSync(router,`<?php
 $path=parse_url($_SERVER['REQUEST_URI'],PHP_URL_PATH);
 if($path==='/health'){echo 'ready';return;}
-if(in_array($path,['/chat.js','/assets/js/music-listening-v1.js','/chat-youtube-v1.js','/agent-activity-v94.js','/chat-cognitive-presentation-v510.js'],true)){
+if(in_array($path,['/chat.js','/assets/js/music-listening-v1.js','/assets/js/music-chat-v1.js','/chat-youtube-v1.js','/agent-activity-v94.js','/chat-cognitive-presentation-v510.js'],true)){
     header('Content-Type: text/javascript');readfile(${JSON.stringify(repo)}.ltrim($path,'/'));return;
 }
 if(str_starts_with($path,'/api/')){require __DIR__.$path;return;}
@@ -121,6 +123,7 @@ if($path==='/fixture-state'){
         'actions'=>db()->query('SELECT id,run_id,owner_user_id,sequence_no,action_key,capability_key,execution_target,attempt_count,status,result_json FROM agent_workflow_actions ORDER BY id')->fetchAll(),
         'receipts'=>db()->query('SELECT * FROM agent_workflow_receipts ORDER BY id')->fetchAll(),
         'plays'=>db()->query('SELECT id,user_id,track_id,source_context,last_position_seconds FROM track_play_sessions ORDER BY id')->fetchAll(),
+        'music_playlists'=>db()->query('SELECT playlist_id,owner_user_id,title,revision,items_json FROM music_chat_playlists_v1 ORDER BY playlist_id')->fetchAll(),
         'native_playback_events'=>db()->query("SELECT id,owner_user_id,run_id,metadata_json FROM agent_workflow_events
             WHERE event_type='initiative_media_playback_started' AND actor_kind='executor' ORDER BY id")->fetchAll(),
         'messages'=>db()->query('SELECT id,conversation_id,role,message,context_json FROM chat_messages ORDER BY id')->fetchAll(),
@@ -247,8 +250,9 @@ echo '<!doctype html><button id="newChatButton">New Chat</button><div id="chatHi
   .'<form id="chatForm"><textarea id="chatInput"></textarea><button id="sendChatButton">Send</button></form>'
   .'<script>window.STONEFELLOW_CHAT='.json_encode($chat).';window.VP3_COGNITIVE_PRESENTATION_V510='.json_encode($presentation)
   .';window.STONEFELLOW_ACTIVITY={endpoint:"/api/agent-activity-v94.php",csrf:"fixture",surface:"chat"};'
+  .'window.VP3_MUSIC_CHAT_CONFIG_V1={endpoint:"/api/music-chat-v1.php",csrf:"fixture",userId:1,agentId:7};'
   .'window.VP3_YOUTUBE_PLAYBACK_V1={endpoint:"/playback",connections:"/connections.php",csrf:"fixture"};</script>'
-  .'<script src="/chat-youtube-v1.js"></script><script src="/assets/js/music-listening-v1.js"></script><script src="/chat.js"></script><script src="/agent-activity-v94.js"></script><script src="/chat-cognitive-presentation-v510.js"></script>';
+  .'<script src="/chat-youtube-v1.js"></script><script src="/assets/js/music-listening-v1.js"></script><script src="/assets/js/music-chat-v1.js"></script><script src="/chat.js"></script><script src="/agent-activity-v94.js"></script><script src="/chat-cognitive-presentation-v510.js"></script>';
 `);
 const php=process.env.VP3_PHP_BINARY||'php';
 let logs='';
@@ -563,10 +567,39 @@ try{
   await page.request.post(base+'/fixture-media-revoke');
   console.log('PASS native saved position → Media report and exact shared offer → “yes” resumes the VP3 Player at 0:24 → scope and replay guards');
 
-  const draft=await post('Create a VP3 music playlist for calm.');
-  assert.equal(draft.media_playback?.operation,'playlist');
-  assert.deepEqual(draft.media_playback.queue.map(item=>item.track_id).sort((a,b)=>a-b),[41,42]);
+  const beforeMusicPlaylists=(await state()).music_playlists.length;
+  const saved=await post('Create a VP3 music playlist for calm.');
+  assert.equal(saved.music_chat_v1?.protocol,'vp3_music_chat_v1');
+  assert.equal(saved.music_chat_v1.playlist.visibility,'private');
+  assert.match(saved.music_chat_v1.playlist.id,/^[a-f0-9]{32}$/);
+  assert.deepEqual(saved.music_chat_v1.items.map(item=>[item.source,Number(item.source_id)]).sort((a,b)=>a[1]-b[1]),[['vp3',41],['vp3',42]]);
+  assert.equal(saved.media_playback,undefined);
+  assert.equal(saved.media?.length||0,0,'The legacy recommendation path cannot append more cards.');
+  assert.equal((await state()).music_playlists.length,beforeMusicPlaylists+1,'Create playlist must write an actual private list.');
+  await page.locator(`[data-music-playlist-id="${saved.music_chat_v1.playlist.id}"]`).waitFor();
   assert.equal(await page.locator('audio').evaluateAll(elements=>elements.some(audio=>!audio.paused)),false);
+  const oneSong=await post('Show me one calm song from VP3.');
+  assert.equal(oneSong.music_chat_v1.requested_count,1);
+  assert.equal(oneSong.music_chat_v1.items.length,1);
+  assert.equal(oneSong.music_chat_v1.playlist,undefined);
+  assert.equal(oneSong.music_chat_v1.autoplay,undefined);
+  assert.equal(oneSong.media?.length||0,0);
+  assert.equal(oneSong.youtube_results,undefined);
+  const voiceMusicResponse=await page.request.post(base+'/api/chat-stream-v121.php',{
+    headers:{'X-VP3-Working-Attention':binding},
+    data:{message:'Show me one calm song from VP3.',conversation_id:14,agent_context:{user_agent_id:7},
+      csrf_token:'fixture',idempotency_key:'fixture-mc1-one-song-voice'}
+  });
+  const voiceMusicBody=await voiceMusicResponse.text();
+  assert.ok(voiceMusicResponse.ok(),voiceMusicBody);
+  const voiceMusic=voiceMusicBody.trim().split('\n').map(line=>JSON.parse(line)).find(event=>event.type==='done')?.data;
+  assert.ok(voiceMusic?.ok,voiceMusicBody);
+  assert.equal(voiceMusic.input_mode,'voice');
+  assert.equal(voiceMusic.music_chat_v1.items.length,1);
+  assert.deepEqual(voiceMusic.music_chat_v1.items.map(item=>[item.source,item.source_id]),oneSong.music_chat_v1.items.map(item=>[item.source,item.source_id]));
+  assert.equal(voiceMusic.music_chat_v1.autoplay,undefined);
+  assert.equal(voiceMusic.media?.length||0,0);
+  assert.equal((await state()).music_playlists.length,beforeMusicPlaylists+1,'Single-song typed and voice requests do not create lists.');
   const dj=await post('Start DJ with calm.');
   assert.equal(dj.media_playback?.operation,'dj_start');
   assert.deepEqual(dj.media_playback.queue.map(item=>item.track_id).sort((a,b)=>a-b),[41,42]);
@@ -585,7 +618,7 @@ try{
   const stopped=await post('Stop DJ.');
   assert.equal(stopped.media_playback?.operation,'dj_stop');
   await page.waitForFunction(()=>Array.from(document.querySelectorAll('audio')).every(audio=>audio.paused));
-  console.log('PASS native playlist draft and DJ start, next track, and stop use the VP3 catalog and Player');
+  console.log('PASS actual private playlist creation, exact one-song typed/voice parity, and existing DJ start/advance/stop use the VP3 catalog and Player');
 
   const presentation='**/api/cognitive-presentation-v510.php';
   const holdAutomaticTick=route=>route.request().postDataJSON()?.action==='initiative_tick'

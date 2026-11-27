@@ -16,6 +16,10 @@
   let pendingRecord = Promise.resolve();
   let lastRecordedPlayback = 0;
 
+  function musicState(active, state) {
+    if (typeof active?.onMusicState === 'function') active.onMusicState(state);
+  }
+
   async function historyRequest(action, fields = {}, keepalive = false) {
     if (!config.endpoint || !config.csrf) throw new Error('History unavailable');
     const response = await fetch(config.endpoint, {
@@ -212,8 +216,10 @@
   function stopPlayer(restoreFocus = false) {
     if (!activePlayer) return;
     stopWatching(activePlayer);
-    const { panel, button, player } = activePlayer;
+    const active = activePlayer;
+    const { panel, button, player } = active;
     activePlayer = null;
+    musicState({onMusicState:active.onMusicState}, 'stopped');
     try { player?.destroy(); } catch {}
     panel.remove();
     button.setAttribute('aria-expanded', 'false');
@@ -264,7 +270,7 @@
     watch.hidden = !reason || reason === 'next';
   }
 
-  function playVideo(row, button, video, title, messageId, suggestion, {playlistId='',queue=[],index=-1}={}) {
+  function playVideo(row, button, video, title, messageId, suggestion, {playlistId='',queue=[],index=-1,musicToken='',onMusicState=null,resumeFromHistory=true}={}) {
     const videoId = video.video_id;
     if (document.hidden || window.VP3ParticipantContinuity?.selectedContext() || activePlayer?.button === button) return;
     stopPlayer();
@@ -301,10 +307,12 @@
     panel.append(frame,status,controls);
     row.append(panel);
     button.setAttribute('aria-expanded', 'true');
-    const active = {panel, button, video, messageId, suggestion, playlistId, queue, index,
+    const active = {panel, button, video, messageId, suggestion, playlistId, queue, index, musicToken, onMusicState,
       interruptionControls:{status,resume:resumePlayback,watch}};
     active.play = newPlay(active);
     activePlayer = active;
+    window.VP3_MUSIC_CHAT_V1?.claimSource('youtube',active);
+    musicState(active,'starting');
     resumePlayback.addEventListener('click',() => {
       if (activePlayer !== active || document.hidden || window.VP3ParticipantContinuity?.selectedContext()) return;
       if (active.interruption === 'next') { queue[index+1]?.(); return; }
@@ -330,20 +338,26 @@
             try {
               if (validPosition(resume) && resume % 1000 !== 0) event.target.seekTo?.(resume/1000,true);
               active.lastState = event.target.getPlayerState();
-              if (active.lastState === api.PlayerState.PLAYING) startWatching(active);
+              if (active.lastState === api.PlayerState.PLAYING) {
+                window.VP3_MUSIC_CHAT_V1?.claimSource('youtube',active);
+                startWatching(active);
+                musicState(active,'playing');
+              }
             } catch {} // The iframe has already received the whole-second start.
           },
           onAutoplayBlocked() {
-            if (activePlayer === active) setInterruption(active,'autoplay');
+            if (activePlayer === active) { setInterruption(active,'autoplay'); musicState(active,'blocked'); }
           },
           onError() {
-            if (activePlayer === active) setInterruption(active,'unavailable');
+            if (activePlayer === active) { setInterruption(active,'unavailable'); musicState(active,'unavailable'); }
           },
           onStateChange(event) {
             if (activePlayer !== active) return;
             const previous = active.lastState;
             active.lastState = event.data;
             if (event.data === api.PlayerState.PLAYING) {
+              window.VP3_MUSIC_CHAT_V1?.claimSource('youtube',active);
+              musicState(active,'playing');
               if (active.interruption) setInterruption(active,null);
               active.offer?.remove();
               if (active.ended) {
@@ -355,12 +369,14 @@
             } else {
               const ended = event.data === api.PlayerState.ENDED;
               stopWatching(active,ended);
+              if(ended)musicState(active,'ended');
+              else if(event.data === api.PlayerState.PAUSED)musicState(active,'paused');
               if (ended) {
                 active.ended = true;
                 if (queue[index+1]) {
                   if (document.hidden) setInterruption(active,'next');
                   else queue[index+1]();
-                } else void offerMorePicks(active);
+                } else if(!active.musicToken)void offerMorePicks(active);
               } else if (event.data === api.PlayerState.PAUSED && !active.interruption
                   && (active.wasPlayingWhileLeaving || document.hidden
                     && [api.PlayerState.PLAYING,api.PlayerState.BUFFERING].includes(previous))) {
@@ -369,12 +385,12 @@
             }
           }
         }});
-      }).catch(() => {}); // The native iframe controls remain available.
+      }).catch(() => { if(activePlayer===active)musicState(active,'blocked'); }); // The native iframe controls remain available.
     };
-    const known = positions.get(videoId) ?? video.resume_ms;
+    const known = resumeFromHistory ? positions.get(videoId) ?? video.resume_ms : 0;
     if (!config.resumeCapture || !canCapture(active,active.play) || validPosition(known)) {
       mount(config.resumeCapture && canCapture(active,active.play) ? known : 0);
-      return;
+      return active;
     }
     let timer;
     const wait = new Promise(resolve => { timer = setTimeout(() => resolve(0),850); });
@@ -383,6 +399,7 @@
         clearTimeout(timer);
         mount(canCapture(active,active.play)?position:0);
       });
+    return active;
   }
 
   async function offerMorePicks(active) {
@@ -825,5 +842,42 @@
     } catch { return false; }
   }
 
-  window.VP3_CHAT_YOUTUBE_V1 = Object.freeze({attach, command, runCommand, isPlaying, settingsUrl:config.connections});
+  function pauseForMusic() {
+    const active = activePlayer;
+    if (!active) return;
+    if (!active.ready || !active.player?.pauseVideo) { stopPlayer(); return; }
+    active.wasPlayingWhileLeaving = false;
+    try { active.player.pauseVideo(); stopWatching(active); musicState(active,'paused'); }
+    catch { stopPlayer(); }
+  }
+
+  // Music Chat supplies a freshly resolved source result. The existing iframe,
+  // observation and receipt path continue to own YouTube playback/history.
+  function playMusic(host, button, resolved, observer = {}) {
+    const result = resolved?.youtube_results;
+    const videos = result?.videos;
+    const video = Array.isArray(videos) && videos.length === 1 ? videos[0] : null;
+    const messageId = Number(resolved?.source_message_id || result?.source_message_id || 0);
+    const playlistId = resolved?.youtube_playlist_id || result?.playlist_id || '';
+    if (!host?.isConnected || !button?.isConnected || !video || !videoIdPattern.test(video.video_id || '')
+        || typeof video.made_for_kids !== 'boolean' || !Number.isSafeInteger(result.expires_at)
+        || result.expires_at * 1000 <= Date.now() || !Number.isSafeInteger(messageId) || messageId < 1
+        || playlistId && !playlistIdPattern.test(playlistId) || document.hidden
+        || window.VP3ParticipantContinuity?.selectedContext?.()) return null;
+    const active = playVideo(host, button, video, typeof video.title === 'string' ? video.title : 'YouTube selection',
+      messageId, false, {playlistId, musicToken:String(observer.token || ''),
+        onMusicState:observer.onState, resumeFromHistory:false});
+    if (!active) return null;
+    return {
+      pause() { if(activePlayer===active)pauseForMusic(); },
+      resume() {
+        if(activePlayer!==active||!active.ready||document.hidden)throw new Error('Use Play to reopen this YouTube selection.');
+        window.VP3_MUSIC_CHAT_V1?.claimSource('youtube',active);
+        active.player.playVideo();
+      },
+      stop() { if(activePlayer===active)stopPlayer(); }
+    };
+  }
+
+  window.VP3_CHAT_YOUTUBE_V1 = Object.freeze({attach, command, runCommand, isPlaying, playMusic, pauseForMusic, settingsUrl:config.connections});
 })();

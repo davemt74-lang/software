@@ -175,6 +175,25 @@ if($idempotencyKey!==''){
             if(isset($input['working_context_ref'])||isset($replay['working_context_ref'])){
                 require_once dirname(__DIR__).'/includes/agent-working-context-v1.php';vp3_working_context_replay_v1($pdo,$user,$principal,$input,$replay);
             }
+            $musicReference=is_array($replay['music_chat_v1']??null)?$replay['music_chat_v1']:null;
+            if($musicReference!==null||isset($replay['music_query_hash'])){
+                $replayConversationId=(int)($replay['conversation_id']??0);
+                if($musicReference===null||!empty($input['ephemeral_protocol'])||$participantActor!==null
+                    ||($conversationId>0&&$conversationId!==$replayConversationId)
+                    ||!hash_equals((string)($replay['music_query_hash']??''),hash('sha256',$query))){
+                    throw new RuntimeException('That music request changed. Send a new request.',409);
+                }
+                vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
+                vp3_music_chat_dependencies_v1();
+                // The transport cache retains only a reference. Current source and
+                // owner access must be checked before speaking or displaying a replay.
+                $music=vp3_music_chat_result_read_v1($pdo,$user,$agentScopeId,$replayConversationId,(string)($musicReference['result_id']??''));
+                $music['replayed']=true;
+                $currentMusic=vp3_music_chat_reply_v1($music);
+                foreach(['answer','actions','sources','tool_receipt','music_chat_v1'] as $field)$replay[$field]=$currentMusic[$field];
+                unset($replay['music_query_hash'],$replay['youtube_results'],$replay['media_playback']);
+                $replay['media']=[];
+            }
             if($emailRequest||isset($replay['gmail_query_hash'])){
                 $replayConversationId=(int)($replay['conversation_id']??0);
                 if(!$emailRequest||($conversationId>0&&$conversationId!==$replayConversationId)
@@ -246,7 +265,7 @@ if($idempotencyKey!==''){
                 if(!has_permission('account.access',$live))throw new RuntimeException('Research access changed.',403);
                 unset($replay['public_research_query_hash'],$replay['artist_research_query_hash']);
             }
-            if(empty($replay['media_offer_reply_v1'])&&empty($replay['casual_checkin_reply_v1'])
+            if($musicReference===null&&empty($replay['media_offer_reply_v1'])&&empty($replay['casual_checkin_reply_v1'])
                 &&($youtubeRequest||isset($replay['youtube_query_hash']))){
                 $replayConversationId=(int)($replay['conversation_id']??0);
                 $savedFollowup=($replay['tool_receipt']['capability']??null)==='youtube.results';
@@ -323,6 +342,12 @@ if($imageReferenceId>0||array_key_exists('initiative_reply',$input)||$initiative
             $replay['sources']=[];
         }
         if($mediaRequest||$casualRequest)unset($replay['media_playback'],$replay['youtube_results']);
+        if(is_array($replay['music_chat_v1']??null)){
+            $replay['music_query_hash']=hash('sha256',$query);
+            $replay['music_chat_v1']=vp3_music_chat_result_reference_v1($replay['music_chat_v1']);
+            $replay['answer']='Your music selection is saved in Chat.';
+            $replay['sources']=$replay['media']=[];
+        }
         if(($replay['linked_reply_tool_v1']??null)==='youtube')unset($replay['youtube_results']);
         if($publicResearchRequest)$replay['public_research_query_hash']=hash('sha256',$query);
         if($emailRequest)$replay['gmail_query_hash']=$emailQueryHash;
@@ -338,7 +363,7 @@ if($imageReferenceId>0||array_key_exists('initiative_reply',$input)||$initiative
                 $replay['sources']=$replay['actions']=[];
             }
         }
-        if($youtubeRequest&&empty($done['media_offer_reply_v1'])&&empty($done['casual_checkin_reply_v1'])){
+        if(!isset($done['music_chat_v1'])&&$youtubeRequest&&empty($done['media_offer_reply_v1'])&&empty($done['casual_checkin_reply_v1'])){
             unset($replay['youtube_results']);
             $replay['youtube_query_hash']=hash('sha256',$query);
         }

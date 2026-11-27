@@ -76,8 +76,7 @@ function track_is_playlist_request(string $query): bool
     $query = mb_strtolower($query);
     return str_contains($query, 'playlist')
         || str_contains($query, 'mix')
-        || str_contains($query, 'set of songs')
-        || count(track_detect_moods($query)) > 0;
+        || str_contains($query, 'set of songs');
 }
 
 function track_is_next_request(string $query): bool

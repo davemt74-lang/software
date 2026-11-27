@@ -1,6 +1,7 @@
 <?php
 declare(strict_types=1);
 require __DIR__ . '/includes/bootstrap.php';
+require_once __DIR__.'/includes/music-chat-library-v1.php';
 require_once __DIR__.'/includes/agent-operator-owner-phone-v1.php';
 require_once __DIR__ . '/includes/phone-tracking-v1.php';
 require_once __DIR__ . '/includes/phone-agent-workspace-schema-v1.php';
@@ -312,6 +313,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && music_song_metadata_v1_schema_ready($schemaConnection)
         && music_listening_v1_schema_ready($schemaConnection)
         && music_provider_v1_schema_ready($schemaConnection)
+        && vp3_music_chat_ready_v1($schemaConnection)
         && vp3_phone_sms_assignment_schema_ready_v111($schemaConnection)
         && vp3_phone_workspace_schema_ready_v1($schemaConnection)
         && vp3_managed_control_ready_v1($schemaConnection)
@@ -487,6 +489,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             agent_connection_youtube_results_schema_v1($pdo);
             vp3_youtube_playback_install_v1($pdo);
             vp3_youtube_picks_install_v1($pdo);
+            vp3_music_chat_schema_v1($pdo);
             vp3_phone_ensure_schema_v100($pdo);
             vp3_phone_sms_ensure_schema_v110($pdo);
             vp3_phone_sms_outbound_ensure_schema_v120($pdo);

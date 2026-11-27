@@ -18,6 +18,7 @@ const activeExpected=[
   "gmail-composer-v1.yml",
   "homeserver-runtime-journey.yml",
   "music-analytics-v1.yml",
+  "music-chat-v1.yml",
   "music-song-metadata-v1.yml",
   "package-entitlements-v340.yml",
   "profile-commerce-secure-file-v1130.yml",
@@ -73,6 +74,25 @@ assert.match(analytics,/run:\s*php tests\/music-analytics-mysql-v1\.php/,'Artist
 assert.match(analytics,/browser:\s*\[chromium,\s*webkit\]/,'Artist analytics must retain Chromium and WebKit acceptance');
 assert.match(analytics,/run:\s*node tests\/music-analytics-browser-v1\.mjs/,'Artist analytics must exercise the real workspace browser flow');
 assert.doesNotMatch(analytics,/continue-on-error:\s*true/,'Artist analytics failures must not be downgraded to advisory checks');
+
+const musicChat=fs.readFileSync(path.join(workflowDir,'music-chat-v1.yml'),'utf8');
+assert.match(musicChat,/pull_request:\s*\n\s+paths:/,'Music Chat acceptance must remain path-filtered');
+assert.match(musicChat,/push:\s*\n\s+branches:\s*\[main\]/,'Music Chat acceptance must verify relevant merged main changes');
+assert.match(musicChat,/\n\s+workflow_dispatch:/,'Music Chat acceptance must remain manually runnable');
+assert.match(musicChat,/image:\s*mysql:8\.0/,'Music Chat must retain real MySQL acceptance');
+assert.match(musicChat,/MUSIC_TEST_MYSQL_DSN:\s*['"]?mysql:/,'Music Chat MySQL checks require a configured DSN instead of silently skipping');
+assert.match(musicChat,/run:\s*php tests\/music-chat-library-mysql-v1\.php/,'Music Chat must retain native MySQL transactions and independent request races');
+assert.match(musicChat,/php tests\/music-chat-intent-v1\.php/,'Music Chat must exercise explicit intent, exact counts and source selection');
+assert.match(musicChat,/php tests\/music-chat-library-v1\.php/,'Music Chat must retain private SQLite storage and current authority acceptance');
+assert.match(musicChat,/node tests\/music-chat-api-v1\.mjs/,'Music Chat must exercise the actual HTTP access and mutation boundary');
+assert.match(musicChat,/node tests\/music-chat-runtime-v1\.mjs/,'Music Chat must exercise shared response assembly and restoration');
+assert.match(musicChat,/php-version:\s*['"]8\.1['"]/,'Music Chat must retain its supported PHP compatibility gate');
+assert.match(musicChat,/php tests\/agent-connection-youtube-chat-v1\.php/,'Music Chat must preserve existing YouTube request and history regressions');
+assert.match(musicChat,/php tests\/agent-connection-youtube-playlists-v1\.php/,'Music Chat must preserve existing YouTube playlist regressions');
+assert.match(musicChat,/browser:\s*\[chromium,\s*webkit\]/,'Music Chat must retain Chromium and WebKit acceptance');
+assert.match(musicChat,/run:\s*node tests\/music-chat-browser-v1\.mjs/,'Music Chat must exercise real browser requests and source switching');
+assert.match(musicChat,/actions\/upload-artifact@v4/,'Music Chat browser evidence must remain available for release review');
+assert.doesNotMatch(musicChat,/continue-on-error:\s*true/,'Music Chat failures must not be downgraded to advisory checks');
 
 for(const name of archived){
   assert.ok(!active.includes(name),`historical workflow ${name} must not be both active and archived`);
