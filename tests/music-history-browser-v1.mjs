@@ -55,6 +55,19 @@ function iframeMock() {
   }};
 }
 
+function observeNativeEvents() {
+  window.__historyNativeEvents = [];
+  for (const type of ['loadedmetadata','play','playing','seeking','seeked','waiting','pause','ended','error']) {
+    document.addEventListener(type, event => {
+      const audio = event.target;
+      if (!audio?.matches?.('audio.chat-audio-player')) return;
+      window.__historyNativeEvents.push({event:type,track:audio.dataset.trackId,paused:audio.paused,seeking:audio.seeking,
+        readyState:audio.readyState,time:audio.currentTime,at:Math.round(performance.now())});
+      if (window.__historyNativeEvents.length > 120) window.__historyNativeEvents.shift();
+    }, true);
+  }
+}
+
 function voiceInputsMock() {
   // Hardware recognition and speech output are explicit external boundaries;
   // the shipped voice client still performs guards, submission and NDJSON work.
@@ -89,6 +102,7 @@ function voiceInputsMock() {
 async function pageFor(viewport = {width:1280,height:900}) {
   const context = await browser.newContext({viewport, hasTouch:viewport.width < 600, extraHTTPHeaders:{'X-User':'11'}});
   await context.addInitScript(iframeMock);
+  await context.addInitScript(observeNativeEvents);
   const page = await context.newPage(); pages.push(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.route('https://www.youtube.com/**', route => route.fulfill({contentType:'text/html',body:
@@ -149,7 +163,14 @@ async function nativeStarted(page, card) {
     else await page.locator('[data-listening-toggle]').click();
   }
   await card.locator('[data-music-state="playing"]').waitFor();
-  await page.waitForFunction(() => [...document.querySelectorAll('audio.chat-audio-player')].some(audio => audio.dataset.trackId === '71' && !audio.paused && audio.readyState >= 3));
+  const audio = await page.waitForFunction(() => [...document.querySelectorAll('audio.chat-audio-player')].find(audio =>
+    audio.dataset.trackId === '71' && !audio.paused && !audio.seeking && audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA));
+  try {
+    const position = await audio.evaluate(element => element.currentTime);
+    await page.waitForFunction(({audio,position}) => audio.isConnected && audio.dataset.trackId === '71'
+      && !audio.paused && !audio.seeking && audio.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && audio.currentTime >= position + .15,
+    {audio,position});
+  } finally { await audio.dispose(); }
 }
 async function stop(page) {
   await page.evaluate(() => window.VP3_MUSIC_CHAT_V1.runCommand('stop'));
@@ -439,12 +460,16 @@ try {
     if (page.isClosed()) continue;
     state.push(await page.evaluate(() => ({url:location.href,history:!!window.VP3_MUSIC_HISTORY_V1,
       conversation:window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.(),cards:document.querySelectorAll('.vp3-music-history').length,
+      nativeEvents:window.__historyNativeEvents || [],
       audio:[...document.querySelectorAll('audio')].map(audio => ({track:audio.dataset.trackId,paused:audio.paused,seeking:audio.seeking,
         readyState:audio.readyState,time:audio.currentTime,duration:audio.duration}))})).catch(reason => ({error:String(reason)})));
     await Promise.allSettled([page.screenshot({path:path.join(artifacts,`failure-${index}.png`)}),
       page.content().then(html => fs.writeFile(path.join(artifacts,`failure-${index}.html`),html))]);
   }
-  await Promise.allSettled([fs.writeFile(path.join(artifacts,'failure.json'),JSON.stringify({engine,checks,error:String(error.stack||error),errors,state},null,2)),
+  let receipts;
+  try { receipts = {native:nativeCount(),youtube:youtubeCount(),latestNative:fixture.readDb('SELECT s.session_id,s.requested_track_id,s.position_ms FROM music_listening_sessions_v1 s JOIN track_play_sessions t ON t.id=s.session_id WHERE t.user_id=11 ORDER BY s.session_id DESC LIMIT 5')}; }
+  catch (diagnosticError) { receipts = {unavailable:String(diagnosticError.message)}; }
+  await Promise.allSettled([fs.writeFile(path.join(artifacts,'failure.json'),JSON.stringify({engine,checks,error:String(error.stack||error),errors,state,receipts},null,2)),
     fs.writeFile(path.join(artifacts,'php.log'),fixture.logs+'\n'+(voiceFixture?.logs||''))]);
   throw error;
 } finally { await browser?.close(); voiceFixture?.close(); fixture.close(); }

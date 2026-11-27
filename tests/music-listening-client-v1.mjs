@@ -133,6 +133,71 @@ export async function runMusicListeningClientTests({silent = false} = {}) {
   }
 
   {
+    const f = fixture();
+    f.audio.currentTime = 22; f.audio.seeking = true; f.audio.emit('seeking');
+    await f.play(); f.audio.emit('playing'); await turn();
+    check(f.calls.length === 0, 'Actual playing during an initial seek must wait for the stable selected position');
+    await f.advance(5000, {progress: false});
+    f.audio.seeking = false; f.audio.emit('seeked'); await turn();
+    check(f.allocations.size === 1 && f.calls[0]?.input.position_ms === 22000,
+      'An observed playing event before the initial seek completes must allocate one start at the exact resumed position');
+    check(f.events()[0]?.action === 'resume' && f.events()[0].elapsed_ms === 0 && f.events()[0].cumulative_played_ms === 0,
+      'The initial seek wait must not become elapsed or measured playing time');
+    f.audio.emit('playing'); f.audio.emit('seeked'); await turn();
+    check(f.allocations.size === 1, 'Later playing and seek completion observations must not allocate a duplicate start');
+    await f.advance(2000); await f.pause();
+    check(f.events().at(-1).cumulative_played_ms === 2000, 'Only media progress after the initial seek may accrue listening time');
+  }
+
+  {
+    const f = fixture();
+    f.audio.currentTime = 22; f.audio.seeking = true; f.audio.emit('seeking');
+    f.audio.paused = false; f.audio.emit('play');
+    f.audio.seeking = false; f.audio.emit('seeked');
+    await f.advance(1000); f.tracker.flush(); await turn();
+    check(f.calls.length === 0, 'Seek completion, play intent and position updates without actual playing must not allocate a start');
+    f.audio.emit('playing'); await turn();
+    check(f.allocations.size === 1, 'An actual playing event after the initial seek can allocate the first start');
+  }
+
+  for (const boundary of ['pause', 'paused completion', 'waiting', 'stalled', 'stop', 'detach', 'ended', 'error', 'emptied', 'account change', 'disconnected']) {
+    let authorized = true;
+    const f = fixture({current: () => authorized});
+    f.audio.currentTime = 22; f.audio.seeking = true; f.audio.emit('seeking'); await f.play();
+    if (boundary === 'pause') await f.pause();
+    else if (boundary === 'paused completion') f.audio.paused = true;
+    else if (boundary === 'stop') f.tracker.stop();
+    else if (boundary === 'detach') f.tracker.detach();
+    else if (boundary === 'account change') authorized = false;
+    else if (boundary === 'disconnected') f.audio.isConnected = false;
+    else f.audio.emit(boundary);
+    f.audio.seeking = false; f.audio.emit('seeked'); await turn();
+    authorized = true; f.audio.isConnected = true; f.audio.paused = false;
+    f.audio.emit('play'); f.audio.emit('seeked'); f.audio.emit('timeupdate'); f.tracker.flush(); await turn();
+    check(f.calls.length === 0, `${boundary} must discard an initial-seek playing observation without a later actual playing event`);
+  }
+
+  {
+    let sourceUrl = '/chat.php?history=original', lostStart = false;
+    const f = fixture({context: () => ({source: 'agent_player', source_url: sourceUrl})});
+    f.setHandler(call => {
+      const receipt = f.receive(call.body);
+      if (call.input.action === 'start' && !lostStart) { lostStart = true; throw new Error('Lost initial-seek start acknowledgement'); }
+      return response(receipt);
+    });
+    f.audio.currentTime = 22; f.audio.seeking = true; f.audio.emit('seeking'); await f.play();
+    f.audio.seeking = false; f.audio.emit('seeked'); await turn();
+    f.audio.emit('playing'); f.audio.emit('seeked');
+    sourceUrl = '/chat.php?history=later'; await f.advance(500);
+    const starts = f.calls.filter(call => call.input.action === 'start');
+    check(starts.length === 2 && starts[0].body === starts[1].body && starts[1].input.position_ms === 22000
+      && starts[1].input.source_url === '/chat.php?history=original',
+      'A lost initial-seek start acknowledgement must retry the frozen identity, position and source context');
+    check(f.allocations.size === 1 && f.starts.length === 1 && f.errors.length === 0,
+      'Initial-seek retries and duplicate media events must acknowledge only one allocated play');
+  }
+
+  {
     const f = fixture(); await f.play(); await f.advance(4000);
     f.audio.seeking = true; f.audio.currentTime = 20; f.audio.emit('seeking'); await turn();
     const seek = f.events().at(-1), checkpoint = f.events().at(-2);
