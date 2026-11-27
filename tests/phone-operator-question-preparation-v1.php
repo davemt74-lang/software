@@ -3,14 +3,17 @@ declare(strict_types=1);
 require __DIR__.'/phone-operator-objectives-v1.php';
 require_once dirname(__DIR__).'/includes/agent-operator-answer-v1.php';
 require_once dirname(__DIR__).'/includes/agent-operator-dispatch-worker-v1.php';
+require_once __DIR__.'/fixtures/phone-call-window-v1.php';
 function knowledge_retrieval_v162_owner_session($user,$principal):bool{return ($principal['kind']??'')==='system'||(($principal['owner_user_id']??0)===$user['id']);}
+$preparationWindow=vp3_phone_fixture_call_window_v1(time());
 
-function preparation_grant(array $ctx):string
+function preparation_grant(array $ctx,array $window):string
 {
     $pdo=db();$device=bin2hex(random_bytes(16));
     $pdo->prepare("INSERT INTO vp3_phone_devices_v1(id,owner_user_id,device_status,expires_at) VALUES(?,1,'approved',?)")->execute([$device,time()+86400]);
-    $pdo->prepare("INSERT INTO vp3_phone_communication_profiles_v1(owner_user_id,device_id,profile_id,revision,phone_revision,phone_e164,owner_calls,holder_calls,holder_proactive,agent_call_consent,holder_memory,window_start,window_end,max_calls_per_day,min_gap_minutes,updated_epoch)
-        VALUES(1,?,?,1,1,?,1,1,1,3,1,'00:00','23:59',20,0,?)")->execute([$device,bin2hex(random_bytes(16)),$ctx['peer'],time()]);
+    $pdo->prepare("INSERT INTO vp3_phone_communication_profiles_v1(owner_user_id,device_id,profile_id,revision,phone_revision,phone_e164,owner_calls,holder_calls,holder_proactive,agent_call_consent,holder_memory,timezone,window_start,window_end,max_calls_per_day,min_gap_minutes,updated_epoch)
+        VALUES(1,?,?,1,1,?,1,1,1,3,1,?,?,?,20,0,?)")->execute([$device,bin2hex(random_bytes(16)),$ctx['peer'],
+            $window['timezone'],$window['window_start'],$window['window_end'],time()]);
     $pdo->prepare('UPDATE crm_contacts SET connected_phone_id=? WHERE id=?')->execute([$device,$ctx['contact']]);return $device;
 }
 function preparation_read(array $ctx,?array $saved=null,?callable $reader=null):array
@@ -23,7 +26,25 @@ function preparation_accept(array $ctx,array $saved,int $index=0):array
     $saved['qa_items'][$index]['review_state']='accepted';$saved['qa_items'][$index]['reviewed_at']=gmdate('c');
     $saved['qa_items'][$index]['owner_review_proof_v1']=transcription_review_proof_v1((int)$ctx['job']['session_id'],$saved['source_hash'],'qa',$saved['qa_items'][$index]['section'],$saved['qa_items'][$index]);return $saved;
 }
-$before=$checks;$ctx=objective_fixture();$device=preparation_grant($ctx);$saved=preparation_accept($ctx,$ctx['saved']);
+$before=$checks;
+// Exercise the real whole-call admission rule, including the UTC minute that
+// failed CI. Fixture windows stay open; canonical boundary rejections remain.
+for($hour=0;$hour<24;$hour++){
+    $at=(new DateTimeImmutable(sprintf('2026-11-26 %02d:59:30',$hour),new DateTimeZone('UTC')))->getTimestamp();
+    $window=vp3_phone_fixture_call_window_v1($at)+['max_duration_seconds'=>180];
+    $local=(new DateTimeImmutable('@'.$at))->setTimezone(new DateTimeZone($window['timezone']));
+    c(in_array($window['timezone'],DateTimeZone::listIdentifiers(),true)
+        &&(int)$local->format('G')>=7&&(int)$local->format('G')<=17&&vp3_operator_admission_window_v1($window,$at)
+        &&vp3_operator_admission_window_v1($window,$at+900),'real HTTP fixture window covers a full call and later requests at UTC hour '.$hour);
+    $bounded=array_replace($window,['window_start'=>'09:00','window_end'=>'17:00']);
+    $start=$local->setTime(9,0)->getTimestamp();$end=$local->setTime(17,0)->getTimestamp();
+    c(!vp3_operator_admission_window_v1($bounded,$start-1)&&vp3_operator_admission_window_v1($bounded,$start)
+        &&vp3_operator_admission_window_v1($bounded,$end-180)&&!vp3_operator_admission_window_v1($bounded,$end-179)
+        &&!vp3_operator_admission_window_v1($bounded,$end)
+        &&!vp3_operator_admission_window_v1($window,$local->setTime(23,59,30)->getTimestamp()),
+        'real admission preserves before-window, whole-call end, exact-end and midnight rejection at UTC hour '.$hour);
+}
+$ctx=objective_fixture();$device=preparation_grant($ctx,$preparationWindow);$saved=preparation_accept($ctx,$ctx['saved']);
 $p=preparation_read($ctx,$saved);
 c($p['state']==='ready'&&$p['pending_count']===1&&$p['reviewed_count']===1&&array_column($p['questions'],'question')===['Who will attend?'],'reviewed exact answer is omitted and the open question leads preparation');
 c($p['reason']==='open_question'&&str_contains($p['source_url'],'item=qa-open'),'preparation explains and links the actual unanswered finding');
@@ -46,7 +67,7 @@ $other=$ctx;$other['scope']=vp3_phone_workspace_scope_v1($pdo,user(),['agent_id'
 $receipt=vp3_operator_question_receipt_v1($p,time());$receiptText=vp3_operator_question_receipt_text_v1($receipt);
 c(str_contains($receiptText,'unanswered finding')&&!str_contains(json_encode($receipt),'Who will attend')&&!str_contains(json_encode($receipt),'Friday')&&!str_contains(json_encode($receipt),$ctx['peer']),'stored owner explanation contains only fixed reason, counts, fingerprint and source reference');
 foreach(['//evil.test/artist-listening.php','https://evil.test/artist-listening.php','/other.php','/artist-listening.php\nprivate'] as $bad)c(vp3_operator_question_source_url_v1($bad)==='','source links cannot leave the canonical local evidence routes');
-$prior=objective_fixture();preparation_grant($prior);$latest=objective_fixture($prior);$priorAccepted=preparation_accept($prior,$prior['saved']);
+$prior=objective_fixture();preparation_grant($prior,$preparationWindow);$latest=objective_fixture($prior);$priorAccepted=preparation_accept($prior,$prior['saved']);
 $latestSaved=$latest['saved'];$latestSaved['qa_items']=[$latestSaved['qa_items'][1]];
 $both=static fn(int $id):array=>$id===(int)$prior['job']['session_id']?$priorAccepted:$latestSaved;
 $carried=preparation_read($latest,null,$both);c($carried['reviewed_count']===1&&array_column($carried['questions'],'question')===['Who will attend?'],'newer missing evidence does not reopen an older exact reviewed answer');
@@ -87,7 +108,7 @@ $pdo->exec("UPDATE phone_voice_calls_v130 SET state='completed' WHERE owner_user
 $pdo->exec('DELETE FROM phone_operator_carrier_attempts_v1');$pdo->exec('DELETE FROM phone_operator_occurrences_v1');$pdo->exec('DELETE FROM phone_operator_scheduled_assignments_v1');$pdo->exec('DELETE FROM user_calendar_events');$pdo->exec('DELETE FROM agent_scheduling_bookings');
 ddl("CREATE TABLE IF NOT EXISTS phone_voice_turns_v140(id INTEGER PRIMARY KEY AUTOINCREMENT,call_sid VARCHAR(40),step_number INTEGER,owner_user_id INTEGER,agent_id INTEGER,speech_hash TEXT,speech_text TEXT,response_text TEXT,state VARCHAR(24),created_at DATETIME DEFAULT CURRENT_TIMESTAMP,UNIQUE(call_sid,step_number))");
 $pdo->prepare('UPDATE phone_browser_calls_v1 SET created_epoch=?,updated_epoch=?,ended_epoch=?,intent_consumed_epoch=? WHERE id=?')->execute([$now-7200,$now-7180,$now-7180,$now-7200,$ctx['id']]);
-$callingSettings=array_replace(vp3_operator_auto_call_defaults_v1(),['window_start'=>'00:00','window_end'=>'23:59','max_calls_per_day'=>3,'min_gap_minutes'=>60]);
+$callingSettings=array_replace(vp3_operator_auto_call_defaults_v1(),$preparationWindow,['max_calls_per_day'=>3,'min_gap_minutes'=>60]);
 $permission=['agent_id'=>0,'conversation_id'=>11,'contact_id'=>$ctx['contact'],'number_id'=>1,'expected_revision'=>0,'expected_destination'=>$ctx['peer'],'expected_line'=>$line['phone_e164'],'settings'=>$callingSettings,'enabled'=>true];
 vp3_operator_auto_call_save_v1($pdo,$ctx['scope'],$permission);
 $attest=array_intersect_key($permission,array_flip(['agent_id','conversation_id','contact_id','number_id','expected_destination','expected_line']));$attest+=['decision'=>'attest','expected_revision'=>1,'expected_consent_revision'=>0,'purpose'=>'follow_up','recipient_agreement_attested'=>true];
@@ -104,15 +125,16 @@ c($current['reason']==='eligible'&&$current['question_preparation']['reviewed_co
 $pdo->prepare('UPDATE phone_operator_contact_policies_v1 SET enabled=0 WHERE contact_id=?')->execute([$ctx['contact']]);
 c(vp3_operator_current_request_v1($pdo,$row,$now)['reason']==='owner_permission','reviewed findings cannot override owner permission');
 $pdo->prepare('UPDATE phone_operator_contact_policies_v1 SET enabled=1 WHERE contact_id=?')->execute([$ctx['contact']]);
-$outside=gmdate('H',$now)==='00'?'12:00':'00:00';$outsideEnd=$outside==='12:00'?'12:01':'00:01';
+$localNow=(new DateTimeImmutable('@'.$now))->setTimezone(new DateTimeZone($preparationWindow['timezone']));
+$outside=$localNow->format('G')==='0'?'12:00':'00:00';$outsideEnd=$outside==='12:00'?'12:01':'00:01';
 $pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET window_start=?,window_end=? WHERE device_id=?')->execute([$outside,$outsideEnd,$device]);
 c(vp3_operator_current_request_v1($pdo,$row,$now)['reason']==='calling_window','real admission applies calling hours before question preparation');
-$pdo->prepare("UPDATE vp3_phone_communication_profiles_v1 SET window_start='00:00',window_end='23:59' WHERE device_id=?")->execute([$device]);
+$pdo->prepare('UPDATE vp3_phone_communication_profiles_v1 SET window_start=?,window_end=? WHERE device_id=?')->execute([$preparationWindow['window_start'],$preparationWindow['window_end'],$device]);
 
 // A questions-only spontaneous agenda with every answer reviewed cannot reserve a carrier call.
 $allDraft=objective_fixture();
 action('save_operator_agenda',['contact_id'=>$allDraft['contact'],'number_id'=>1,'expected_revision'=>1,'enabled'=>true,'review_missed'=>false,'review_account'=>false,'topics'=>'','questions'=>"Which day works?\nWho will attend?"]);
-$all=objective_fixture($allDraft);preparation_grant($all);preparation_canonical($all);$allNow=time()+1;
+$all=objective_fixture($allDraft);preparation_grant($all,$preparationWindow);preparation_canonical($all);$allNow=time()+1;
 $pdo->prepare('UPDATE phone_browser_calls_v1 SET created_epoch=?,updated_epoch=?,ended_epoch=?,intent_consumed_epoch=? WHERE peer_e164=?')->execute([$allNow-7200,$allNow-7180,$allNow-7180,$allNow-7200,$all['peer']]);
 $map=artist_listening_transcript_page_map(artist_listening_v172_segments($pdo,(int)$all['job']['session_id']));$master=artist_listening_v237_analysis_status($pdo,(int)$all['job']['session_id'],$map)['master'];
 $modules=transcription_app_modules_v306($master['analysis'],$master);$open=$modules['qa']['result']['unanswered'][0];$open['answer']='The two invited guests.';$modules['qa']['result']['answered'][]=$open;$modules['qa']['result']['unanswered']=[];

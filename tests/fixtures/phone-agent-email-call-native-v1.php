@@ -15,6 +15,7 @@ require_once dirname(__DIR__,2).'/includes/phone-browser-v1.php';
 require_once dirname(__DIR__,2).'/includes/phone-voice-conversation-v140.php';
 require_once dirname(__DIR__,2).'/includes/user-calendar-v1300.php';
 require_once dirname(__DIR__,2).'/includes/agent-scheduling-v430.php';
+require_once __DIR__.'/phone-call-window-v1.php';
 
 function db(): PDO { return $GLOBALS['pecPdo']; }
 function current_user(): array { return pec_user_v1((int)($_SESSION['user_id']??1)); }
@@ -119,11 +120,12 @@ function pec_fixture_v1(): array
     agent_connections_install_v1($pdo);agent_connection_gmail_inbox_install_v1($pdo);
     agent_connection_gmail_inbox_receipts_install_v1($pdo);agent_connection_gmail_inbox_initial_install_v1($pdo);
     agent_email_matters_install_v1($pdo);agent_email_triage_install_v1($pdo);
-    $now=$fixture['now'];pec_session_v1();$owner=pec_user_v1();$fixture['owner']=$owner;
+    $now=$fixture['now'];$callWindow=vp3_phone_fixture_call_window_v1($now);$fixture['call_window']=$callWindow;
+    pec_session_v1();$owner=pec_user_v1();$fixture['owner']=$owner;
     VP3OperatorOwnerPhoneV1::saveNumber($pdo,$owner,['phone_e164'=>'+16025550100','expected_revision'=>'0'],$now-7200);
     VP3OperatorOwnerPhoneV1::savePreferences($pdo,$owner,['expected_revision'=>'1','updates_requested'=>'1',
-        'update_scope'=>'important','timezone'=>'UTC','window_start'=>'00:00','window_end'=>'23:59','max_calls_per_day'=>'1',
-        'min_gap_minutes'=>'240','max_duration_seconds'=>'180'],$now-7100);
+        'update_scope'=>'important','max_calls_per_day'=>'1',
+        'min_gap_minutes'=>'240','max_duration_seconds'=>'180']+$callWindow,$now-7100);
     $pdo->exec("INSERT INTO phone_cloud_numbers_v100(id,provider,provider_sid,phone_e164,owner_user_id,agent_id,status,voice_enabled,sms_enabled)
         VALUES(1,'twilio','PN".str_repeat('b',32)."','+16025550101',1,7,'active',1,1)");
     vp3_phone_browser_number_policy_set_v1($pdo,1,true,true);
@@ -137,7 +139,8 @@ function pec_fixture_v1(): array
             VALUES(1,?,?,?,?,1,1,7,11,0,0,?,?)',[$id,bin2hex(random_bytes(16)),$hash,hash('sha256','1:'.$owner['password_hash']),$now-7200,$now-7200]);
         vp3_phone_sql_v1($pdo,"INSERT INTO vp3_phone_communication_profiles_v1(owner_user_id,device_id,profile_id,revision,phone_revision,phone_e164,
             owner_calls,holder_calls,holder_proactive,agent_call_consent,timezone,window_start,window_end,max_calls_per_day,min_gap_minutes,updated_epoch)
-            VALUES(1,?,?,1,1,'+16025550100',1,1,1,2,'UTC','00:00','23:59',1,240,?)",[$id,bin2hex(random_bytes(16)),$now-7200]);
+            VALUES(1,?,?,1,1,'+16025550100',1,1,1,2,?,?,?,1,240,?)",[$id,bin2hex(random_bytes(16)),
+                $callWindow['timezone'],$callWindow['window_start'],$callWindow['window_end'],$now-7200]);
         if($index===1){$fixture['device_id']=$id;$fixture['token']=$token;}else{$fixture['second_device_id']=$id;$fixture['second_token']=$token;}
     }
     vp3_phone_transaction_v1($pdo,static function()use($pdo,$owner,$fixture,$now):array{
