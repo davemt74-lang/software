@@ -99,6 +99,7 @@ try {
     vp3_operator_auto_call_ensure_schema_v1($pdo);
     vp3_operator_live_ensure_schema_v1($pdo);
     VP3OperatorOwnerPhoneV1::install($pdo);
+    vp3_profile_phone_install_v1($pdo);
     vp3_chat_read_ensure_schema_v1($pdo);
     agent_connections_install_v1($pdo);
     vp3_dev_install_v1($pdo);

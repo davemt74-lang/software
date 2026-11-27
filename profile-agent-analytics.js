@@ -6,6 +6,19 @@ if(!host||typeof options.readAnalytics!=='function'||typeof options.readIntellig
 let state=null,analyticsError='',intelligence=null,intelligenceError='',intelligenceLoadedAt=0,propertyId=0,days=30,busy=false,pendingLoad=false,pendingForce=false,timer=null;
 let disposed=false,selectionGeneration=0,selectionLoading=false,analyticsController=null,intelligenceController=null;
 function setNotice(message='',error=false){if(!disposed)options.onNotice?.(message,error);}
+async function readBounded(reader,input,controller,label){
+  let timer,onAbort;
+  const aborted=()=>Object.assign(new Error('The Analytics request was cancelled.'),{name:'AbortError'});
+  try{
+    return await Promise.race([
+      Promise.resolve().then(()=>{if(controller.signal.aborted)throw aborted();return reader({...input,signal:controller.signal});}),
+      new Promise((_,reject)=>{
+        onAbort=()=>reject(aborted());controller.signal.addEventListener('abort',onAbort,{once:true});
+        timer=setTimeout(()=>{reject(Object.assign(new Error(`${label} took too long to respond. Choose Refresh to try again.`),{code:'PROFILE_ANALYTICS_TIMEOUT'}));controller.abort();},15000);
+      }),
+    ]);
+  }finally{clearTimeout(timer);if(onAbort)controller.signal.removeEventListener('abort',onAbort);}
+}
 function parseDate(value){if(!value)return null;const d=new Date(String(value).replace(' ','T'));return Number.isNaN(d.getTime())?null:d;}
 function relative(value){const d=parseDate(value);if(!d)return String(value||'');const s=Math.round((Date.now()-d.getTime())/1000);if(s<60)return 'just now';if(s<3600)return `${Math.max(1,Math.round(s/60))}m ago`;if(s<86400)return `${Math.round(s/3600)}h ago`;if(s<604800)return `${Math.round(s/86400)}d ago`;return d.toLocaleDateString();}
 function moneyMinor(cents,currency){const amount=Number(cents||0),code=String(currency||'').toUpperCase();if(amount<1||!/^[A-Z]{3}$/.test(code))return '';try{return new Intl.NumberFormat(undefined,{style:'currency',currency:code}).format(amount/100);}catch(e){return `${(amount/100).toFixed(2)} ${code}`;}}
@@ -20,11 +33,11 @@ async function loadIntelligence(force=false){
   if(!force&&intelligence&&Date.now()-intelligenceLoadedAt<120000)return;
   const controller=new AbortController();intelligenceController=controller;
   try{
-    const data=await options.readIntelligence({signal:controller.signal});
+    const data=await readBounded(options.readIntelligence,{},controller,'Profile conversion intelligence');
     if(disposed||controller.signal.aborted)return;
     if(data?.ready!==true||data?.coverage!=='complete'||!['today','7d','30d'].every(k=>data.periods?.[k]?.current))throw new Error('Profile conversion intelligence is unavailable. No totals were established.');
     intelligence=data;intelligenceLoadedAt=Date.now();intelligenceError='';
-  }catch(err){if(!disposed&&!controller.signal.aborted){intelligence=null;if([401,403,419].includes(err?.status))throw err;intelligenceError=String(err?.message||'Profile conversion intelligence is unavailable.');}}
+  }catch(err){if(!disposed&&(!controller.signal.aborted||err?.code==='PROFILE_ANALYTICS_TIMEOUT')){intelligence=null;if([401,403,419].includes(err?.status))throw err;intelligenceError=String(err?.message||'Profile conversion intelligence is unavailable.');}}
   finally{if(intelligenceController===controller)intelligenceController=null;}
 }
 async function load(silent=true){
@@ -33,7 +46,7 @@ async function load(silent=true){
   busy=true;const selection={propertyId,days,generation:selectionGeneration},changed=()=>selection.generation!==selectionGeneration;
   const controller=new AbortController();analyticsController=controller;
   try{
-    const data=await options.readAnalytics({propertyId:selection.propertyId,days:selection.days,signal:controller.signal});
+    const data=await readBounded(options.readAnalytics,{propertyId:selection.propertyId,days:selection.days},controller,'Profile Analytics');
     if(disposed)return;
     if(changed()){pendingLoad=true;return;}
     if(data?.ready!==true||data?.coverage!=='complete')throw new Error(data?.error||'VP3 Analytics is unavailable. No totals were established.');

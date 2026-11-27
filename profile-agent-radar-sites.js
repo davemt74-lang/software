@@ -10,10 +10,11 @@ let sitesState=null,busy=false,timer=null;
 function setNotice(message='',error=false){if(!notice)return;notice.textContent=message;notice.className=`profile-agent-notice${error?' error':''}`;}
 function relative(value){if(!value)return '';const d=new Date(String(value).replace(' ','T'));if(Number.isNaN(d.getTime()))return String(value);const s=Math.round((Date.now()-d.getTime())/1000);if(s<60)return 'just now';if(s<3600)return `${Math.max(1,Math.round(s/60))}m ago`;if(s<86400)return `${Math.round(s/3600)}h ago`;if(s<604800)return `${Math.round(s/86400)}d ago`;return d.toLocaleDateString();}
 async function request(payload=null){
+  const read=window.VP3ProfileAgentPortalHttpV1?.request;
+  if(typeof read!=='function')throw new Error('Refresh Profile Agent to reconnect Connected Sites.');
   const options=payload?{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf_token:cfg.csrf,...payload})}:{credentials:'same-origin',cache:'no-store'};
-  const r=await fetch(cfg.radarSitesEndpoint,options),d=await r.json().catch(()=>null);
-  if(!r.ok||!d?.ok)throw new Error(d?.error||'Connected Sites request failed.');
-  return d;
+  try{return await read(cfg.radarSitesEndpoint,options,payload!==null?45000:15000);}
+  catch(error){if(payload!==null&&error?.code==='PROFILE_REQUEST_TIMEOUT')throw new Error('The Connected Sites request timed out. Refresh to check whether the change was saved before trying again.');throw error;}
 }
 function agentManifestUrl(site){
   const endpoint=new URL('agent-manifest.php',new URL(cfg.radarSitesEndpoint,window.location.origin));

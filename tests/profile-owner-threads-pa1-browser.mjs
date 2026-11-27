@@ -7,7 +7,7 @@ const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODUL
 const read=name=>fs.readFileSync(new URL('../'+name,import.meta.url),'utf8');
 const files={activity:read('profile-activity-chat.js'),portal:read('profile-agent-portal.js')};
 const css={activity:read('profile-activity-chat.css'),portal:read('profile-agent-portal.css')};
-const portalMarkup=`<main class="profile-agent-app"><nav>${['inbox','visitors','radar','agent','knowledge','profile','analytics'].map(tab=>`<button data-pa-tab="${tab}">${tab}</button>`).join('')}<button id="profileAgentRefresh">Refresh</button></nav><div id="profileAgentNotice"></div><div id="profileAgentServiceStatus"></div><div id="profileAgentMetrics"></div><div id="profileAgentPortal"><section data-pa-view="inbox"><div id="profileAgentAttention"></div><div id="profileAgentConversations"></div><div id="profileAgentThread"></div></section><section data-pa-view="visitors"><div id="profileAgentVisitors"></div></section><section data-pa-view="radar"><div id="profileAgentRadar"></div></section><section data-pa-view="agent"><div id="profileAgentSettings"></div></section><section data-pa-view="knowledge"><div id="profileAgentKnowledge"></div></section><section data-pa-view="profile"><div id="profileAgentProfileSettings"></div></section><section data-pa-view="analytics"><div id="profileAgentAnalytics"></div></section></div></main>`;
+const portalMarkup=`<main class="profile-agent-app"><nav>${['inbox','visitors','radar','agent','knowledge','profile','analytics'].map(tab=>`<button data-pa-tab="${tab}">${tab}</button>`).join('')}<button id="profileAgentRefresh">Refresh</button></nav><div id="profileAgentNotice"></div><div id="profileAgentServiceStatus"></div><div id="profileAgentMetrics"></div><div id="profileAgentPortal"><section data-pa-view="inbox"><div id="profileAgentAttention"></div><div id="profileAgentConversations"></div><div id="profileAgentThread" class="profile-agent-thread"></div></section><section data-pa-view="visitors"><div id="profileAgentVisitors"></div></section><section data-pa-view="radar"><div id="profileAgentRadar"></div></section><section data-pa-view="agent"><div id="profileAgentSettings"></div></section><section data-pa-view="knowledge"><div id="profileAgentKnowledge"></div></section><section data-pa-view="profile"><div id="profileAgentProfileSettings"></div></section><section data-pa-view="analytics"><div id="profileAgentAnalytics"></div></section></div></main>`;
 const server=http.createServer((req,res)=>{
   const surface=req.url.startsWith('/portal')?'portal':'activity';
   res.writeHead(200,{'Content-Type':'text/html'});
@@ -161,6 +161,15 @@ try{
   const next=f.hold('save_profile_access');await page.locator('[data-policy="knowledge"] [data-policy-audience]').selectOption('public');await policySave.release();const queued=await next;
   check(queued.input.profile_agent_allowed===1&&queued.input.audience_scope==='public','knowledge policy changes made during a save are serialized with their latest explicit values');await queued.release();
   check(f.calls.filter(x=>x.action==='save_profile_access').length===2,'knowledge policy retention does not duplicate change listeners or writes');
+  await f.open(101);await f.ready(101);
+  fs.mkdirSync('artifacts/profile-inbox-recovery',{recursive:true});
+  for(const width of [390,1280]){
+    await page.setViewportSize({width,height:900});
+    const controls=page.locator('.profile-agent-thread-head .profile-agent-row-actions');
+    check(await controls.getByRole('button',{name:'Take over',exact:true}).count()===1&&await controls.getByRole('button',{name:'Let Agent handle',exact:true}).count()===1,'Inbox exposes explicit canonical responder controls at '+width+'px');
+    check(await controls.evaluate(node=>{const parent=node.closest('.profile-agent-thread').getBoundingClientRect();return [...node.querySelectorAll('button')].every(button=>{const box=button.getBoundingClientRect();return box.left>=parent.left&&box.right<=parent.right+1;});}),'Inbox responder controls remain within the thread at '+width+'px');
+    await page.locator('.profile-agent-thread-head').screenshot({path:`artifacts/profile-inbox-recovery/controls-${width}.png`});
+  }
   await f.close();
   console.log(`PROFILE_OWNER_THREADS_PA1_BROWSER=${checks} assertions PASS`);
 }finally{

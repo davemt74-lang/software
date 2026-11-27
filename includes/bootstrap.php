@@ -343,6 +343,7 @@ require_once __DIR__.'/phone-workspace-v1.php';
 require_once __DIR__.'/phone-browser-v1.php';
 require_once __DIR__.'/phone-workspace-ui-v1.php';
 require_once __DIR__.'/phone-recording-pipeline-v1.php';
+require_once __DIR__.'/profile-phone-v1.php';
 
 subscription_lifecycle_boot();
 artist_workspace_v104_boot_contextual_roles();

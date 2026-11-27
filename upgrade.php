@@ -318,6 +318,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_music_chat_ready_v1($schemaConnection)
         && vp3_phone_sms_assignment_schema_ready_v111($schemaConnection)
         && vp3_phone_workspace_schema_ready_v1($schemaConnection)
+        && vp3_profile_phone_ready_v1($schemaConnection)
         && vp3_agent_phone_shell_ready_v1($schemaConnection)
         && vp3_managed_control_ready_v1($schemaConnection)
         && vp3_managed_recording_ready_v1($schemaConnection)
@@ -506,6 +507,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_operator_auto_call_ensure_schema_v1($pdo);
             vp3_operator_live_ensure_schema_v1($pdo);
             VP3OperatorOwnerPhoneV1::install($pdo);
+            vp3_profile_phone_install_v1($pdo);
             agent_voice_preferences_schema($pdo);
             vp3_user_agent_lifecycle_ensure_schema_v390();
             vp3_agent_memory_scope_ensure_schema_v410();

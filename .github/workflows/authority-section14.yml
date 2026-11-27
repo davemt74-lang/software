@@ -162,6 +162,21 @@ jobs:
           node tests/profile-image-settings-api-v1.mjs
           node tests/profile-image-edit-api-v1.mjs
           node tests/profile-image-edits-v1.mjs
+      - name: Profile arrival identity, Radar recovery and Messages history
+        run: |
+          php tests/profile-visit-entry-reliability-v1.php
+          php tests/human-messaging-recovery-v1.php
+          node tests/messages-account-binding-api-v1.mjs
+          node tests/profile-radar-api-v1.mjs
+          node tests/profile-radar-clients-v1.mjs
+      - name: Owner-approved Profile Twilio line and private settings authority
+        run: |
+          php -l includes/profile-phone-v1.php
+          php -l api/profile-phone-v1.php
+          php tests/profile-phone-v1.php
+          node --check profile-phone-v1.js
+          node --check profile-phone-settings-v1.js
+          node tests/profile-phone-api-v1.mjs
       - name: Profile owner image reference authority, private job and composer contract
         run: |
           php -l includes/profile-image-owner-generation-v1.php
@@ -471,6 +486,18 @@ jobs:
           if-no-files-found: ignore
       - name: Profile owner thread selection, drafts and refresh
         run: node tests/profile-owner-threads-pa1-browser.mjs
+      - name: Messages live delivery, exact drafts, history and mobile recovery
+        run: node tests/messages-recovery-browser-v1.mjs
+      - name: Profile chat storage, history restoration and startup recovery
+        run: node tests/profile-chat-recovery-browser-v1.mjs
+      - name: Profile public phone approval and stalled image settings recovery
+        run: node tests/profile-phone-browser-v1.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-reliability-browser-evidence
+          path: artifacts/profile-reliability/
+          if-no-files-found: ignore
       - name: Profile checkout review, retry and accurate status
         run: node tests/profile-checkout-review-pa2-browser.mjs
       - name: Public Profile conversation checkout, confirmation, return and mobile

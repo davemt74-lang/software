@@ -570,6 +570,9 @@ window.VP3_PROFILE_WEBMCP={
 <script src="<?= e(url('/agent-orb-particles.js?v='.substr(hash_file('sha256',__DIR__.'/agent-orb-particles.js'),0,12))) ?>" defer></script>
 <?php endif; ?>
 <?php if($agent&&!$chatPreview): $profileCallsBuild='profile-calls-pa3c-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-calls-pa3c.js').hash_file('sha256',__DIR__.'/profile-calls-pa3c.css')),0,12); ?>
+<link rel="stylesheet" href="<?= e(url('/profile-phone-v1.css?v='.substr(hash_file('sha256',__DIR__.'/profile-phone-v1.css'),0,12))) ?>">
+<script>window.STONEFELLOW_PROFILE_AGENT.phoneEndpoint=<?= json_encode(url('/api/profile-phone-v1.php'),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;</script>
+<script src="<?= e(url('/profile-phone-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-phone-v1.js'),0,12))) ?>"></script>
 <link rel="stylesheet" href="<?= e(url('/profile-calls-pa3c.css?v='.$profileCallsBuild)) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-speech-pa4a.css?v='.substr(hash_file('sha256',__DIR__.'/profile-speech-pa4a.css'),0,12))) ?>">
 <script data-voice-capture-scope="<?= e($viewer?(string)(int)$viewer['id']:'guest') ?>" src="<?= e(url('/voice-lease-v122.js?v=interactive-capture-native-receiver-20261023')) ?>"></script>

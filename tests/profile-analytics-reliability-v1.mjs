@@ -36,6 +36,7 @@ const context={
   window:{PROFILE_AGENT_PORTAL:{analyticsEndpoint:'/api/vp3-analytics.php'},location:{origin:'https://fixture.example'},addEventListener(){}},
   document:{visibilityState:'visible',getElementById(id){return id==='profileAgentAnalytics'?host:id==='profileAgentNotice'?notice:null;}},
   setInterval(){return 1;},clearInterval(){},
+  setTimeout,clearTimeout,
   async fetch(raw){
     const url=new URL(raw);requests.push(url);
     if(url.pathname==='/api/profile-revenue-intelligence.php')return revenueResponse;

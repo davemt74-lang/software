@@ -20,6 +20,7 @@ const context={URL,Date,Intl,AbortController,console,
   window:{location:{origin:'https://example.test'},addEventListener(){},removeEventListener(){}},
   document:{visibilityState:'visible',getElementById(){return null;}},
   setInterval(fn){timers.push(fn);return timers.length;},clearInterval(){},
+  setTimeout,clearTimeout,
   fetch(){throw new Error('A mounted workspace must use its injected private readers.');},
 };
 vm.createContext(context);vm.runInContext(source,context);
@@ -68,6 +69,36 @@ const incomplete=host(),incompleteView=mount(incomplete,{readAnalytics:async()=>
 check(incomplete.innerHTML.includes('No totals were established.')&&!incomplete.innerHTML.includes('vp3-analytics-metric'),'a nominal ready response with unavailable coverage cannot render totals');incompleteView.dispose();
 const noNative=host(),noNativeView=mount(noNative,{readAnalytics:async()=>({...analytics(),native_profile_coverage:'unconfigured'}),readIntelligence:async()=>revenue});await flush();
 check(noNative.innerHTML.includes('Profile visit totals are not available yet.'),'an uninitialized native property has an explicit coverage notice');noNativeView.dispose();
+
+// A real transport can remain pending indefinitely or resolve after cancellation.
+// Fire only the production deadline; no wall-clock wait or renderer hook is used.
+const deadlineJobs=new Map();let deadlineId=0;
+const timed={...context,window:{...context.window},
+  setTimeout(fn,ms){const id=++deadlineId;deadlineJobs.set(id,{fn,ms});return id;},clearTimeout(id){deadlineJobs.delete(id);}};
+vm.createContext(timed);vm.runInContext(source,timed);
+const expire=async()=>{const entry=[...deadlineJobs.values()][0];assert.equal(entry?.ms,15000);entry.fn();await flush();};
+const stuckTraffic=pending(),timeoutTrafficHost=host();let trafficRecovered=false,trafficAbort;
+const timeoutTraffic=timed.window.VP3ProfileAnalytics.mountWorkspace(timeoutTrafficHost,{
+  readAnalytics:args=>{trafficAbort=args.signal;return trafficRecovered?Promise.resolve(analytics(0,30,17)):stuckTraffic.promise;},
+  readIntelligence:async()=>revenue,
+});
+await flush();const originalSignal=trafficAbort;await expire();
+check(originalSignal.aborted&&timeoutTrafficHost.innerHTML.includes('Profile Analytics took too long')&&timeoutTrafficHost.innerHTML.includes('Retry analytics'),'stalled traffic has a bounded deadline and an actionable retry state');
+trafficRecovered=true;await timeoutTraffic.refresh();
+check(timeoutTrafficHost.innerHTML.includes('vp3-analytics-metric')&&!timeoutTrafficHost.innerHTML.includes('took too long'),'timed-out traffic releases its busy state and an explicit retry recovers');
+stuckTraffic.resolve(analytics(0,30,987654));await flush();
+check(!timeoutTrafficHost.innerHTML.includes('987,654'),'a transport that resolves after its deadline cannot replace recovered analytics');timeoutTraffic.dispose();
+const stuckConversion=pending(),timeoutRevenueHost=host();let revenueRecovered=false,revenueAbort;
+const timeoutRevenue=timed.window.VP3ProfileAnalytics.mountWorkspace(timeoutRevenueHost,{
+  readAnalytics:async()=>analytics(),
+  readIntelligence:args=>{revenueAbort=args.signal;return revenueRecovered?Promise.resolve(revenue):stuckConversion.promise;},
+});
+await flush();const originalRevenueSignal=revenueAbort;await expire();
+check(originalRevenueSignal.aborted&&timeoutRevenueHost.innerHTML.includes('vp3-analytics-metric')&&timeoutRevenueHost.innerHTML.includes('Profile conversion intelligence took too long'),'stalled conversion intelligence does not hide verified traffic indefinitely');
+check(!timeoutRevenueHost.innerHTML.includes('From Profile traffic to real business'),'a conversion timeout never fabricates revenue or carries previous totals');
+revenueRecovered=true;await timeoutRevenue.refresh();stuckConversion.resolve(revenue);await flush();
+check(timeoutRevenueHost.innerHTML.includes('From Profile traffic to real business')&&!timeoutRevenueHost.innerHTML.includes('took too long'),'conversion intelligence recovers through the same explicit refresh');timeoutRevenue.dispose();
+check(deadlineJobs.size===0,'completed and disposed reads clear every request deadline');
 
 // The portal remains an auto-mount of the same renderer. Its configured app
 // base is retained for both requests, including legacy configuration fallback.

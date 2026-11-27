@@ -11,28 +11,41 @@
     try { const url = new URL(String(value || ''), location.href); return url.origin === location.origin && ['http:', 'https:'].includes(url.protocol) ? url.href : ''; }
     catch (_) { return ''; }
   };
-  let state = null, selected = 0, requestVersion = 0, saving = false;
+  let state = null, selected = 0, requestVersion = 0, saving = false, suspended = false;
+  const pendingRequests = new Set();
   let historyDestinationPending = location.hash === '#profileImageUseHistory';
   const drafts = new Map();
   root.innerHTML = '<div class="profile-agent-card"><h2>Free photo edits</h2><p role="status">Loading image settings…</p></div>';
 
   async function request(payload = null, collection = selected) {
     const endpoint = new URL(cfg.imageSettingsEndpoint, location.href);
+    if (endpoint.origin !== location.origin) throw new Error('Image settings are unavailable.');
     if (collection) endpoint.searchParams.set('collection_id', String(collection));
-    const options = {credentials: 'same-origin', cache: 'no-store', headers: {'X-VP3-Media-Owner': String(cfg.ownerUserId)}};
+    const controller = new AbortController(); pendingRequests.add(controller);
+    const timer = setTimeout(() => controller.abort(), 15000);
+    const options = {credentials: 'same-origin', cache: 'no-store', signal: controller.signal, headers: {'X-VP3-Media-Owner': String(cfg.ownerUserId)}};
     if (payload) {
       options.method = 'POST'; options.headers['Content-Type'] = 'application/json';
       options.body = JSON.stringify({...payload, csrf_token: cfg.csrf});
     }
-    const response = await fetch(endpoint, options);
-    const body = await response.json().catch(() => null);
-    if ([401,403].includes(response.status)) {
-      state = null; drafts.clear(); root.replaceChildren();
-      const message = document.createElement('p'); message.setAttribute('role','alert');
-      message.textContent = 'Your account or access changed. Reload Profile settings to continue.'; root.append(message);
+    try {
+      const response = await fetch(endpoint, options);
+      const body = await response.json().catch(() => null);
+      if ([401,403].includes(response.status)) {
+        requestVersion++; state = null; drafts.clear(); root.replaceChildren();
+        const message = document.createElement('p'); message.setAttribute('role','alert');
+        message.textContent = 'Your account or access changed. Reload Profile settings to continue.'; root.append(message);
+      }
+      if (!response.ok || !body?.ok) throw new Error(body?.error || 'Image settings could not be loaded.');
+      return body;
+    } catch (error) {
+      if (error.name === 'AbortError') throw new Error(payload
+        ? 'Saving could not be confirmed. Your draft is still here. Reload settings to check the saved revision before retrying.'
+        : 'Image settings took too long to respond. Try again.');
+      throw error;
+    } finally {
+      clearTimeout(timer); pendingRequests.delete(controller);
     }
-    if (!response.ok || !body?.ok) throw new Error(body?.error || 'Image settings could not be loaded.');
-    return body;
   }
 
   function notice(message = '', error = false) {
@@ -162,6 +175,7 @@
   }
 
   async function load(collection = 0) {
+    if (suspended) return;
     const version = ++requestVersion;
     try {
       const data = await request(null, collection);
@@ -236,6 +250,14 @@
     try { const data = await request(); if (version === requestVersion) { if (state) state.history = data.history; renderHistory(data.history); notice('Image activity refreshed.'); } }
     catch (error) { if (version === requestVersion) notice(error.message, true); }
     finally { button.disabled = false; }
+  });
+  window.addEventListener('pagehide', () => {
+    captureDraft(); suspended = true; requestVersion++;
+    for (const controller of pendingRequests) controller.abort();
+    pendingRequests.clear();
+  });
+  window.addEventListener('pageshow', event => {
+    if (event.persisted) { suspended = false; saving = false; void load(selected); }
   });
   void load();
 })();

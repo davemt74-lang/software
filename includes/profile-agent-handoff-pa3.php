@@ -463,13 +463,20 @@ function vp3_profile_handoff_owner_action_pa3(PDO $pdo,array $user,array $input,
         }
         if($legacy&&$terminal&&$turn['state']!=='replied'&&$operation==='reply')vp3_profile_handoff_error_pa3();
         $thread=vp3_profile_handoff_thread_pa3($pdo,$owner,$publicCid,true);
-        if(in_array($operation,['claim','reply'],true)&&($thread['requested_mode']??'auto')==='live'){
+        if(!$legacy&&in_array($operation,['claim','reply'],true)&&($thread['requested_mode']??'auto')==='live'){
             if(!in_array($thread['live_status'],['waiting','accepted'],true)||!in_array($thread['mode'],['pending','owner'],true))vp3_profile_handoff_error_pa3();
             if($thread['mode']==='pending'){$deadline=$thread['acknowledged_at_ms']!==null?$thread['pickup_deadline_ms']:$thread['delivery_until_ms'];if($deadline===null||vp3_profile_handoff_now_pa3()>=(int)$deadline)vp3_profile_handoff_error_pa3();}
             if(!vp3_profile_handoff_live_allowed_pa3d($pdo,$owner,(int)$turn['profile_agent_id'],$cid,$aid,true))vp3_profile_handoff_error_pa3('HANDOFF_UNAVAILABLE',409);
         }
         vp3_profile_agent_response_token_v1($pdo,$publicCid,true);
-        $mode=match($operation){'delegate'=>'agent','resolve'=>'resolved',default=>'owner'};vp3_profile_handoff_mode_pa3($pdo,$owner,$publicCid,$mode);$messageId=0;
+        $mode=match($operation){'delegate'=>'agent','resolve'=>'resolved',default=>'owner'};
+        // A deliberate owner Inbox action is manual conversation ownership,
+        // including a follow-up after a missed live request. It is not a late
+        // acceptance of that expired offer and cannot create global presence.
+        // Use the established auto/manual mode so closed Main Chat presence
+        // does not immediately hand an explicitly claimed thread to the Agent.
+        $manualOwner=$legacy&&$mode==='owner';
+        vp3_profile_handoff_mode_pa3($pdo,$owner,$publicCid,$mode,$manualOwner?'none':null,$manualOwner?'auto':null);$messageId=0;
         if($operation==='reply'){
             $ctx=['profile_handoff'=>['contract'=>VP3_PROFILE_HANDOFF_PA3,'turn_id'=>$turnId,'owner_request_id'=>$requestId]];$pdo->prepare("INSERT INTO profile_agent_messages(conversation_id,sender_type,sender_user_id,message,context_json,created_at) VALUES(?,'owner',?,?,?,?)")->execute([$publicCid,$owner,$message,json_encode($ctx,JSON_THROW_ON_ERROR),vp3_profile_handoff_date_pa3()]);$messageId=(int)$pdo->lastInsertId();
             if(function_exists('vp3_profile_attention_message_sent_pa4b'))vp3_profile_attention_message_sent_pa4b($pdo,$conversation,$messageId);
@@ -488,7 +495,7 @@ function vp3_profile_handoff_owner_action_pa3(PDO $pdo,array $user,array $input,
         $pdo->prepare('INSERT INTO profile_agent_handoff_operations_pa3(owner_user_id,request_id,turn_id,operation,request_hash,message_id,created_at_ms) VALUES(?,?,?,?,?,?,?)')->execute([$owner,$requestId,$turnId,$operation,$hash,$messageId?:null,vp3_profile_handoff_now_pa3()]);
         if($messageId>0&&function_exists('vp3_profile_projection_oblige_turn_pa4b'))vp3_profile_projection_oblige_turn_pa4b($pdo,$owner,$turnId,$messageId);
         $turn=vp3_profile_handoff_row_pa3($pdo,$turnId,true);$card=vp3_profile_handoff_owner_card_pa3($pdo,$turn,$cid,$aid);vp3_profile_handoff_owner_pa3($pdo,$live,$cid,$aid,$legacy);
-        if(in_array($operation,['claim','reply'],true)&&($thread['requested_mode']??'auto')==='live'&&!vp3_profile_handoff_live_allowed_pa3d($pdo,$owner,(int)$turn['profile_agent_id'],$cid,$aid,true))vp3_profile_handoff_error_pa3('HANDOFF_UNAVAILABLE',409);
+        if(!$legacy&&in_array($operation,['claim','reply'],true)&&($thread['requested_mode']??'auto')==='live'&&!vp3_profile_handoff_live_allowed_pa3d($pdo,$owner,(int)$turn['profile_agent_id'],$cid,$aid,true))vp3_profile_handoff_error_pa3('HANDOFF_UNAVAILABLE',409);
         return ['contract'=>VP3_PROFILE_HANDOFF_PA3,'duplicate'=>false,'turn'=>$card,'message_id'=>$messageId];
     });
 }

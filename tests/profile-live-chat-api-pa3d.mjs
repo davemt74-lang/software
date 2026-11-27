@@ -266,6 +266,38 @@ try{
   check(modelCalls()===0,'private attachment has no public inference job after the owner leaves');
   invoke('age');r=await upload(attachmentCid);
   check(r.status===409&&r.data.code==='PROFILE_ATTACHMENT_OWNER_REQUIRED','stale live session cannot fall back to a public attachment send');
+
+  // Owner Inbox actions are deliberate per-thread choices. An old live offer
+  // deadline or the absence of a visible Main Chat must not disable that inbox.
+  await reset();await presence();r=await send('live','Please answer when you return');const missed=r.data;
+  await presence({availability:'away'});await dispatch(missed);
+  const inboxReply={action:'owner_reply',csrf_token:csrf,conversation_id:missed.conversation_id,request_id:key(),message:'I am following up from my Profile Inbox.'};
+  r=await profile('POST',inboxReply,owner);
+  check(r.status===200&&r.data.message_id>0,'explicit Inbox reply works after a live offer ended and Main Chat is Away ('+r.status+' '+(r.data.error||'')+')');
+  const manualReceipt=r.data,beforeManualRetry=snapshot(),manualModels=modelCalls();
+  r=await profile('POST',inboxReply,owner);
+  check(r.status===200&&r.data.duplicate&&r.data.message_id===manualReceipt.message_id&&JSON.stringify(snapshot())===JSON.stringify(beforeManualRetry),'manual Inbox reply retains one exact durable receipt on retry');
+  r=await poll(missed.conversation_id);
+  check(r.data.conversation.status==='owner_joined'&&r.data.chat.mode==='auto'&&!r.data.chat.live_text_available
+    &&r.data.messages.filter(m=>m.sender_type==='owner'&&m.message===inboxReply.message).length===1,'manual Inbox handling is public owner text without inventing global live availability');
+  await dispatch(missed);
+  check(modelCalls()===manualModels&&(await poll(missed.conversation_id)).data.conversation.status==='owner_joined','worker maintenance cannot reclaim an explicit Inbox takeover because Main Chat is closed');
+  invoke('age');r=await send('auto','A follow-up to the owner in the same thread',missed.conversation_id);
+  check(r.status===200&&r.data.handoff.state==='owner_claimed','visitor follow-up preserves the manually selected owner responder');
+  const manualFollow=r.data;await dispatch(manualFollow);
+  check(modelCalls()===manualModels,'manual owner continuation starts no competing Agent reply');
+  r=await profile('POST',{action:'conversation_status',csrf_token:csrf,conversation_id:missed.conversation_id,status:'open'},owner);
+  check(r.status===200,'Inbox can explicitly delegate its manually claimed conversation');
+  await dispatch(manualFollow);
+  check(modelCalls()===manualModels+1,'explicit Inbox delegation resumes one pending Agent answer');
+
+  await reset();await presence();r=await send('live','A pending visitor request');const inboxClaim=r.data;
+  await presence({visible:false});
+  const beforeClaimMessages=rows('profile_agent_messages').length;
+  r=await profile('POST',{action:'conversation_status',csrf_token:csrf,conversation_id:inboxClaim.conversation_id,status:'owner_joined'},owner);
+  check(r.status===200&&(await poll(inboxClaim.conversation_id)).data.conversation.status==='owner_joined','Inbox Take over works after leaving Main Chat');
+  await dispatch(inboxClaim);
+  check(rows('profile_agent_messages').length===beforeClaimMessages&&modelCalls()===0,'manual takeover changes responder without creating owner or Agent messages');
   console.log(`PROFILE_LIVE_CHAT_API_PA3D=PASS (${checks} checks; ${driver})`);
 }finally{
   if(child.exitCode===null&&child.signalCode===null&&child.pid){

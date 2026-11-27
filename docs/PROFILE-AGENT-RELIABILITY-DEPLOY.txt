@@ -1,0 +1,68 @@
+Profile Agent and Messages reliability release — deployment and acceptance
+
+INSTALL
+1. Deploy the reviewed release through the normal Cloud update process.
+   Preserve config.php, .env, private/ and uploads/.
+2. Sign in as an administrator and run Database Upgrade (upgrade.php).
+   The new profile_phone_settings_v1 table stores optional public-line approval.
+   Fresh setup.php installs it too. Public reads never install schema.
+   Upgrade completeness now includes this table; existing phone setup alone
+   does not mean the Profile calling addition is installed.
+3. Refresh Profile, Profile Agent, and Messages after deployment. Changed assets
+   use content-based versions. Browser history restoration rechecks the current
+   account/visitor rather than keeping stale private state.
+
+PUBLIC TWILIO PHONE ENTRY
+4. Keep the current tested Twilio setup and signed incoming callbacks. Assign
+   the line to an active Agent belonging to the owner, enable incoming voice,
+   and ensure the owner has the existing Phone number and voice allowances.
+   Browser answering, voicemail, fallback and recording remain configured in
+   the existing Phone workspace. See CLOUD-PHONE-WORKSPACE-DEPLOY.txt.
+5. Open Profile Agent > Agent > Profile phone calls. Select the eligible assigned
+   Twilio line and enable Show Call by phone in my Profile chat. Save.
+   Publication defaults to off. The selected number becomes public; personal
+   callback details remain private. Number reassignment revokes publication,
+   even if the line later returns to the same owner.
+6. The public chat's Call by phone action opens the visitor's phone app using
+   the approved number. This is a native dialer handoff, not anonymous Twilio
+   browser media inside the widget. Existing Profile browser audio/video stays
+   in the separate native call system. A changed number requires another click.
+7. A click is not evidence that a call connected. Existing Profile call totals
+   measure native profile_calls_pa3c records; Twilio activity/recording reports
+   remain in Phone. Do not add a successful call to reports merely from a click.
+
+ACCEPTANCE
+8. From a separate visitor browser, open the Profile, send a message, and check
+   the owner Inbox and Main Chat visitor card. Check an anonymous return after
+   logout and confirm a relevant visit/announcement without duplicate entries.
+   Test Available, Away and DND with the intended speech settings. A running
+   HomeServer alone does not establish owner availability.
+9. Test live owner pickup within the offer window, missed-offer Agent fallback,
+   and Inbox Take over / Let Agent handle / Resolve. Confirm owner takeover
+   prevents a late competing Agent answer in the same conversation.
+10. In Messages, verify two-account exchange, pending request acceptance, new
+    replies in a thread longer than 120 messages, Load earlier, exact deep links,
+    and phone-width navigation. Switch accounts in another tab: the old Messages
+    page must clear and require reload, including its Shares actions.
+11. In Profile image settings, approve a free reference collection. Test subject
+    upload, edit, download and a revision with the configured image provider.
+    Verify private owner preview separately. Provider calls consume the existing
+    allowances; the source audit used controlled provider responses only.
+12. Open the Profile specialist report, select a completed local period, and
+    inspect visit/chat/call/commerce/image measures and coverage. Keep unavailable
+    evidence distinct from zero, and recorded conversion value distinct from
+    verified payment receipts. Refresh stalled reads rather than assuming zero.
+13. With an explicitly enabled test phone line, place a real call from the chat
+    link and verify configured incoming routing, voicemail and recording behavior.
+    Disable publication and confirm the next chat read/click removes the action.
+
+RECOVERY
+14. Read failures expose retry/reload controls. After an uncertain settings or
+    other mutation response, reload and inspect saved state before resubmitting.
+    A stale account page must reload; it cannot reuse old conversation authority.
+15. Disabling Profile phone publication is sufficient to remove the new public
+    action. Existing phone assignments and historical calls/messages are retained.
+    Do not delete the table or provider records as a routine rollback.
+
+The full source audit and test inventory are in
+docs/PROFILE-AGENT-RELIABILITY-AUDIT-20261127.md in the repository.

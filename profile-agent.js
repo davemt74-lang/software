@@ -108,13 +108,23 @@
   if(!thread||!form||!textarea||!submit||!status||ownerPreview)return;
   const conversationStorageKey=()=>`stonefellow-profile-agent:v1:${cfg.username}:${String(cfg.conversationNamespace||'unbound')}`;
   let storageKey=conversationStorageKey();
-  let conversationId=cfg.conversationNamespace?Math.max(0,Number(localStorage.getItem(storageKey)||0)):0;
+  function savedConversationId(){
+    try{const id=Number(localStorage.getItem(storageKey)||0);return Number.isSafeInteger(id)&&id>0?id:0;}
+    catch(_error){return 0;}
+  }
+  function rememberConversation(){
+    // Browser storage is an optional convenience. A quota/privacy restriction
+    // must not interrupt a confirmed server receipt or disable the current chat.
+    try{if(conversationId>0)localStorage.setItem(storageKey,String(conversationId));else localStorage.removeItem(storageKey);}
+    catch(_error){}
+  }
+  let conversationId=cfg.conversationNamespace?savedConversationId():0;
   const hadConversationAtStartup=conversationId>0;
   let conversationStatus='open';
   let lastMessageId=0;
   let pollTimer=0,presenceTimer=0,choiceTimer=0,countdownTimer=0;
   let handoff=null,clockOffset=0,pollBusy=false,dispatchBusy=false,sending=false,alive=true,sessionChanged=false,requestEpoch=0;
-  let formNotice='',lastDispatchAt=0,lastDispatchTurn=0;
+  let formNotice='',stateErrorNotice='',lastDispatchAt=0,lastDispatchTurn=0;
   let callSurface=null,callHost=null,callContextEpoch=0;
   let checkoutSurface=null,checkoutHost=null,checkoutCreating=false,checkoutTimer=0;
   let speechPreference=null,speechChoice=null,speechNotice=null,speechBusy=false,speechSequence=0,speechAttempt=null;
@@ -144,6 +154,12 @@
        &&(saved.continue_live===undefined||(typeof saved.continue_live==='boolean'&&(!saved.continue_live||saved.chat_mode==='live'))))pendingSend=saved;
   }catch(_error){}
   if(pendingSend){textarea.value=pendingSend.message;labelSubmit('Retry message');}
+  else try{
+    const draft=JSON.parse(sessionStorage.getItem(storageKey+':restore-draft')||'null');
+    sessionStorage.removeItem(storageKey+':restore-draft');
+    if(draft?.conversation_id===conversationId&&typeof draft.message==='string'&&Array.from(draft.message).length<=2000)textarea.value=draft.message;
+  }catch(_error){}
+  function clearStateError(){if(stateErrorNotice&&formNotice===stateErrorNotice)formNotice='';stateErrorNotice='';}
 
   // Preserve the native scheduling CTA contract, but expose it only when the
   // canonical Profile renderer has a Booking tab backed by public event types.
@@ -662,7 +678,7 @@
     setQueuedAttachment(null);
     imageSurface?.reset();
     callSurface?.invalidate('The visitor conversation changed.');checkoutSurface?.reset();callContextEpoch++;
-    requestEpoch++;conversationId=0;conversationStatus='open';lastMessageId=0;handoff=null;chat=null;choiceTouched=false;uncertainEnd=null;localStorage.removeItem(storageKey);clearTimeout(pollTimer);pollTimer=0;updateChatChoice();
+    requestEpoch++;conversationId=0;conversationStatus='open';lastMessageId=0;handoff=null;chat=null;choiceTouched=false;uncertainEnd=null;rememberConversation();clearTimeout(pollTimer);pollTimer=0;updateChatChoice();
   }
   function invalidVisitorSession(error){
     return error.status===419||['PROFILE_SESSION_CHANGED','OWNER_VISITOR_PREVIEW_REQUIRED'].includes(error.code);
@@ -755,7 +771,7 @@
                   savePending(null);labelSubmit(originalSubmitLabel);
                   formNotice='Review your previous draft before sending it in this conversation.';
                 }
-                conversationId=returned;localStorage.setItem(storageKey,String(returned));data=candidate;
+                conversationId=returned;rememberConversation();data=candidate;
                 if(shell.hidden)document.querySelector('[data-open-profile-agent]')?.click();
               }
             }catch(error){if(error.stale||invalidVisitorSession(error))throw error;}
@@ -767,6 +783,7 @@
       if(Object.prototype.hasOwnProperty.call(data.agent||{},'greeting'))cfg.greeting=data.agent.greeting||'';
       attachmentMaxBytes=Number.isSafeInteger(data.attachment_max_bytes)?Math.max(0,data.attachment_max_bytes):0;
       attachmentAvailabilityChecked=true;
+      clearStateError();
       imageSurface?.update(data);
       renderMessages(data.messages||[]);refreshPromotionCards(data.active_promotion_keys);applyConversationState(data.conversation||null,data.handoff,data.chat);
       if(conversationId){startPolling();void checkoutSurface?.refresh();}
@@ -781,7 +798,7 @@
         stopChangedSession();return;
       }
       if(conversationId&&error.status===404){resetConversation();renderMessages([]);setNotice('');return loadState();}
-      formNotice=error.message;setNotice(formNotice);
+      stateErrorNotice=error.message;formNotice=stateErrorNotice;setNotice(formNotice);
     }
   }
   async function poll(){
@@ -789,6 +806,7 @@
     pollBusy=true;
     try{
       const data=await request('poll',{after_id:lastMessageId},'GET');
+      clearStateError();
       (data.messages||[]).forEach(m=>appendMessage(m.sender_type||'agent',m.message||'',Number(m.id||0),m.promotion,m.attachment,m.image_edit));
       imageSurface?.update(data);
       refreshPromotionCards(data.active_promotion_keys);
@@ -821,6 +839,7 @@
       const data=await request('state',{},'GET');
       attachmentMaxBytes=Number.isSafeInteger(data.attachment_max_bytes)?Math.max(0,data.attachment_max_bytes):0;
       attachmentAvailabilityChecked=true;
+      if(stateErrorNotice){renderMessages(data.messages||[]);refreshPromotionCards(data.active_promotion_keys);clearStateError();if(conversationId)startPolling();}
       imageSurface?.update(data);
       applyConversationState(data.conversation||null,data.handoff,data.chat);void dispatchIfDue();
     }
@@ -854,7 +873,7 @@
       if(pendingSend?.client_request_id!==saved.client_request_id)return;
       if(data.client_request_id!==saved.client_request_id||typeof data.found!=='boolean')throw new Error('The saved photo edit could not be checked. Retry to check it again.');
       if(data.found){
-        verifyImageReceipt(data,saved);conversationId=data.conversation_id;localStorage.setItem(storageKey,String(conversationId));
+        verifyImageReceipt(data,saved);conversationId=data.conversation_id;rememberConversation();
         savePending(null);textarea.value='';formNotice='';imageSurface?.accepted();imageSurface?.update(data);
         renderMessages(data.messages||[]);applyConversationState(data.conversation||null,data.handoff,data.chat);startPolling();
         void dispatchIfDue();
@@ -890,7 +909,7 @@
       if(data.client_request_id!==saved.client_request_id||!Number.isSafeInteger(Number(data.visitor_message_id))||Number(data.visitor_message_id)<1)throw new Error('The saved message could not be verified. Retry the same message.');
       if(kind==='image_edit')verifyImageReceipt(data,saved);
       if(upload&&kind!=='image_edit'&&!data.attachment)throw new Error('The saved attachment could not be verified. Retry the same message.');
-      conversationId=Number(data.conversation_id||0);if(conversationId)localStorage.setItem(storageKey,String(conversationId));
+      conversationId=Number(data.conversation_id||0);rememberConversation();
       const existing=thread.querySelector(`[data-message-id="${Number(data.visitor_message_id)}"]`);
       if(optimistic){if(existing&&existing!==optimistic)optimistic.remove();else optimistic.dataset.messageId=String(data.visitor_message_id);}
       if(kind==='image_edit'){
@@ -1025,7 +1044,7 @@
       },
       adopt:cid=>{
         if(conversationId||!checkoutCreating||!alive||sessionChanged)throw new Error('The visitor conversation changed.');
-        requestEpoch++;conversationId=cid;localStorage.setItem(storageKey,String(cid));startPolling();void poll();
+        requestEpoch++;conversationId=cid;rememberConversation();startPolling();void poll();
       },
       beginPrepare:()=>{
         if(conversationId)return true;
@@ -1064,13 +1083,23 @@
       adopt:result=>{
         const cid=result.conversation_id;
         if(!Number.isSafeInteger(cid)||cid<1||(conversationId>0&&conversationId!==cid)||sessionChanged||!alive)throw new Error('The visitor conversation changed.');
-        conversationId=cid;localStorage.setItem(storageKey,String(cid));if(openPanel===chatOptions)showPanel(null);startPolling();void checkoutSurface?.refresh();
+        conversationId=cid;rememberConversation();if(openPanel===chatOptions)showPanel(null);startPolling();void checkoutSurface?.refresh();
       },
       returnedToAgent:()=>{void poll();}
     });
     window.addEventListener('vp3:profile-agent-visibility',event=>{if(event.detail?.open)void callSurface.refresh();else callSurface.invalidate('You closed the live call view.');});
   }
-  window.addEventListener('pagehide',()=>{callSurface?.stop('You left the profile.');checkoutSurface?.reset(true);imageSurface?.reset(true);alive=false;callContextEpoch++;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(choiceTimer);clearInterval(countdownTimer);clearInterval(checkoutTimer);},{once:true});
+  window.addEventListener('pagehide',event=>{
+    if(event.persisted&&!pendingSend&&!queuedAttachment&&!imageSurface?.hasDraft()){
+      try{sessionStorage.setItem(storageKey+':restore-draft',JSON.stringify({conversation_id:conversationId,message:textarea.value}));}catch(_error){}
+    }
+    callSurface?.stop('You left the profile.');checkoutSurface?.reset(true);imageSurface?.reset(true);alive=false;callContextEpoch++;requestEpoch++;clearTimeout(pollTimer);clearInterval(presenceTimer);clearInterval(choiceTimer);clearInterval(countdownTimer);clearInterval(checkoutTimer);
+  },{once:true});
+  // A back/forward-cache restore also restores alive=false and the stopped
+  // timers. Reload to recheck current account/session authority before showing
+  // or continuing the saved thread; do not revive an old visitor credential.
+  window.addEventListener('pageshow',event=>{if(event.persisted&&!alive)window.location.reload();});
+  window.addEventListener('online',()=>{if(initialStatePending||!alive||sessionChanged)return;if(conversationId)void poll();else void heartbeat();});
   window.addEventListener('vp3:profile-agent-open',()=>{if(initialStatePending)return;if(conversationId)void poll();else void heartbeat();});
   updateChatChoice();
   void loadState().finally(()=>{
@@ -1078,6 +1107,7 @@
     if(!alive||sessionChanged)return;
     if(sessionRefreshing){sessionRefreshing=false;textarea.disabled=false;submit.disabled=false;}
     updateAttachmentControls();
+    if(conversationId)startPolling();
     void loadSpeechPreference();void checkoutSurface?.refresh();
     if(!shell.hidden)void callSurface?.refresh();
   });

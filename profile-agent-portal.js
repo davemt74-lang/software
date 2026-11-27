@@ -18,6 +18,7 @@ const knowledgeHost=document.getElementById('profileAgentKnowledge');
 const profileHost=document.getElementById('profileAgentProfileSettings');
 const analyticsHost=document.getElementById('profileAgentAnalytics');
 let state=null,radarState=null,radarFilter='all',selectedConversation=0,selectedSession=0,refreshTimer=null,requestBusy=false;
+let radarBusy=false,radarError='';
 let selectedThread=null,displayedThread=null,threadRead=0,stateRead=0,activeTab='inbox',pendingSettings=0;
 let profileAttention=null;
 const drafts=new Map(),threadMutations=new Map(),replyAttempts=new Map(),boundControls=new WeakSet(),editVersions=new WeakMap();
@@ -36,27 +37,50 @@ function renderEditable(host,render){if(host.children.length&&(host.querySelecto
 function markEdited(event){const node=event.target.closest('form,[data-policy]');if(!node||![agentHost,profileHost,knowledgeHost].some(host=>host.contains(node)))return;node.dataset.paDirty='1';editVersions.set(node,(editVersions.get(node)||0)+1);}
 app.addEventListener('input',markEdited,true);app.addEventListener('change',markEdited,true);
 const setNotice=(message='',error=false)=>{notice.textContent=message;notice.className=`profile-agent-notice${error?' error':''}`;};
+async function requestJson(url,options={},timeout=15000){
+  const controller=typeof AbortController==='function'?new AbortController():null;
+  let timer=0;
+  try{
+    return await Promise.race([
+      (async()=>{
+        const response=await fetch(url,{...options,...(controller?{signal:controller.signal}:{})});
+        const data=await response.json().catch(()=>null);
+        if(!response.ok||!data?.ok){const error=new Error(data?.error||'Profile Agent request failed.');error.status=response.status;error.code=data?.code||'';throw error;}
+        return data;
+      })(),
+      new Promise((_,reject)=>{timer=setTimeout(()=>{
+        const write=!['GET','HEAD'].includes(String(options.method||'GET').toUpperCase());
+        const error=new Error(write?'The request timed out. Refresh to check whether your change was saved before trying again.':'The request timed out. Try again.');
+        error.code='PROFILE_REQUEST_TIMEOUT';controller?.abort();reject(error);
+      },timeout);})
+    ]);
+  }finally{if(timer&&typeof clearTimeout==='function')clearTimeout(timer);}
+}
+window.VP3ProfileAgentPortalHttpV1=Object.freeze({request:requestJson});
 async function req(action,payload=null){
   const post=payload!==null;
   const options=post?{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,csrf_token:cfg.csrf,...payload})}:{credentials:'same-origin',cache:'no-store'};
   const url=post?cfg.endpoint:`${cfg.endpoint}?action=${encodeURIComponent(action)}`;
-  const r=await fetch(url,options),d=await r.json().catch(()=>null);
-  if(!r.ok||!d?.ok)throw new Error(d?.error||'Profile Agent request failed.');
-  return d;
+  return requestJson(url,options);
 }
 async function radarReq(){
   if(!cfg.radarEndpoint)return null;
-  const r=await fetch(cfg.radarEndpoint,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);
-  if(!r.ok||!d?.ok)throw new Error(d?.error||'Agent Radar request failed.');
-  return d.radar||null;
+  const d=await requestJson(cfg.radarEndpoint,{credentials:'same-origin',cache:'no-store'});
+  if(!d.radar||typeof d.radar!=='object'||Array.isArray(d.radar))throw new Error('Agent Radar could not be loaded. Try again.');
+  return d.radar;
+}
+async function refreshRadar(){
+  if(radarBusy||!cfg.radarEndpoint)return;
+  radarBusy=true;
+  try{radarState=await radarReq();radarError='';}
+  catch(error){radarError=error.message||'Agent Radar could not be refreshed.';}
+  finally{radarBusy=false;renderRadar();bindDynamic();}
 }
 async function uploadProfileMedia(mediaType,file){
   if(!file)throw new Error('Choose an image first.');
   if(file.size>5*1024*1024)throw new Error('Profile images must be 5 MB or smaller.');
   const form=new FormData();form.set('action','save_profile_media');form.set('csrf_token',cfg.csrf);form.set('media_type',mediaType);form.set('media_file',file);
-  const r=await fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',body:form}),d=await r.json().catch(()=>null);
-  if(!r.ok||!d?.ok)throw new Error(d?.error||'Profile image upload failed.');
-  return d;
+  return requestJson(cfg.endpoint,{method:'POST',credentials:'same-origin',body:form},45000);
 }
 function parseDate(value){if(!value)return null;const iso=String(value).replace(' ','T');const d=new Date(iso);return Number.isNaN(d.getTime())?null:d;}
 function relative(value){const d=parseDate(value);if(!d)return String(value||'');const seconds=Math.round((Date.now()-d.getTime())/1000);if(seconds<60)return 'just now';if(seconds<3600)return `${Math.max(1,Math.round(seconds/60))}m ago`;if(seconds<86400)return `${Math.round(seconds/3600)}h ago`;if(seconds<604800)return `${Math.round(seconds/86400)}d ago`;return d.toLocaleDateString();}
@@ -152,6 +176,10 @@ function radarSessions(){
 }
 function renderRadar(){
   if(!radarHost)return;
+  if(!radarState&&cfg.radarEndpoint){
+    radarHost.innerHTML=`<div class="profile-agent-panel"><div class="profile-agent-section-head"><h2>Agent Radar</h2><button type="button" id="profileAgentRadarRefresh"${radarBusy?' disabled':''}>Refresh Radar</button></div><p role="status">${esc(radarError||'Loading Agent Radar…')}</p></div>`;
+    return;
+  }
   const radar=radarState||{},rs=radar.stats||{},humanSessions=Number(state?.analytics?.visitor_sessions||0),conversion24h=Number(state?.analytics?.conversion_intents_24h||0);
   if(radarState&&!radar.ready){radarHost.innerHTML='<div class="profile-agent-panel"><div class="profile-agent-empty">Agent Radar storage is not ready. Run the VP3 upgrade before using Radar.</div></div>';return;}
   const filters=[['all','All'],['human','Human'],['ai_user_agent','AI Agent'],['ai_search','Search'],['ai_crawler','Crawler'],['automated_unknown','Unknown']];
@@ -186,8 +214,11 @@ function renderAnalytics(){
 function renderAll(){renderService();renderMetrics();renderInbox();renderVisitors();renderRadar();renderEditable(agentHost,renderAgentSettings);renderEditable(knowledgeHost,renderKnowledge);renderEditable(profileHost,renderProfileSettings);renderAnalytics();const unread=Number(state?.notifications?.unread||0),bell=document.getElementById('chatNotificationButton');if(bell){let badge=bell.querySelector(':scope > span');if(unread>0){if(!badge){badge=document.createElement('span');bell.appendChild(badge);}badge.textContent=unread>99?'99+':String(unread);}else badge?.remove();}bindDynamic();}
 async function refresh(silent=false){
   void profileAttention?.refresh({present:false});
+  // Radar is optional and has its own retry/error state. Its response must not
+  // gate the canonical visitor Inbox, settings or selected conversation.
+  void refreshRadar();
   if(requestBusy||threadMutations.size||pendingSettings)return;requestBusy=true;const request=++stateRead;
-  try{const [d,r]=await Promise.all([req('owner_state'),radarReq().catch(()=>null)]);if(request!==stateRead)return;state=d.state;if(r)radarState=r;renderAll();if(activeTab==='inbox'&&selectedThread)await refreshConversation(selectedThread);if(!silent)setNotice('Profile Agent workspace refreshed.');}
+  try{const d=await req('owner_state');if(request!==stateRead)return;if(!d.state||typeof d.state!=='object'||Array.isArray(d.state))throw new Error('The Profile Agent workspace could not be loaded. Try again.');state=d.state;renderAll();if(activeTab==='inbox'&&selectedThread)await refreshConversation(selectedThread);if(!silent)setNotice('Profile Agent workspace refreshed.');}
   catch(err){if(request===stateRead)setNotice(err.message,true);}finally{requestBusy=false;}
 }
 function threadNotice(binding,message='',error=false){if(!threadDisplayed(binding))return;const node=threadHost.querySelector('[data-thread-notice]');node.textContent=message;node.setAttribute('role',error?'alert':'status');}
@@ -195,7 +226,7 @@ function updateThreadControls(binding){if(!threadDisplayed(binding))return;const
 function renderThread(binding,c,m){
   if(!threadSelected(binding))return;
   if(!threadDisplayed(binding)){
-    threadHost.innerHTML=`<div class="profile-agent-thread-head"><div data-thread-identity></div><div class="profile-agent-row-actions"><button type="button" data-thread-status="open">Open</button><button type="button" data-thread-status="resolved">Resolve</button></div></div><div class="profile-agent-thread-messages"></div><form class="profile-agent-reply" id="paReplyForm" data-conversation-id="${binding.id}"><input name="message" maxlength="4000" autocomplete="off" placeholder="Reply as profile owner"><button type="submit">Send Reply</button></form><p data-thread-notice role="status" aria-live="polite"></p>`;
+    threadHost.innerHTML=`<div class="profile-agent-thread-head"><div data-thread-identity></div><div class="profile-agent-row-actions"><button type="button" data-thread-status="owner_joined">Take over</button><button type="button" data-thread-status="open">Let Agent handle</button><button type="button" data-thread-status="resolved">Resolve</button></div></div><div class="profile-agent-thread-messages"></div><form class="profile-agent-reply" id="paReplyForm" data-conversation-id="${binding.id}"><input name="message" maxlength="4000" autocomplete="off" placeholder="Reply as profile owner"><button type="submit">Send Reply</button></form><p data-thread-notice role="status" aria-live="polite"></p>`;
     displayedThread=binding;
     const form=threadHost.querySelector('#paReplyForm');form.elements.message.value=drafts.get(binding.id)||'';
     form.elements.message.addEventListener('input',()=>drafts.set(binding.id,form.elements.message.value));
@@ -260,7 +291,7 @@ function bindThread(binding){
       if(conversationId(d.conversation_id)!==binding.id)throw new Error('The conversation status could not be confirmed.');
       if(!threadDisplayed(binding))return;
       if(request===stateRead){stateRead++;state=d.state||state;renderAll();}
-      threadMutations.delete(binding.id);const fresh=await refreshConversation(binding);threadNotice(binding,(status==='resolved'?'Conversation resolved.':'Conversation reopened.')+(fresh?'':' The latest messages could not be loaded.'),!fresh);
+      threadMutations.delete(binding.id);const fresh=await refreshConversation(binding);const feedback=({resolved:'Conversation resolved.',owner_joined:'You took over this conversation. Agent replies are paused.',open:'The Agent is handling this conversation.'})[status]||'Conversation updated.';threadNotice(binding,feedback+(fresh?'':' The latest messages could not be loaded.'),!fresh);
     }catch(err){if(threadDisplayed(binding))threadNotice(binding,err.message,true);}
     finally{if(threadMutations.get(binding.id)===token)threadMutations.delete(binding.id);if(selectedThread?.id===binding.id)updateThreadControls(selectedThread);}
   }));
@@ -282,7 +313,7 @@ function bindDynamic(){
   bindOnce(document.getElementById('paAgentForm'),'submit',e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);return saveEditable(form,()=>req('save_profile_agent',{profile_agent_id:Number(f.get('profile_agent_id')||0),profile_agent_enabled:f.get('profile_agent_enabled')?1:0,profile_agent_greeting:f.get('profile_agent_greeting'),profile_agent_instructions:f.get('profile_agent_instructions')}),'Profile Agent settings saved.');});
   bindOnce(document.getElementById('paProfileForm'),'submit',e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);return saveEditable(form,()=>req('save_profile',{username:f.get('username'),bio:f.get('bio'),website_url:f.get('website_url'),instagram_url:f.get('instagram_url'),tiktok_url:f.get('tiktok_url'),youtube_url:f.get('youtube_url'),spotify_url:f.get('spotify_url'),apple_music_url:f.get('apple_music_url'),is_public:f.get('is_public')?1:0,share_visit_identity:f.get('share_visit_identity')?1:0}),'Public profile saved.');});
   knowledgeHost.querySelectorAll('[data-policy]').forEach(row=>{const allow=row.querySelector('[data-policy-allow]'),audience=row.querySelector('[data-policy-audience]');const save=async()=>{if(row.dataset.paPending==='1'){row.dataset.paQueued='1';return;}await saveEditable(row,()=>req('save_profile_access',{resource_type:row.dataset.policy,profile_agent_allowed:allow.checked?1:0,audience_scope:audience.value}),'Knowledge access updated.');if(row.isConnected&&row.dataset.paQueued==='1'){delete row.dataset.paQueued;await save();}};bindOnce(allow,'change',save);bindOnce(audience,'change',save);});
-  bindOnce(document.getElementById('profileAgentRadarRefresh'),'click',async()=>{try{radarState=await radarReq();renderRadar();bindDynamic();setNotice('Agent Radar refreshed.');}catch(err){setNotice(err.message,true);}});
+  bindOnce(document.getElementById('profileAgentRadarRefresh'),'click',()=>refreshRadar());
 }
 app.addEventListener('click',async e=>{
   if(profileAttention?.handleClick(e))return;

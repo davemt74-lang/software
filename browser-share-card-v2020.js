@@ -10,7 +10,15 @@
   const safeHttp=v=>{try{const raw=text(v).trim();if(!/^https?:\/\//i.test(raw))return '';const u=new URL(raw);return /^https?:$/.test(u.protocol)?u.toString():'';}catch{return '';}};
   const safeMediaPath=v=>{const raw=text(v).trim();return /^\/api\/browser-share-media-v2040\.php\?media_id=[A-Za-z0-9%._~-]+$/.test(raw)?raw:'';};
   const timeLabel=v=>{const s=Math.max(0,Math.floor(Number(v||0)));return `${Math.floor(s/60)}:${String(s%60).padStart(2,'0')}`;};
-  async function post(api,csrf,action,id,extra={}){const body=new URLSearchParams({action,browser_share_id:id,csrf_token:csrf,...extra});const r=await fetch(api,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body});const j=await r.json().catch(()=>({ok:false,error:'invalid_response'}));if(!r.ok||!j.ok)throw new Error(j.message||j.error||'Request failed');return j;}
+  async function post(api,csrf,action,id,extra={},options={}){
+    if(options.isCurrent&&!options.isCurrent())throw new Error('Reload Messages to continue.');
+    const body=new URLSearchParams({action,browser_share_id:id,csrf_token:csrf,...extra});
+    const r=await fetch(api,{method:'POST',credentials:'same-origin',cache:'no-store',headers:{...options.requestHeaders,'Content-Type':'application/x-www-form-urlencoded;charset=UTF-8'},body});
+    const j=await r.json().catch(()=>({ok:false,error:'invalid_response'}));
+    if(j.error==='account_changed'||r.status===401)options.onAccountChange?.(j.error||'login_required');
+    if(options.isCurrent&&!options.isCurrent())throw new Error('Reload Messages to continue.');
+    if(!r.ok||!j.ok)throw new Error(j.message||j.error||'Request failed');return j;
+  }
   function button(label,action){const b=document.createElement('button');b.type='button';b.textContent=label;b.dataset.browserShareAction=action;return b;}
   function mediaSourceUrl(item){
     const metadata=item?.metadata||{};let url=safeHttp(metadata.source_media_url);if(!url)return '';
@@ -39,10 +47,13 @@
   }
   async function loadMedia(root,share,options){
     const id=text(share?.id).trim();if(!id)return;
+    if(options.isCurrent&&!options.isCurrent())return;
     const api=options.mediaApi||'/api/browser-share-media-v2040.php';
     try{
-      const r=await fetch(`${api}?browser_share_id=${encodeURIComponent(id)}`,{credentials:'same-origin',cache:'no-store'});const j=await r.json().catch(()=>null);
-      if(!r.ok||!j?.ok||!Array.isArray(j.media)||!j.media.length)return;
+      const r=await fetch(`${api}?browser_share_id=${encodeURIComponent(id)}`,{credentials:'same-origin',cache:'no-store',headers:options.requestHeaders});const j=await r.json().catch(()=>null);
+      const code=typeof j?.error==='string'?j.error:j?.error?.code;
+      if(code==='account_changed'||r.status===401)options.onAccountChange?.(code==='account_changed'?'account_changed':'login_required');
+      if((options.isCurrent&&!options.isCurrent())||!r.ok||!j?.ok||!Array.isArray(j.media)||!j.media.length)return;
       const wrap=document.createElement('div');wrap.className='vp3-bs-media';for(const item of j.media){const node=renderMediaItem(item);if(node)wrap.append(node);}if(wrap.children.length){const actions=root.querySelector('.vp3-bs-actions');root.insertBefore(wrap,actions||null);}
     }catch{}
   }
@@ -68,11 +79,11 @@
         if(typeof options.onAsk==='function'){options.onAsk(share);return;}
         if(!csrf){setStatus('Ask VP3 is unavailable on this page.',true);return;}
         root.dataset.busy='1';target.disabled=true;setStatus('Opening VP3 with this share…');
-        try{const result=await post(api,csrf,'ask_agent',text(share.id));location.href=result.chat_url||options.chatUrl||'/chat.php';}catch(err){setStatus(err.message||'Could not open VP3.',true);delete root.dataset.busy;target.disabled=false;}return;
+        try{const result=await post(api,csrf,'ask_agent',text(share.id),{},options);location.href=result.chat_url||options.chatUrl||'/chat.php';}catch(err){setStatus(err.message||'Could not open VP3.',true);delete root.dataset.busy;target.disabled=false;}return;
       }
       if(!csrf){setStatus('Action unavailable on this page.',true);return;}
       root.dataset.busy='1';target.disabled=true;setStatus(action==='knowledge'?'Saving…':'Creating task…');
-      try{const result=await post(api,csrf,action==='knowledge'?'save_knowledge':'create_task',text(share.id));if(action==='knowledge'){setStatus('Saved to My Knowledge.');if(result.view_url){status.textContent='';const a=document.createElement('a');a.href=result.view_url;a.textContent='Saved to My Knowledge';status.appendChild(a);status.hidden=false;}}else setStatus(`Task created${result.workflow?.id?' #'+result.workflow.id:''}.`);}catch(err){setStatus(err.message||'Action failed.',true);}finally{delete root.dataset.busy;target.disabled=false;}
+      try{const result=await post(api,csrf,action==='knowledge'?'save_knowledge':'create_task',text(share.id),{},options);if(action==='knowledge'){setStatus('Saved to My Knowledge.');if(result.view_url){status.textContent='';const a=document.createElement('a');a.href=result.view_url;a.textContent='Saved to My Knowledge';status.appendChild(a);status.hidden=false;}}else setStatus(`Task created${result.workflow?.id?' #'+result.workflow.id:''}.`);}catch(err){setStatus(err.message||'Action failed.',true);}finally{delete root.dataset.busy;target.disabled=false;}
     });
     loadMedia(root,share,options);
     return root;

@@ -27,24 +27,45 @@ function profile_runtime_session(PDO $pdo,int $ownerUserId,?array $visitor,bool 
 function profile_runtime_record_view(PDO $pdo,array $profile,?array $visitor): ?array
 {
     $owner=(int)$profile['user_id'];
-    if(function_exists('vp3_radar_record_native_profile_request')&&vp3_radar_record_native_profile_request($pdo,$profile,$visitor))return null;
     if((int)($visitor['id']??0)===$owner)return null;
+    if(function_exists('vp3_radar_record_native_profile_request')&&vp3_radar_record_native_profile_request($pdo,$profile,$visitor))return null;
     $session=profile_runtime_session($pdo,$owner,$visitor,true);
+    // The CRM row can remember a signed-in contact after logout. An arrival
+    // must describe the actor making this request, as public chat already does.
+    $visitorId=(int)($visitor['id']??0);
+    $eventSession=$session;
+    if($visitorId<1||(int)($session['visitor_user_id']??0)!==$visitorId)$eventSession['identity_disclosed']=0;
+    $eventSession['visitor_user_id']=$visitorId?:null;
+    // First-page proof cannot depend on the optional speech schema/provider.
+    $authority=function_exists('profile_conversation_native_authority_v1')?profile_conversation_native_authority_v1($owner,$visitorId):null;
+    $principal=is_array($authority)?$authority['credential_hash']:(string)$visitorId;
     $agent=profile_active_agent($pdo,$profile);
     // Explicit page entry only: state/poll context construction never records speech activity.
     $speechArrival=function_exists('vp3_profile_speech_page_entry_pa4a')?vp3_profile_speech_page_entry_pa4a($pdo,$profile,$visitor,$session):null;
 
     if(function_exists('profile_visitor_session_hash_v243')){
-        $recent=$pdo->prepare("SELECT id FROM profile_events WHERE owner_user_id=? AND profile_session_id=? AND event_type='profile_view' AND created_at>=DATE_SUB(NOW(),INTERVAL 30 MINUTE) ORDER BY id DESC LIMIT 1");
-        $recent->execute([$owner,(int)$session['id']]);
-        if($recentEvent=(int)$recent->fetchColumn()){if($speechArrival&&function_exists('vp3_profile_speech_link_event_pa4a'))vp3_profile_speech_link_event_pa4a($pdo,$speechArrival,$recentEvent);return $session;}
+        $recentArgs=[$owner,(int)$session['id'],$visitorId,(int)($agent['id']??0)];$proofFilter='';
+        if($authority&&function_exists('vp3_profile_attention_capture_source_pa4b')){
+            // Credentials can interleave within a retained CRM session. Find
+            // this principal's recent event, not just the newest actor row.
+            $credential="JSON_EXTRACT(CASE WHEN JSON_VALID(metadata_json) THEN metadata_json ELSE '{}' END,'$.source_authority.credential_hash')";
+            if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='sqlite')$credential='JSON_UNQUOTE('.$credential.')';
+            $proofFilter=' AND '.$credential.'=?';$recentArgs[]=$principal;
+        }
+        $recent=$pdo->prepare("SELECT id,metadata_json FROM profile_events WHERE owner_user_id=? AND profile_session_id=? AND COALESCE(visitor_user_id,0)=CAST(? AS SIGNED) AND COALESCE(profile_agent_id,0)=CAST(? AS SIGNED) AND event_type='profile_view' AND created_at>=DATE_SUB(NOW(),INTERVAL 30 MINUTE)".$proofFilter.' ORDER BY id DESC LIMIT 1');
+        $recent->execute($recentArgs);
+        $recentRow=$recent->fetch(PDO::FETCH_ASSOC);$recentProof=$recentRow?json_decode((string)$recentRow['metadata_json'],true):null;
+        if($recentRow&&(!$authority||!function_exists('vp3_profile_attention_capture_source_pa4b')||hash_equals($principal,(string)($recentProof['source_authority']['credential_hash']??'')))){
+            if($speechArrival&&function_exists('vp3_profile_speech_link_event_pa4a'))vp3_profile_speech_link_event_pa4a($pdo,$speechArrival,(int)$recentRow['id']);
+            return $session;
+        }
     }
 
     $window=function_exists('profile_visitor_session_hash_v243')
         ? STONEFELLOW_PROFILE_VISITOR_REENTRY_SECONDS_V243
         : STONEFELLOW_PROFILE_VIEW_DEDUPE_SECONDS;
     $bucket=(int)floor(time()/max(60,$window));
-    $dedupe=hash('sha256',$session['session_key'].'|profile_view|'.$bucket);
+    $dedupe=hash('sha256',$session['session_key'].'|profile_view|'.$principal.'|'.(int)($agent['id']??0).'|'.$bucket);
     $metadata=function_exists('profile_visitor_request_context_v243')
         ? profile_visitor_request_context_v243($session)
         : [];
@@ -52,8 +73,8 @@ function profile_runtime_record_view(PDO $pdo,array $profile,?array $visitor): ?
         $metadata['visit_number']=profile_visitor_session_visit_count_v243($pdo,$owner,(int)$session['id'])+1;
         $metadata['returning']=$metadata['visit_number']>1;
     }
-    $event=profile_event_create($pdo,$owner,$session,'profile_view',10,$agent?(int)$agent['id']:null,$metadata,$dedupe);
-    if($event){if($speechArrival&&function_exists('vp3_profile_speech_link_event_pa4a'))vp3_profile_speech_link_event_pa4a($pdo,$speechArrival,(int)$event['id']);profile_attention_from_event($pdo,$event,$session,$agent);}
+    $event=profile_event_create($pdo,$owner,$eventSession,'profile_view',10,$agent?(int)$agent['id']:null,$metadata,$dedupe);
+    if($event){if($speechArrival&&function_exists('vp3_profile_speech_link_event_pa4a'))vp3_profile_speech_link_event_pa4a($pdo,$speechArrival,(int)$event['id']);profile_attention_from_event($pdo,$event,$eventSession,$agent);}
     return $session;
 }
 
