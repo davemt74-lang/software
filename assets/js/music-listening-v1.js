@@ -226,7 +226,8 @@
     }
 
     function waiting() {
-      playingDuringInitialSeek = false;
+      // Buffering can precede seeked without another playing event. Retain the
+      // initial observation; seeked rechecks authority and starts a fresh clock.
       const play = active;
       if (!play || play.terminal || !valid(play) || ['buffering', 'seeking', 'paused'].includes(play.phase)) return;
       sample(play, !audio.seeking);

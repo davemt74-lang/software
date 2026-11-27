@@ -153,17 +153,40 @@ export async function runMusicListeningClientTests({silent = false} = {}) {
     const f = fixture();
     f.audio.currentTime = 22; f.audio.seeking = true; f.audio.emit('seeking');
     f.audio.paused = false; f.audio.emit('play');
-    f.audio.seeking = false; f.audio.emit('seeked');
+    f.audio.emit('waiting'); f.audio.seeking = false; f.audio.emit('stalled'); f.audio.emit('seeked');
     await f.advance(1000); f.tracker.flush(); await turn();
-    check(f.calls.length === 0, 'Seek completion, play intent and position updates without actual playing must not allocate a start');
+    check(f.calls.length === 0, 'Seek completion, play intent, buffering and position updates without actual playing must not allocate a start');
     f.audio.emit('playing'); await turn();
     check(f.allocations.size === 1, 'An actual playing event after the initial seek can allocate the first start');
   }
 
-  for (const boundary of ['pause', 'paused completion', 'waiting', 'stalled', 'stop', 'detach', 'ended', 'error', 'emptied', 'account change', 'disconnected']) {
+  for (const buffering of ['waiting', 'stalled']) {
+    const f = fixture();
+    // Observed WebKit order: playing at the selected position while seeking,
+    // then seeking, waiting with seeking=false/readyState=2, and finally seeked.
+    f.audio.currentTime = 22; f.audio.seeking = true; f.audio.readyState = 4; await f.play();
+    f.audio.emit('seeking'); await f.advance(3000, {progress: false});
+    f.audio.currentTime = 22.000536073; f.audio.seeking = false; f.audio.readyState = 2; f.audio.emit(buffering);
+    await f.advance(4000, {progress: false});
+    check(f.calls.length === 0, `${buffering} before initial seek completion must not allocate a premature start`);
+    f.audio.emit('seeked'); await turn();
+    check(f.allocations.size === 1 && f.calls[0]?.input.position_ms === 22001,
+      `${buffering} must preserve the actual playing observation until one start at the observed stable position`);
+    check(f.events()[0]?.action === 'resume' && f.events()[0].elapsed_ms === 0 && f.events()[0].cumulative_played_ms === 0,
+      `${buffering} before seek completion must contribute zero elapsed or measured playing time`);
+    await f.advance(5000, {progress: false}); f.tracker.flush(); await turn();
+    check(f.events().at(-1).cumulative_played_ms === 0,
+      `${buffering} without media progress after seek completion must add no listening time`);
+    await f.advance(2000); await f.pause();
+    check(f.events().at(-1).cumulative_played_ms === 2000 && f.allocations.size === 1,
+      `${buffering} followed by real progress without another playing event must measure only that progress once`);
+  }
+
+  for (const boundary of ['pause', 'paused completion', 'stop', 'detach', 'ended', 'error', 'emptied', 'account change', 'disconnected']) {
     let authorized = true;
     const f = fixture({current: () => authorized});
     f.audio.currentTime = 22; f.audio.seeking = true; f.audio.emit('seeking'); await f.play();
+    f.audio.emit('waiting');
     if (boundary === 'pause') await f.pause();
     else if (boundary === 'paused completion') f.audio.paused = true;
     else if (boundary === 'stop') f.tracker.stop();
@@ -186,7 +209,7 @@ export async function runMusicListeningClientTests({silent = false} = {}) {
       return response(receipt);
     });
     f.audio.currentTime = 22; f.audio.seeking = true; f.audio.emit('seeking'); await f.play();
-    f.audio.seeking = false; f.audio.emit('seeked'); await turn();
+    f.audio.seeking = false; f.audio.emit('waiting'); f.audio.emit('seeked'); await turn();
     f.audio.emit('playing'); f.audio.emit('seeked');
     sourceUrl = '/chat.php?history=later'; await f.advance(500);
     const starts = f.calls.filter(call => call.input.action === 'start');
