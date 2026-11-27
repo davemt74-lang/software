@@ -2195,6 +2195,7 @@
     if (context.phoneReplyTo) window.VP3PhoneOwnerReply?.received(element,context.phoneReplyTo);
     const sender=context.phoneSender;
     if (!sender) return;
+    element.dataset.phoneIncoming='true';
     // The holder can be a guest. Keep the phone's name on its own messages in both restored and live Chat.
     element.querySelector('.message-role').textContent = 'Phone · ' + sender;
     const avatar = element.querySelector('.message-avatar');
@@ -5665,9 +5666,10 @@
 
   window.addEventListener('vp3:personal-phone-activity',event => {
     const update=event.detail;
-    if(update?.owner_id!==Number(cfg.userId)||update.agent_id!==Number(cfg.agentId||0)
-      ||update.conversation_id!==conversationId||!initiativeIdentityMatchesV1()||historyParticipant
+    if(update?.owner_id!==Number(cfg.userId)||!initiativeIdentityMatchesV1()||historyParticipant
       ||window.VP3ParticipantContinuity?.selectedContext?.())return;
+    void refreshHistory();
+    if(update.agent_id!==Number(cfg.agentId||0)||update.conversation_id!==conversationId)return;
     // The shared bridge already announced the notice. Read its canonical post
     // without switching tools, copying another thread or speaking it again.
     void syncConversationMessagesV101(conversationId)?.catch(()=>{});

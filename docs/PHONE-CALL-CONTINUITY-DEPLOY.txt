@@ -4,7 +4,9 @@ DEPLOYMENT
 
 Upload and extract the complete Cloud ZIP over the existing installation. Keep
 the installation's config.php, private/ and uploads/. Run Database Upgrade for
-the current main migrations, then reload VP3 assets. This feature adds no schema.
+the current main migrations, then reload VP3 assets. Calling adds no new tables.
+Sidebar counts reuse the existing read tables with a one-time historical phone
+message rollout during Database Upgrade.
 
 CALLING WHILE BROWSING
 
@@ -67,6 +69,22 @@ its own Agent interface and receives personal Phone/connected-phone activity;
 this does not add the public Chat footer, Transcriptions or public Orb to Admin.
 The durable private Chat post remains in its original conversation. No private
 phone content is copied into an Admin Agent conversation.
+
+CONVERSATION UNREAD COUNTS
+
+Each existing Chat row in the shared member sidebar displays its confirmed
+unread-message count, including completed Agent posts and canonical incoming
+connected-phone chats. Owner-authored turns, phone owner replies, blank streams,
+system markers, foreign accounts and inactive Agents do not inflate the count.
+Counts update during other Agent views and on personal-phone activity. The
+existing exact-message viewing receipts clear only the messages actually viewed
+in the visible, focused conversation; announcements and background reads cannot
+mark them read. Other tabs update through the existing read-receipt signal.
+
+Historical incoming phone messages start read at the one-time rollout. Repeated
+upgrades leave later unread phone messages intact. The sidebar endpoint is
+read-only, session bound, participant fenced and limited to fifty requested
+owned conversations. Counts clear if the current account/session is rejected.
 
 SENT CANVAS NETWORK RECOVERY
 

@@ -26,6 +26,7 @@ function vp3_participant_scope_v1(): ?array{return isset($_SERVER['HTTP_X_FIXTUR
 fs.writeFileSync(path.join(root,'fixture.php'),`<?php
 require __DIR__.'/includes/bootstrap.php';
 if(($_GET['action']??'')==='init'){
+  db()->exec('CREATE TABLE vp3_paired_phone_turns_v1(user_message_id INTEGER PRIMARY KEY,conversation_id INTEGER)');
   db()->exec("INSERT INTO chat_conversations(id,user_id,user_agent_id) VALUES (42,1,NULL),(43,2,NULL);
     INSERT INTO chat_messages(id,conversation_id,role,message) VALUES
       (1,42,'assistant','Historical reply'),(2,42,'assistant','')");
@@ -33,7 +34,8 @@ if(($_GET['action']??'')==='init'){
   db()->exec("INSERT INTO chat_messages(id,conversation_id,role,message) VALUES
     (3,42,'assistant','Typed reply'),(4,42,'assistant','Worker report'),(5,42,'assistant','Profile post'),
     (6,42,'user','Owner turn'),(7,42,'system','Internal placeholder'),(8,43,'assistant','Foreign owner reply'),
-    (9,11,'assistant','Named Agent reply')");
+      (9,11,'assistant','Named Agent reply'),(10,42,'user','Incoming phone chat'),(11,42,'user','Owner reply')");
+  db()->exec('INSERT INTO vp3_paired_phone_turns_v1 VALUES(10,42)');
 }elseif(($_GET['action']??'')==='finish'){
   db()->exec("UPDATE chat_messages SET message='Completed stream' WHERE id=2");
 }elseif(($_GET['action']??'')==='upgrade'){
@@ -118,13 +120,23 @@ try{
   await fetch(base+'/fixture.php?action=upgrade');
   check(JSON.stringify((await request({ids:'2,3,4,5'})).data.unread_message_ids)==='[2,3,4]',
     'repeated upgrades preserve sparse receipts and future unread posts');
+  check(JSON.stringify((await request({ids:'10'})).data.unread_message_ids)==='[10]'&&(await request({ids:'11'})).status===422,
+    'the production endpoint counts canonical incoming phone turns and rejects owner replies');
+  const sidebar=async(headers={})=>{const r=await fetch(base+'/api/agent-chat-read-v1.php?action=sidebar&conversation_ids=42,11,43',{headers:{'X-VP3-Working-Attention':binding(),...headers}});return {status:r.status,data:await r.json()};};
+  result=await sidebar();
+  check(result.status===200&&result.data.owner_user_id===1&&JSON.stringify(result.data.conversations)==='[{"conversation_id":11,"agent_id":7,"unread_count":1},{"conversation_id":42,"agent_id":0,"unread_count":4}]',
+    'the signed sidebar endpoint returns exact own conversation counts and no foreign rows');
+  check((await sidebar({'X-Fixture-Participant':'1'})).status===403&&(await sidebar({'X-Fixture-Session':'rotated'})).status===403,
+    'sidebar counts reject participant and changed-session requests');
 
   fs.copyFileSync('chat-message-unread-v1.js',path.join(root,'chat-message-unread-v1.js'));
+  for(const file of ['chat-sidebar-unread-v1.js','chat-sidebar-unread-v1.css'])fs.copyFileSync(file,path.join(root,file));
   fs.writeFileSync(path.join(root,'index.html'),`<!doctype html><meta charset="utf-8"><style>
     body{margin:0;font:16px sans-serif}#chatThread{height:180px;overflow:auto}
     .message{min-height:210px;padding:8px}.message:last-child{min-height:80px}.message-role{height:22px}
     #cover{position:fixed;inset:0;z-index:100;background:white}[hidden]{display:none!important}
-  </style><section id="chatThread" data-view="chat">
+    #chatHistory{position:fixed;right:0;top:0;width:220px;background:white}.chat-history-item{display:flex;width:100%;align-items:center}
+  </style><link rel="stylesheet" href="/chat-sidebar-unread-v1.css"><nav id="chatHistory"><button class="chat-history-item" data-conversation-id="42"><span>Current Chat</span></button><button class="chat-history-item" data-conversation-id="11"><span>Other Agent Chat</span></button></nav><section id="chatThread" data-view="chat">
     <article class="message assistant" data-chat-message-id="3" data-chat-conversation-id="42" data-chat-message-role="assistant">
       <div class="message-role">Agent</div><div class="message-text">Typed reply</div></article>
     <article class="message assistant" data-chat-message-id="4" data-chat-conversation-id="42" data-chat-message-role="assistant">
@@ -132,8 +144,9 @@ try{
   </section><div id="cover"></div><script>
     window.STONEFELLOW_CHAT={userId:1,agentId:0,csrf:'fixture',workingAttentionBinding:${JSON.stringify(binding())}};
     window.VP3_CHAT_MESSAGE_UNREAD_V1={endpoint:'/api/agent-chat-read-v1.php'};
+    window.VP3_CHAT_SIDEBAR_UNREAD_V1={owner_id:1,binding:${JSON.stringify(binding())},endpoint:'/api/agent-chat-read-v1.php'};
     window.STONEFELLOW_CHAT_CONTINUITY_V87={isReady:()=>true,isRestoring:()=>false,agentId:()=>0,conversationId:()=>42};
-  </script><script src="/chat-message-unread-v1.js"></script>`);
+  </script><script src="/chat-message-unread-v1.js"></script><script src="/chat-sidebar-unread-v1.js"></script>`);
   const browser=await chromium.launch({headless:true,
     ...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
   try{
@@ -145,6 +158,8 @@ try{
     const visible=page.locator('[data-chat-message-id="4"] [data-chat-message-new]');
     await earlier.waitFor();
     await visible.waitFor();
+    const count=id=>page.locator('[data-conversation-id="'+id+'"] [data-chat-unread-count]');
+    await count(42).getByText('4',{exact:true}).waitFor();await count(11).getByText('1',{exact:true}).waitFor();
     await page.evaluate(()=>{
       const thread=document.getElementById('chatThread');
       thread.scrollTop=thread.scrollHeight;
@@ -159,6 +174,21 @@ try{
     await visible.waitFor({state:'detached'});
     check(await earlier.count()===1&&JSON.stringify((await request({ids:'3,4'})).data.unread_message_ids)==='[3]',
       'a trusted Chromium scroll acknowledges its one visible post through the production PHP API and leaves its offscreen sibling unread');
+    await count(42).getByText('3',{exact:true}).waitFor();
+    check(await count(11).textContent()==='1','confirmed viewing updates only the matching sidebar count');
+    await page.evaluate(()=>{
+      const thread=document.getElementById('chatThread');thread.innerHTML='<div style="height:280px"></div><article class="message user" data-phone-incoming="true" data-chat-message-id="10" data-chat-conversation-id="42" data-chat-message-role="user"><div class="message-role">Phone</div><div class="message-text">Incoming phone chat</div></article>';
+      thread.scrollTop=thread.scrollHeight;window.VP3_CHAT_MESSAGE_UNREAD.refresh();
+    });
+    await page.locator('[data-chat-message-id="10"] [data-chat-message-new]').waitFor();
+    await page.mouse.wheel(0,-24);await page.locator('[data-chat-message-id="10"] [data-chat-message-new]').waitFor({state:'detached'});
+    await count(42).getByText('2',{exact:true}).waitFor();
+    check((await request({ids:'10'})).data.unread_message_ids.length===0,'viewing the real phone post clears exactly one sidebar count through production receipts');
+    await page.setViewportSize({width:320,height:700});const box=await count(42).boundingBox();
+    check(box&&box.x>=0&&box.x+box.width<=320,'the shared sidebar badge fits a narrow phone viewport');
+    await page.setExtraHTTPHeaders({'X-Fixture-User':'2','X-Fixture-Session':'read-owner-b'});await page.evaluate(()=>VP3ChatSidebarUnreadV1.refresh());
+    await count(42).waitFor({state:'detached'});await count(11).waitFor({state:'detached'});
+    check(true,'an account/session change clears both old conversation counts');
     check(errors.length===0,'the read widget and production HTTP receipt flow finish without browser errors');
   }finally{await browser.close();}
   console.log(`AGENT_CHAT_READ_API=PASS (${checks} cases; production HTTP endpoint and SQLite receipts)`);
