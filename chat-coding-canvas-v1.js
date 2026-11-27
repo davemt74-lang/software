@@ -103,6 +103,10 @@
   const stageItems = ['Build','Test','Use'].map(label => node('li',label));
   stages.append(...stageItems);
   const recoveryDetail = node('p','','vp3-coding-canvas-description');
+  const attemptDetail = node('p','','vp3-coding-canvas-description');
+  const usageLink = node('a','AI usage');
+  if (typeof cfg.usageUrl==='string' && new URL(cfg.usageUrl,location.origin).origin===location.origin) usageLink.href=cfg.usageUrl;
+  else usageLink.hidden=true;
   const recoveryActions = node('div','','vp3-coding-canvas-controls');
   const checkStatus = button('Check build status',() => void checkBuildStatus());
   const viewBuild = button('Open build result',() => {
@@ -114,7 +118,7 @@
   const retryBuild = button('Retry saved request',() => void retrySavedRequest());
   const editRequest = button('Edit saved request',() => void editSavedRequest());
   recoveryActions.append(checkStatus,viewBuild,retryBuild,editRequest);
-  progress.append(node('p','Latest build in this Chat','vp3-coding-canvas-description'),stages,notice,recoveryDetail,recoveryActions);
+  progress.append(node('p','Latest build in this Chat','vp3-coding-canvas-description'),stages,notice,attemptDetail,usageLink,recoveryDetail,recoveryActions);
   const appFeedback = node('div','','vp3-coding-canvas-app-feedback');
   const appNotice = node('p');
   appNotice.setAttribute('role','status');
@@ -421,7 +425,25 @@
   const editorEmpty = node('section','','vp3-coding-canvas-empty');
   editorEmpty.append(node('h3','Build your next Canvas'),node('p','Describe an app or workflow, then choose Build new. Your draft will appear here for testing and review.'));
   const editorLayout = node('div','','vp3-coding-canvas-editor-layout');
-  editorLayout.append(editorControls,editorEmpty,workspace);
+  const liveSourceHost=node('section');liveSourceHost.hidden=true;
+  const liveSource=window.VP3CanvasLiveSourceV1?.mount({root:liveSourceHost,
+    fetchSource:(runId,signal)=>api('received_source',{run_id:runId},scope(),signal),
+    recoverSource:async(runId,requestId)=>{
+      if(locked||sourceEditor?.dirty()||sourceEditor?.pending()||prompt.value.trim())throw Error('Save your source edits and keep or clear your unsent instruction before importing received code.');
+      const version=epoch,selection=load,selected=current;
+      locked=true;updateControls();
+      try{
+        const data=await api('recover_source',{run_id:runId,request_id:requestId});
+        return {...data,adoptReceived:version===epoch&&selection===load&&selected===current};
+      }finally{if(version===epoch){locked=false;updateControls();}}
+    },onRecovered:data=>{
+      if(!matches()||!editing())return;
+      if(data.adoptReceived===false){report('Received code was saved as a draft. Open Saved canvases to review it.');return;}
+      renderCanvas(data);report('Received code saved as version '+data.revision.id+'. Test the preview before using it.');
+    },onError:message=>report(message)});
+  const editorContent=node('div','','vp3-coding-canvas-editor-content');
+  editorContent.append(liveSourceHost,editorEmpty,workspace);
+  editorLayout.append(editorControls,editorContent);
   panel.append(header,savedControls,editorAppIcons,appFeedback,editorLayout);
   thread.append(panel);
 
@@ -1415,11 +1437,20 @@
     retryBuild.disabled = locked || checkingBuild;
     editRequest.hidden = !job;
     editRequest.disabled = locked || checkingBuild || activeJob(job);
+    const attempt=job?.provider_attempt;
+    attemptDetail.hidden=!job;
+    attemptDetail.textContent=!job?'':attempt ? 'Provider status: '+attempt.status+' · '+
+      (attempt.duration_ms>0?(attempt.duration_ms/1000).toFixed(1)+' s':'Elapsed time not yet confirmed')+' · '+
+      (attempt.usage_known===true?Number(attempt.tokens).toLocaleString()+' tokens confirmed':'Token usage not confirmed; the provider may have charged') :
+      ['failed','stopped'].includes(job.state)?'Provider status and token usage are unavailable for this run. Check AI usage or the provider account.':'Waiting for provider usage details.';
+    liveSource?.update(editing()&&matches()&&!suspended&&!document.hidden&&job?.live_source_available===true ?
+      {key:[owner,agent,scope(),epoch,job.run_id].join(':'),runId:job.run_id,state:job.state,
+        blocked:locked||Boolean(sourceEditor?.dirty()||sourceEditor?.pending())||Boolean(prompt.value.trim())} : null);
     recoveryDetail.textContent = lastIntent?.pending ? 'The request has not been confirmed. Check its saved status before starting another build.' :
       pollingBlocked ? 'Automatic status checks stopped. Restore access, then check build status.' :
       pollingError ? 'Connection interrupted. Checking the existing run; a new build has not been started.' :
       job?.state === 'paused' ? 'This run is paused. Stop it before starting a replacement.' :
-      job?.can_retry ? 'Retry uses the saved instruction and starts a new Coding Agent run. Edit saved request to change the brief first.' :
+      job?.can_retry ? 'Retry starts a new provider attempt and can use more API tokens. Review received code first, or edit the saved request to change the brief.' :
       activeJob(job) && lastBuildCheck ? 'Saved run '+job.run_id+' · Status checked '+new Date(lastBuildCheck).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) :
       current?.revision ? (phase === 3 ? 'This version is active.' : phase === 2 ? 'Preview tested. Use this version when you are ready.' : 'Draft saved. Test the preview, then use this version.') : '';
   }
@@ -2542,6 +2573,7 @@
     }
   });
   function resetContext() {
+    liveSource?.clear();
     sourceEditor?.clear(Number(window.STONEFELLOW_CHAT?.userId)!==owner||String(window.STONEFELLOW_CHAT?.workingAttentionBinding||'')!==pageBinding);
     closeComparison();
     closeArtworkFrame();
@@ -2618,6 +2650,7 @@
     if (editing() && publishing.open && !locked && !publicationIntent) void loadPublication();
   });
   document.addEventListener('visibilitychange',() => {
+    updateBuildProgress();
     if (!document.hidden) {
       scheduleResume();
       scheduleFooterRefresh();
@@ -2631,6 +2664,7 @@
     }
   });
   window.addEventListener('pagehide',() => {
+    liveSource?.clear();
     closeComparison();
     suspended = true;
     resetLibraryImagePicker();

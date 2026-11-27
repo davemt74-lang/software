@@ -5,6 +5,8 @@ require_once __DIR__.'/agent-tool-json-v1.php';
 require_once __DIR__.'/coding-canvas-model-v1.php';
 
 require_once __DIR__.'/coding-canvas-commands-v1.php';
+require_once __DIR__.'/coding-canvas-response-schema-v1.php';
+require_once __DIR__.'/coding-canvas-stream-v1.php';
 
 /** A bounded failure category may enter job status; provider text never does. */
 final class Vp3CodingCanvasFailureV1 extends RuntimeException
@@ -137,6 +139,7 @@ function vp3_coding_canvas_provider_output_v1(string $provider,array $decoded): 
 /** Invoke exactly the saved job pin and meter the single physical provider request. */
 function vp3_coding_canvas_generate_v1(PDO $pdo,array $user,array $pin,string $jobId,string $requestId,string $prompt,?array $previous=null,?string $diagnostic=null,array $attribution=[]): array
 {
+    if(!vp3_coding_canvas_response_ready_v1($pdo))throw new RuntimeException('Run Database Upgrade before starting a Coding Agent request.',503);
     $prompt=trim($prompt);
     if($prompt===''||strlen($prompt)>8000||!preg_match('//u',$prompt)||str_contains($prompt,"\0")
         ||($diagnostic!==null&&(strlen($diagnostic)>1600||!preg_match('//u',$diagnostic)||str_contains($diagnostic,"\0")))){
@@ -182,16 +185,23 @@ function vp3_coding_canvas_generate_v1(PDO $pdo,array $user,array $pin,string $j
     $key=$grant['key'];
     $personalKey=$pin['funding']==='own_key'?$key:null;
     $openai=$provider==='openai';
-    $endpoint=$openai?'https://api.openai.com/v1/responses':'https://api.anthropic.com/v1/messages';
-    $headers=$openai?['Authorization: Bearer '.$key]:['x-api-key: '.$key,'anthropic-version: 2023-06-01'];
-    $headers[]='Content-Type: application/json';
     $payload=['model'=>$pin['model']]+($openai
         ?['instructions'=>$instructions,'input'=>$messages,'max_output_tokens'=>12000,'store'=>false]
         :['system'=>$instructions,'messages'=>$messages,'max_tokens'=>12000]);
-    $result=ai_curl_json($endpoint,$headers,$payload,80,$meter,$pin,$personalKey,true);
+    $result=vp3_coding_canvas_provider_stream_v1($payload,$key,$meter,$pin,$personalKey,
+        $attribution['before_dispatch']??null,$attribution['provider_checkpoint']??null);
     if(empty($result['ok'])){
         $failure=match($result['failure_code']??''){
-            'provider_attempt_unconfirmed'=>'coding_provider_unconfirmed',
+            'provider_attempt_unconfirmed'=>match($result['provider_failure_class']??''){
+                'provider_timeout'=>'coding_provider_timeout',
+                'provider_connection'=>'coding_provider_connection',
+                'provider_server','provider_overloaded'=>'coding_provider_server',
+                'provider_response_invalid','provider_response_incomplete','provider_response_too_large','provider_stream_error'=>'coding_provider_response',
+                default=>'coding_provider_unconfirmed',
+            },
+            'provider_rejected'=>'coding_provider_rejected',
+            'coding_dispatch_unavailable'=>'coding_access_changed',
+            'coding_provider_rate_limited'=>'coding_provider_rate_limited',
             'anthropic_credit_balance_low'=>'coding_provider_credits',
             'provider_response_too_large','provider_response_invalid'=>'coding_invalid_source',
             default=>($result['status']??0)===429?'coding_provider_rate_limited':null,

@@ -320,6 +320,10 @@ jobs:
           node tests/coding-canvas-source-http-v1.mjs
           node tests/coding-canvas-recovery-browser.mjs
           node tests/coding-canvas-recovery-http-v1.mjs
+          php tests/coding-canvas-stream-v1.php
+          php tests/coding-canvas-response-v1.php
+          node tests/coding-canvas-response-http-v1.mjs
+          node tests/coding-canvas-live-source-browser.mjs
       - name: Shared Agent capability adapters and actual work results
         run: |
           php tests/agent-capability-contract-v1.php
@@ -552,6 +556,7 @@ jobs:
         run: |
           php tests/coding-canvas-store-v1.php
           php tests/coding-canvas-jobs-v1.php
+          php tests/coding-canvas-response-v1.php
           php tests/coding-canvas-source-v1.php
           php tests/coding-canvas-source-context-v1.php
           php tests/agent-initiative-canvas-v1.php

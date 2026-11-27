@@ -336,6 +336,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_coding_canvas_ready_v1($schemaConnection)
         && vp3_coding_canvas_visibility_ready_v1($schemaConnection)
         && vp3_coding_canvas_source_ready_v1($schemaConnection)
+        && vp3_coding_canvas_response_ready_v1($schemaConnection)
         && vp3_coding_canvas_command_grants_ready_v1($schemaConnection)
         && vp3_coding_canvas_source_grants_ready_v1($schemaConnection)
         && vp3_coding_canvas_publishing_ready_v1($schemaConnection)

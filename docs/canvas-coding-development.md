@@ -292,3 +292,76 @@ and arbitrary generated-app functional correctness are outside this score.
    control can be diagnosed and repaired without losing the working version.
 2. Extend the native editor command registry only where an existing surface can
    verify its changes; preserve the generated app runtime's isolation.
+
+## Section 4: live generated source and retained provider responses
+
+A rebuild can consume provider tokens without yielding a saved Canvas. The owner
+reported that exact symptom with Claude. The old Coding transport waited for one
+complete JSON response and used an 80-second timeout. A timeout or unreadable
+response became `coding_provider_unconfirmed`; the repository cannot prove which
+transport failure occurred in the owner's historical run. No production inference
+or paid retry was used to investigate this change.
+
+Coding now uses a single bounded SSE request for the exact selected Claude
+Messages or OpenAI Responses model. Native model authorization, personal-key
+checks, package reservation, service policy and the execution ledger remain in
+force. There is no provider retry, model substitution or automatic paid repair.
+The transport allows up to 300 seconds, respects a smaller enclosing AI budget,
+and refreshes the native worker lease while receiving output or waiting on the
+connection. Browser navigation does not cancel server execution. Host process
+termination can still stop a run; polling recovers its existing status.
+
+Only answer text is accumulated. Claude thinking/signature blocks and OpenAI
+reasoning events are excluded. SSE framing, event order, text size, total response
+size and final response identity are bounded and checked. Claude cumulative usage
+is merged rather than summed. OpenAI answer deltas must match the completed
+response. A missing completion receipt never becomes confirmed zero usage.
+
+The canonical private job has a nullable `coding_provider_result_json` column.
+An explicit Database Upgrade adds it to existing installations; fresh job schema
+includes it. Live reads and admissions do not perform DDL. Each checkpoint carries
+the exact run, request, lease attempt, source proof and received-text hash. Updates
+require the current native lease and executing run. The final checkpoint precedes
+usage settlement and source validation, preserving received code if either later
+step fails. Generic workflow history and ordinary build progress exclude that
+source. No parallel app store or second queue is introduced.
+
+Opening the owner editor automatically shows **Live generated code** for the
+current run. HTML, CSS, JavaScript and the received JSON response are selectable.
+A bounded prefix reader displays incomplete JSON strings as literal source; it
+does not evaluate them or inject markup. Code refreshes about once per second
+while the view is open and the run is active. The existing selected/working app
+stays below it. Chat, Agent or account changes, hiding the page and leaving the
+editor clear the view and discard late responses. Source wraps in the existing
+Chat scroller instead of adding an inner source scroller.
+
+Run details now show native provider status, elapsed time when known, confirmed
+usage or an explicit unknown-usage message, and a direct AI usage link. Confirmed
+rejection, timeout, lost connection, service error and incomplete response have
+separate bounded explanations. Retry explicitly says it starts a new provider
+attempt that may use more API tokens.
+
+For failed/stopped **rebuilds**, complete structurally valid received source can
+be explicitly saved as an untested draft without inference. Recovery retains the
+original source revision, active/draft compare-and-swap fences, commands, native
+email ancestry, permissions and current app records. It never activates or
+publishes code. The exact response derives one stable native save identity, so a
+lost import response or reload returns the same revision. A newer app draft blocks
+an old import. Partial/invalid source remains inspectable. New-app runs can show
+received source but do not offer this rebuild-only import path. Older runs cannot
+recover source that was never retained by the old implementation.
+
+Section acceptance is 10/10 for the following bounded gates after release CI:
+streamed Claude and OpenAI parsing; accurate known/unknown native metering; one
+physical attempt; current-lease checkpoints; private scoped code reads; loss-safe
+rebuild import; preserved active version/data; unexecuted live display; typed inline
+run diagnostics; and responsive/context-fenced browser behavior. Local evidence
+covers the real native meter with offline transport, native storage on SQLite and
+MySQL, the shipped HTTP controller, Chromium desktop/390px views, and existing
+source/editor, email, Profile and paired-phone regression paths. Actual provider
+latency, code quality, HostGator request limits and physical-device suspension
+remain deployment acceptance rather than claims made by synthetic tests.
+
+Provider event contracts:
+- https://platform.claude.com/docs/en/build-with-claude/streaming
+- https://developers.openai.com/api/reference/resources/responses/streaming-events
