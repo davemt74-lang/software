@@ -14,6 +14,7 @@ try {
             'api_url'=>music_provider_v1_base_url().'/api/music-provider-v1.php','supported_protocols'=>[MUSIC_PROVIDER_V1_PROTOCOL],
             'capabilities'=>['catalog.read','selection.update','import.manifest','playback.begin','playback.renew','playback.events','media.read','artwork.read'],
             'visitor_access'=>'selected_public_recordings','uses'=>['public_streaming'],'cookies_required'=>false,
+            'source_page_profile'=>'public_music_pages_v2',
             'site_verification'=>['protocol'=>'vp3_music_site_v1','path'=>'/api/vp3-music-site.php'],
             'limits'=>['media_ticket_seconds'=>300,'session_seconds'=>86400,'selection_recordings'=>500,'catalog_page'=>50],
             'unsupported'=>['private_or_paid_entitlements','downloads','royalty_accrual','listener_identity_import','automatic_catalog_expansion']]);

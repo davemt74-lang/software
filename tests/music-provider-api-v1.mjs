@@ -115,6 +115,7 @@ async function runTests() {
     }
     const discovered = await checked(await fetch(fixture.base + providerRoute, {headers: {'X-User': '0'}}), 200, 'Cookie-free protocol discovery');
     equal(discovered.protocol, protocol, 'Discovery announces the implemented protocol');
+    equal(discovered.source_page_profile, 'public_music_pages_v2', 'Discovery describes additive public page coverage');
     await rejected(await fixture.request({...pendingPlay, protocol: 'unknown_provider_v99'}), 'Unknown protocol cannot downgrade');
     await rejected(await fixture.request({...pendingPlay, unsupported_mandatory_field: true}), 'Unknown provider fields cannot be silently ignored', [422]);
     await rejected(await fixture.request({...pendingPlay, source_url: 'x'.repeat(33000)}), 'Oversized request is rejected before parsing', [413]);
@@ -180,6 +181,24 @@ async function runTests() {
       source_url: artistOrigin + '/account/reset/PRIVATE-PATH?token=PRIVATE-QUERY',
     })), 200, 'Authorized music tolerates a source page that must be withheld');
     check(!JSON.stringify(unsafe.source).includes('PRIVATE-'), 'Sensitive source path was stored or returned');
+    for (const pathname of ['/track/vp3-song_123', '/release/public-album/', '/stonefellow-v120.php']) {
+      const attempt = beginInput(site.site_id, first.recording_id, {source_url: artistOrigin + pathname + '?token=PRIVATE-QUERY#PRIVATE-FRAGMENT'});
+      const page = await checked(await fixture.request(attempt), 200, 'Public Stoneward source page ' + pathname);
+      equal(page.source.url, artistOrigin + pathname, 'Retain the initiating public page without query/fragment');
+      equal(page.source_page_profile, 'public_music_pages_v2', 'Saved begin receipt identifies its additive source policy');
+      equal(page.source.page_verified, false, 'Public page remains browser-reported context');
+      equal(frozen(await checked(await fixture.request(attempt), 200, 'Public page lost-ack retry')), frozen(page), 'Public page retry preserves one receipt');
+    }
+    for (const pathname of ['/track/%2e%2e/music', '/track/song%2fsecret', '/track/../music', '/release/album/secret', '/track/' + 'a'.repeat(161)]) {
+      const omitted = await checked(await fixture.request(beginInput(site.site_id, first.recording_id, {source_url: artistOrigin + pathname})), 200, 'Unsafe public-looking route is omitted');
+      equal(omitted.source.url, null, 'Route validation must not normalize an unsafe path into public attribution');
+      equal(omitted.source.verified_origin, artistOrigin, 'Omitted page retains registered site attribution');
+    }
+    const restrictedBegin = beginInput(site.site_id, first.recording_id, {source_url: artistOrigin + '/unsupported-page'});
+    const restrictedReceipt = await checked(await fixture.request(restrictedBegin), 200, 'Current source policy saves an omitted-page begin');
+    equal(restrictedReceipt.source_page_profile, 'public_music_pages_v2', 'Omitted page retains current policy marker');
+    await rejected(await fixture.request({...restrictedBegin, source_url: artistOrigin + '/track/changed-page'}),
+      'Current policy cannot reuse the historical compatibility exception to change a source', [409]);
     const noReferrer = await checked(await fixture.request(beginInput(site.site_id, first.recording_id, {source_url: ''})), 200, 'Missing referrer does not block authorized listening');
     check(noReferrer.source.url === null || noReferrer.source.source_url === null, 'Missing page context was invented');
 

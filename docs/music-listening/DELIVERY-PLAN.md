@@ -151,6 +151,14 @@ Implementation PRs should explain the concrete problem, resulting behavior, sour
 
 Before merge or release, inspect applicable required checks on the actual candidate commit. After an authorized merge, verify the resulting main commit and produce the deployment ZIP from that exact verified source. Separate Cloud and Stoneward packages when their deployments differ; record compatible versions and required migrations. A documentation-only PR does not need an application deployment ZIP.
 
+### ML3 reporting decisions — 2026-11-26
+
+D-04 is resolved for the first artist reporting interface with `session_start_cohort_v1`: local start-date cohorts, accepted cumulative measurements at a consistent snapshot, explicit IANA timezone, and a visible distinction between session date and event-time allocation. Existing receipts cannot establish exact historical listening intervals by calendar day. The UI sends the selected timezone; UTC is the service's explicit fallback. Custom ranges are bounded to 366 local dates and 25,000 source sessions; an exceeded bound is unavailable until narrowed, not a truncated total.
+
+Artist audience reporting uses current workspace song-management authority (owner/manager/authorized administrator), excludes known previews/staging by default and identifies anonymous production as unclassified. It does not introduce cross-site person identity. Legacy-only rows are deduplicated against versioned native rows and keep their original evidence category. No financial rate, accrual eligibility, raw-event retention or commercial allowance is selected by these reporting decisions.
+
+The additive public Stoneward route profile admits only actual bounded public track/release IDs and the existing public entry page. Older provider/client combinations keep their previous supported paths; exact old begin receipts remain stable through the provider update. See [ML3 implementation](ML3-IMPLEMENTATION.md) for its acceptance scope and [development status](DEVELOPMENT-STATUS.md) for release state.
+
 ## Final release evidence
 
 The complete release record should contain the implemented scope, exact commits, schema versions, compatibility pair, migration/restore results, current runtime tests, deployed header/range checks, actual phone playback results, monitoring/support behavior and any explicitly deferred capabilities. Financial release evidence additionally needs reproducible calculations and provider-confirmed reconciliation; managed hosting needs a real operated installation.

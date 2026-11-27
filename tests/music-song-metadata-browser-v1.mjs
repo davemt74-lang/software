@@ -14,7 +14,7 @@ const librarySource = await readFile('music-library.php', 'utf8');
 const libraryCss = librarySource.match(/<style>([\s\S]*?)<\/style>/)?.[1];
 assert.ok(libraryCss, 'actual Music Library shell CSS is available');
 const workspaceSource = await readFile('music-workspace.php', 'utf8');
-const workspaceCss = workspaceSource.match(/<style>([\s\S]*?)<\/style>/)?.[1];
+const workspaceCss = await readFile('assets/css/music-analytics-v1.css', 'utf8');
 const workspaceBody = workspaceSource.match(/<div class="music-wrap">([\s\S]*?)<\/div><\/main>/)?.[1];
 assert.ok(workspaceCss && workspaceBody, 'actual Music Workspace layout is available');
 const chatFormSource = source.match(/<form\s+class="chat-create-form"\s+data-chat-create-form="track"[\s\S]*?<\/form>/)?.[0];
@@ -69,6 +69,7 @@ if($fixture['mode']==='shell'){
 }elseif($fixture['mode']==='workspace'){
   $pdo=null;$user=current_user();$workspaceId=11;$workspace=['id'=>11,'workspace_name'=>'Studio catalog'];$workspaces=[$workspace];
   $role='owner';$counts=['tracks'=>12,'albums'=>3,'releases'=>2,'team'=>2];$canManageSongs=true;$metadataReady=true;$canListening=false;$profileUrl='/artist.php?user=71';
+  $canAnalytics=false;$libraryUrl='/music-library.php?workspace=11';
   eval('?>'.$fixture['workspace_body']);
 }elseif($fixture['mode']==='chat'){
   $chatMusicMetadataReady=true;
@@ -144,7 +145,7 @@ try {
     if (!content) return route.fulfill({status: 404, body: ''});
     const body = chat ? `<div class="chat-create-modal"><section class="chat-create-modal-card"><header class="chat-create-modal-head"><h2>Add Track</h2><a id="chatCreateAdvanced" href="#">Full editor</a></header><div class="chat-create-modal-status" id="chatCreateModalStatus" role="status" tabindex="-1" hidden></div><div class="chat-create-modal-body">${content}</div></section></div>` : `<div class="chat-app">${shell.sidebar}<div class="chat-sidebar-backdrop" id="chatSidebarBackdrop"></div><main class="chat-main ${workspace ? 'music-main' : 'ml-main'}">${workspace ? shell.header.replace('Music Library', 'Music Workspace') : shell.header}<div class="${workspace ? 'music-wrap' : 'ml-wrap'}">${content}</div></main></div>`;
     const bindings = chat ? `<script>const cfg={createEndpoint:'${createEndpoint}'};const createModalStatus=document.getElementById('chatCreateModalStatus');const createAdvanced=document.getElementById('chatCreateAdvanced');${controller}const form=document.querySelector('[data-chat-create-form]');form.hidden=false;form.addEventListener('submit',event=>{event.preventDefault();submitCreateForm(form);});</script>` : '';
-    return route.fulfill({contentType: 'text/html', body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/metadata.css"><style>${workspace ? workspaceCss : libraryCss}</style></head><body>${body}<script src="/metadata.js"></script>${bindings}</body></html>`});
+    return route.fulfill({contentType: 'text/html', body: `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/metadata.css"><style>${workspace ? workspaceCss : libraryCss}</style></head><body${workspace ? ' class="music-analytics-page"' : ''}>${body}<script src="/metadata.js"></script>${bindings}</body></html>`});
   });
   const settleClosedNavigation = async () => {
     await page.waitForFunction(() => {
@@ -243,10 +244,10 @@ try {
   await page.screenshot({path: `${artifacts}/mobile-save.png`, fullPage: true});
   await page.goto(origin + '/workspace');
   await settleClosedNavigation();
-  check(await page.locator('.music-main').evaluate(main => main.scrollHeight <= main.clientHeight + 1) && await hitTarget(page.getByRole('link', {name: 'Add song', exact: true})), 'Music Workspace uses the real fixed header with a usable top action');
+  check(await page.locator('.music-main').evaluate(main => main.scrollHeight <= main.clientHeight + 1) && await hitTarget(page.getByRole('link', {name: 'Add song', exact: true})), 'Music Workspace uses the real header with a usable top action');
   await page.screenshot({path: `${artifacts}/workspace-mobile.png`, fullPage: true});
-  await page.locator('.music-note').last().scrollIntoViewIfNeeded();
-  check(await page.locator('.music-wrap').evaluate(wrap => wrap.scrollTop > 0) && await page.locator('.music-note').last().evaluate(note => note.getBoundingClientRect().bottom <= innerHeight) && await hitTarget(page.getByRole('button', {name: 'Open VP3 navigation', exact: true})), 'Music Workspace scrolls through its final content while keeping navigation reachable');
+  await page.locator('.music-ownership').scrollIntoViewIfNeeded();
+  check(await page.evaluate(() => scrollY > 0) && await page.locator('.music-wrap').evaluate(wrap => wrap.scrollTop === 0 && !['auto','scroll'].includes(getComputedStyle(wrap).overflowY)) && await page.locator('.music-ownership').evaluate(note => note.getBoundingClientRect().bottom <= innerHeight) && await hitTarget(page.getByRole('button', {name: 'Open VP3 navigation', exact: true})), 'Music Workspace uses normal page flow through its final content while keeping navigation reachable');
   await exerciseNavigation();
   await page.screenshot({path: `${artifacts}/workspace-mobile-bottom.png`, fullPage: true});
   await page.goto(origin + '/saved');

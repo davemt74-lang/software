@@ -1,0 +1,76 @@
+VP3 MUSIC WORKSPACE ANALYTICS — ML3
+
+This release adds artist-scoped listening reports to /music-workspace.php and
+extends safe public-page attribution for connected Stoneward artist sites.
+VP3 remains the canonical catalog/audio provider. Artist earnings and payments
+are not activated by this update.
+
+INSTALL
+
+1. Back up matching Cloud code, database, config.php, private/ and uploads/ before
+   applying the source-verified full Cloud deployment ZIP. Preserve the existing
+   configuration, private keys, uploads and database. Read VP3_RELEASE.json and
+   verify the source commit and archive checksum from the release handoff.
+
+2. The dashboard itself adds no new database schema and performs no read-path
+   migration. Its catalog, native listening and provider prerequisites are the
+   existing ML1/ML2A/ML2B upgrades. If those are absent, follow the matching
+   MUSIC-CATALOG-LISTENING-DEPLOY.txt and MUSIC-PROVIDER-DEPLOY.txt procedures.
+   A schema-unavailable report is not evidence of zero listening.
+
+3. Sign in as the workspace owner or authorized manager and open Music Workspace.
+   Confirm the selected workspace and reporting timezone, then choose a date
+   period. Existing song, stem, release, Player and team tools remain available.
+
+4. The default Audience view excludes known artist previews and staging tests.
+   Anonymous production visitors remain unclassified. Use the explicit all-
+   traffic/legacy controls to inspect older or test evidence. Ordinary artist
+   reports do not expose individual listeners or their personal history.
+
+5. Update the paired Stoneward site with its matching verified release to send
+   public track/release page context. Either update order remains compatible:
+   older providers retain site/song attribution but omit the new page paths;
+   older clients continue their previous supported route profile. The exact
+   tested VP3 and Stoneward commits belong in the release handoff.
+
+READING THE REPORT
+
+The selected period means sessions begun during those local calendar dates.
+Listening totals are their accepted cumulative measurements at the displayed
+snapshot time. A play spanning midnight belongs to its start-date group, and
+ongoing plays can update a previous date. This is not an exact minute-by-minute
+allocation of all audio heard during the period.
+
+Native measurement, connected-site measurement and legacy-only history are
+distinct. A versioned native session's compatibility row is excluded from the
+legacy total, so it is not counted twice. A playback request alone does not
+establish audible playback. Qualified engagement retains the versioned 10-second
+definition; completion uses accepted time against 80% of a usable duration.
+Unknown duration does not become zero or a known completion result.
+
+Provider sessions are not unique people. Source pages are reported by clients;
+site registration verifies the origin, not the visitor or their attention. Public
+page URLs omit query strings/fragments. Unsupported/private paths stay unknown.
+Audio delivery bytes describe server usage and are separate from listening.
+
+Presets cover 7/30/90 dates. Custom ranges are bounded to 366 dates and the initial
+report to 25,000 source sessions. If the limit is exceeded, narrow the filters or
+period. No incomplete total is presented as a complete report. Breakdown paging
+does not change the total.
+
+Earnings and Payments show Not configured until the later financial phases
+establish funding, rates/agreements, eligibility, statements and settlement.
+
+PILOT AND RECOVERY
+
+Test one song across the actual VP3 and Stoneward hosts: verify the registered
+site, import/reimport without duplication, play/seek/pause/renew, inspect one
+correlated listening record and public page source, then withdraw/revoke access.
+Exercise desktop and physical iPhone/Android playback and actual hosting/CDN
+headers. This remains the ML2D live gate; automated browser tests alone do not
+certify it.
+
+For rollback, restore matching code/configuration/database/private data/uploads
+as a recoverable set. No analytics read should write listening or schema. Keep
+the production provider installation identity and signing key with its database.
+Do not clone private site credentials into another artist installation.
