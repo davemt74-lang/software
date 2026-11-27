@@ -6784,7 +6784,7 @@
         const audio=host?.querySelector('audio');
         if(!audio)return false;
         if(options.musicChat===true&&typeof options.onReady==='function')options.onReady(audio,{
-          stop:()=>audioState.get(audio)?.listening?.stop()
+          stop:()=>window.VP3MusicListeningV1?.attach(audio)?.stop()
         });
         if(fromOffer)window.dispatchEvent(new CustomEvent('vp3:media-offer-audio-ready',{detail:{audio,action}}));
         audio.dataset.mediaSinglePlay='';

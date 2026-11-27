@@ -197,8 +197,15 @@ try {
   await nativeStarted(page, mixedCard);
   await waitUntil(() => nativeCount() === quietNative + 1, 'First mixed native receipt missing');
   const resolveBeforeEnd = requestCount('resolve');
+  const firstYouTubeResolve = page.waitForResponse(response => response.url().endsWith('/api/music-chat-v1.php')
+    && response.request().postDataJSON()?.action === 'resolve'
+    && response.request().postDataJSON()?.playlist_id === mixed.music_chat_v1.playlist.id
+    && response.request().postDataJSON()?.index === 1);
   await page.locator('audio[data-music-chat-token]').last().evaluate(audio => { audio.currentTime = audio.duration - 0.15; });
   await mixedCard.locator('iframe').waitFor();
+  const firstYouTubeAction = await (await firstYouTubeResolve).json();
+  const youtubeChild = firstYouTubeAction.youtube_playlist_id;
+  check(typeof youtubeChild === 'string' && /^[a-f0-9]{32}$/.test(youtubeChild), 'Mixed playback resolves its private YouTube child playlist');
   await playbackState(mixedCard, 'playing');
   equal(requestCount('resolve'), resolveBeforeEnd + 1, 'Native end advances mixed queue once');
   equal(await page.locator('audio').evaluateAll(elements => elements.filter(audio => !audio.paused).length), 0, 'YouTube owns audio after native handoff');
@@ -330,14 +337,18 @@ try {
   await restored.getByRole('heading', {name:'Night Walk', exact:true}).waitFor();
   equal(await rows(restored).evaluateAll(elements => elements.map(row => [row.dataset.musicItemSource,row.dataset.musicItemId])),
     [['youtube','vp300000001'],['vp3','41'],['vp3','42']], 'Edited playlist reload uses current items and current ordering');
+  const selectedYouTubePlays = () => Number(fixture.readDb('SELECT COUNT(*) AS total FROM vp3_youtube_playlist_plays_v1 WHERE playlist_id=? AND video_id=?',
+    [youtubeChild,'vp300000001'])[0].total);
+  const beforeRestoredYouTube = selectedYouTubePlays();
+  check(beforeRestoredYouTube >= 1, 'The selected YouTube child already has its initial accepted play');
   const restoredResolve = page.waitForResponse(response => response.url().endsWith('/api/music-chat-v1.php')
     && response.request().postDataJSON()?.action === 'resolve');
   await restored.getByRole('button', {name:'Play playlist', exact:true}).click();
   const restoredAction = await (await restoredResolve).json();
   equal([restoredAction.item.source,restoredAction.item.source_id], ['youtube','vp300000001'], 'Reopened playlist plays its current first item');
+  equal(restoredAction.youtube_playlist_id, youtubeChild, 'Reopened playlist resolves the same validated YouTube child');
   await playbackState(restored, 'playing');
-  await waitUntil(() => Number(fixture.readDb('SELECT COUNT(*) AS total FROM vp3_youtube_playlist_plays_v1 WHERE playlist_id=? AND video_id=?',
-    [mixed.music_chat_v1.playlist.id,'vp300000001'])[0].total) >= 2, 'Reopened selected playlist receipt missing');
+  await waitUntil(() => selectedYouTubePlays() === beforeRestoredYouTube + 1, 'Reopened selected playlist did not create exactly one additional accepted receipt');
   await page.evaluate(() => window.VP3_MUSIC_CHAT_V1.runCommand('stop'));
 
   // An accepted automatic action can start only once; history restoration is read-only.

@@ -385,7 +385,36 @@ foreach(['Find Native Midnight','Show me one calm song from VP3'] as $request){
     music_intent_assert(!empty($upgrade['music_chat_handled_v1'])&&str_contains($upgrade['answer'],'database upgrade'),
         'Recognized or explicit music still reports the required upgrade: '.$request);
 }
+$legacyCard=music_chat_fixture_message_v1($withoutSchema,42,'assistant');
+$withoutSchema->prepare('UPDATE chat_messages SET context_json=? WHERE id=?')->execute([
+    json_encode(['youtube_results_ref_v1'=>101,'youtube_result_video_v1'=>'abcdefghijl'],JSON_THROW_ON_ERROR),$legacyCard]);
+foreach(['Play the third one','Play that one','Show that playlist'] as $request){
+    music_intent_equal(vp3_music_chat_execute_v1($withoutSchema,$withoutSchemaUser,$withoutSchemaPrincipal,42,999,$request),null,
+        'Before the music upgrade, the current legacy YouTube card keeps its selection route: '.$request);
+}
 music_intent_assert(!table_exists('music_chat_results_v1'),'Missing-schema routing checks never create the additive music schema');
+vp3_music_chat_schema_v1($withoutSchema);
+$partialTurn=music_chat_fixture_message_v1($withoutSchema,42,'user');
+$partialTool=vp3_music_chat_execute_v1($withoutSchema,$withoutSchemaUser,$withoutSchemaPrincipal,42,$partialTurn,'Show me one calm song from VP3');
+$partialMessage=music_chat_fixture_message_v1($withoutSchema,42,'assistant');
+$partialTool=vp3_music_chat_bind_reply_v1($withoutSchema,$withoutSchemaUser,$withoutSchemaPrincipal,42,$partialMessage,$partialTool);
+$withoutSchema->exec('DROP TABLE music_chat_play_actions_v1');
+music_intent_assert(!vp3_music_chat_ready_v1($withoutSchema),'Partial prerelease schema is not reported ready');
+foreach([
+    ['music_chat_v1'=>vp3_music_chat_result_reference_v1($partialTool['music_chat_v1'])],
+    ['music_chat_followup_v1'=>vp3_music_chat_result_reference_v1($partialTool['music_chat_v1'])],
+    [],
+] as $context){
+    $withoutSchema->prepare('UPDATE chat_messages SET context_json=? WHERE id=?')->execute([json_encode($context,JSON_THROW_ON_ERROR),$partialMessage]);
+    $upgrade=vp3_music_chat_execute_v1($withoutSchema,$withoutSchemaUser,$withoutSchemaPrincipal,42,999,'Play the first one');
+    music_intent_assert(!empty($upgrade['music_chat_handled_v1'])&&str_contains($upgrade['answer'],'database upgrade'),
+        'Partial schema preserves a current MC1 result, clarification or bound prerelease row instead of rerouting it');
+}
+$newLegacyCard=music_chat_fixture_message_v1($withoutSchema,42,'assistant');
+$withoutSchema->prepare('UPDATE chat_messages SET context_json=? WHERE id=?')->execute([
+    json_encode(['youtube_results_ref_v1'=>101,'youtube_result_video_v1'=>'abcdefghijl'],JSON_THROW_ON_ERROR),$newLegacyCard]);
+music_intent_equal(vp3_music_chat_execute_v1($withoutSchema,$withoutSchemaUser,$withoutSchemaPrincipal,42,999,'Play the third one'),null,
+    'A newer legacy YouTube card supersedes an older MC1 selection even during a partial upgrade');
 music_chat_fixture_bootstrap_v1($pdo);
 
 echo 'MUSIC_CHAT_INTENT_V1=PASS '.$checks." actual parser, provider and SQLite orchestration checks\n";

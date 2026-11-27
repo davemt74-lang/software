@@ -360,6 +360,24 @@ function vp3_music_chat_clarify_v1(array $prior,string $answer): array
         'tool_receipt'=>vp3_tool_receipt_v1('music.library.read','search','clarification_required')];
 }
 
+/** Recognize the current MC1 card without requiring its additive schema to be complete. */
+function vp3_music_chat_selection_context_v1(PDO $pdo,int $owner,int $agent,int $cid): bool
+{
+    [$scope,$params]=vp3_agent_chat_scope_sql_v380($agent>0?['id'=>$agent]:null,'c');
+    $q=$pdo->prepare("SELECT m.id,m.context_json FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id
+        WHERE c.id=? AND c.user_id=? AND {$scope} AND m.role='assistant' ORDER BY m.id DESC LIMIT 1");
+    $q->execute([$cid,$owner,...$params]);$message=$q->fetch(PDO::FETCH_ASSOC);
+    if(!$message)return false;
+    $context=json_decode((string)($message['context_json']??''),true);
+    if(is_array($context['music_chat_v1']??null)||is_array($context['music_chat_followup_v1']??null))return true;
+    // Earlier stored results can be bound to this assistant turn without a context reference.
+    try{
+        $q=$pdo->prepare('SELECT 1 FROM music_chat_results_v1 WHERE owner_user_id=? AND agent_id=? AND conversation_id=? AND assistant_message_id=?');
+        $q->execute([$owner,$agent,$cid,(int)$message['id']]);
+        return (bool)$q->fetchColumn();
+    }catch(PDOException){return false;}
+}
+
 /** Current private-owner turn; the saved result is the only source for later selection and execution. */
 function vp3_music_chat_execute_v1(PDO $pdo,array $user,array $principal,int $cid,int $userMessageId,string $query,
     array $input=[],?callable $authority=null,?callable $http=null): ?array
@@ -377,6 +395,9 @@ function vp3_music_chat_execute_v1(PDO $pdo,array $user,array $principal,int $ci
             default=>'Use a music title or description up to 200 characters.'},'actions'=>[],'sources'=>[],'music_chat_handled_v1'=>true];
     }
     if(!vp3_music_chat_ready_v1($pdo)){
+        // A legacy media selection does not require the new music tables. A
+        // current stored MC1 card still needs its upgrade, including partial schemas.
+        if(isset($plan['selection'])&&!vp3_music_chat_selection_context_v1($pdo,(int)$live['id'],(int)$current['agent_id'],$cid))return null;
         // A bare Find/Show request belongs here only if the current permitted
         // catalog identifies music. An outstanding upgrade must not capture
         // unrelated Chat commands before their normal tools can handle them.
