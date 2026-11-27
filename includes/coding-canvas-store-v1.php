@@ -7,6 +7,8 @@ require_once __DIR__.'/coding-canvas-library-image-v1.php';
 require_once __DIR__.'/coding-canvas-provider-v1.php';
 require_once __DIR__.'/shared-folders-v161.php';
 require_once __DIR__.'/schema-metadata.php';
+require_once __DIR__.'/coding-canvas-checks-contract-v1.php';
+require_once __DIR__.'/coding-canvas-checks-schema-v1.php';
 require_once __DIR__.'/coding-canvas-response-schema-v1.php';
 
 function vp3_coding_canvas_schema_v1(PDO $pdo): void
@@ -53,6 +55,7 @@ function vp3_coding_canvas_schema_v1(PDO $pdo): void
     }
     require_once __DIR__.'/coding-canvas-source-v1.php';
     vp3_coding_canvas_source_schema_v1($pdo);
+    vp3_coding_canvas_checks_schema_v1($pdo);
     vp3_coding_canvas_response_schema_v1($pdo);
 }
 
@@ -229,8 +232,9 @@ function vp3_coding_canvas_artifact_projection_v1(PDO $pdo, array $canvas, array
     }
     $artifact = json_decode($json, true, 8, JSON_THROW_ON_ERROR);
     $commands = vp3_coding_canvas_command_list_v1($artifact['commands'] ?? []);
-    unset($artifact['commands']);
-    return ['artifact' => vp3_coding_canvas_artifact_v1($artifact), 'commands' => $commands];
+    $checks = vp3_coding_canvas_checks_v1($artifact['workflow_checks'] ?? []);
+    unset($artifact['commands'],$artifact['workflow_checks']);
+    return ['artifact' => vp3_coding_canvas_artifact_v1($artifact), 'commands' => $commands, 'workflow_checks'=>$checks];
 }
 
 /** Load only the exact artifact for an already authorized Canvas row. */
@@ -255,6 +259,7 @@ function vp3_coding_canvas_details_v1(PDO $pdo, array $row, ?int $version = null
         $versions[] = $info;
         if ($info['id'] !== $version) continue;
         $selected = $info + vp3_coding_canvas_artifact_projection_v1($pdo, $row, $candidate);
+        $selected['workflow_result']=vp3_coding_canvas_check_report_v1($candidate['workflow_result_json']??null);
     }
     if ($selected === null) throw new RuntimeException('Coding Canvas revision not found.', 404);
     $canvas += vp3_coding_canvas_artwork_urls_v1($pdo, (int)$row['owner_user_id'], $canvas['agent_id'], $canvas['id'], $version);
@@ -297,7 +302,7 @@ function vp3_coding_canvas_create_folder_v1(PDO $pdo, array $user, string $id, s
 
 function vp3_coding_canvas_save_draft_v1(
     PDO $pdo, array $user, int $agentId, int $cid, string $canvasId, string $title, array $code, array $initialState,
-    int $runId = 0, ?int $expectedDraft = null, ?int $expectedActive = null, array $commands = []
+    int $runId = 0, ?int $expectedDraft = null, ?int $expectedActive = null, array $commands = [], array $workflowChecks = []
 ): array {
     $agent = vp3_coding_canvas_authority_v1($pdo, $user, $agentId, true);
     $id = vp3_coding_canvas_id_v1($canvasId);
@@ -307,6 +312,8 @@ function vp3_coding_canvas_save_draft_v1(
     $source=vp3_coding_canvas_artifact_v1($code);
     $commands=vp3_coding_canvas_command_list_v1($commands);
     if($commands)$source['commands']=$commands;
+    $workflowChecks=vp3_coding_canvas_checks_v1($workflowChecks);
+    if($workflowChecks)$source['workflow_checks']=$workflowChecks;
     $json=json_encode($source,JSON_UNESCAPED_UNICODE|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR);
 
     return vp3_coding_canvas_atomic_v1($pdo, $owner, static function () use (
@@ -375,6 +382,13 @@ function vp3_coding_canvas_mark_tested_v1(
             throw new RuntimeException('The draft or saved app data changed. Reload it before testing again.', 409);
         }
         vp3_coding_canvas_library_image_assert_version_v1($pdo,$row,$revision,$expectedImage);
+        if($details['revision']['workflow_checks']){
+            $report=$details['revision']['workflow_result'];
+            if(($report['status']??null)!=='passed'||!hash_equals($stateRevision,(string)($report['state_revision']??''))
+                ||!hash_equals($details['revision']['source_hash'],(string)($report['source_hash']??''))
+                ||!hash_equals(vp3_coding_canvas_checks_hash_v1($details['revision']['workflow_checks']),(string)($report['checks_hash']??'')))
+                throw new RuntimeException('Pass the saved workflow checks before using this draft.',409);
+        }
         $pdo->prepare('UPDATE vp3_coding_canvas_versions_v1 SET tested_state_revision=? WHERE canvas_id=? AND revision=?')
             ->execute([$stateRevision, $id, $revision]);
         return vp3_coding_canvas_details_v1($pdo, $row, $revision);

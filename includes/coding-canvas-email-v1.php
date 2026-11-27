@@ -83,7 +83,7 @@ function vp3_coding_canvas_email_binding_v1(PDO $pdo, array $user, int $agentId,
         if (($goal['prompt'] ?? null) !== $proposal['prompt'] || !hash_equals(
             hash('sha256',json_encode($proposal,JSON_THROW_ON_ERROR)),(string)($origin['proposal_hash'] ?? '')
         )) return null;
-        return ['binding'=>$binding,'ref'=>$ref];
+        return ['binding'=>$binding,'ref'=>$ref,'origin_run_id'=>(int)$run['id']];
     } catch (PDOException $error) {
         throw $error;
     } catch (RuntimeException|JsonException $error) {
@@ -120,6 +120,10 @@ function vp3_coding_canvas_email_test_v1(PDO $pdo,array $user,int $agentId,int $
         $q = $pdo->prepare('SELECT run_id FROM vp3_coding_canvas_versions_v1 WHERE canvas_id=? AND revision=?');
         $q->execute([$canvasId,$revision]);
         $run = (int)$q->fetchColumn();
+        // Manual source/check edits have no model run. Link their exact-version
+        // sample proof to the already verified email origin instead of run 0.
+        if($run<1)$run=$origin['origin_run_id'];
+        if($run<1)throw new RuntimeException('The email test origin could not be verified.',409);
         $metadata = ['canvas_id'=>$canvasId,'revision'=>$revision,'state_revision'=>$stateRevision];
         $q = $pdo->prepare("SELECT 1 FROM agent_workflow_events WHERE run_id=? AND owner_user_id=?
             AND event_type='email_canvas_fixture_passed' AND metadata_json=? LIMIT 1");

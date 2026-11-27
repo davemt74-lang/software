@@ -67,6 +67,7 @@ jobs:
             "phone_canvas_delivery": "canonical-private-v1",
             "canvas_source_editor": "owner-draft-v1",
             "canvas_live_source": "checkpointed-provider-stream-v1",
+            "canvas_workflow_checks": "sample-actions-one-repair-v1",
             "notification_reliability": "semantic-wake-v1",
             "agent_phone_shell": "account-context-v1",
             "phone_call_continuity": "persistent-window-v1",
@@ -556,6 +557,11 @@ jobs:
           test -f _deploy/includes/coding-canvas-response-schema-v1.php
           test -f _deploy/includes/coding-canvas-response-v1.php
           test -f _deploy/coding-canvas-live-source-v1.js
+          test -f _deploy/coding-canvas-workflow-runtime-v1.js
+          test -f _deploy/coding-canvas-workflow-editor-v1.js
+          test -f _deploy/includes/coding-canvas-checks-contract-v1.php
+          test -f _deploy/includes/coding-canvas-checks-schema-v1.php
+          test -f _deploy/includes/coding-canvas-checks-v1.php
           test -f _deploy/includes/agent-initiative-canvas-v1.php
           test -f _deploy/includes/agent-initiative-canvas-policy-v1.php
           test -f _deploy/api/initiative-canvas-settings-v1.php

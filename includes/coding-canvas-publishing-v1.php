@@ -127,7 +127,8 @@ function vp3_coding_canvas_publishing_source_v1(PDO $pdo, array $canvas, ?int $r
         || vp3_coding_canvas_public_private_origin_v1($pdo, $canvas, $revision, $version)) {
         return ['source'=>null,'reason'=>'This version uses a private command or source. Build a public version using public sources.'];
     }
-    return ['source'=>$source,'reason'=>null];
+    // Owner-authored test values stay private; published apps contain source and commands only.
+    return ['source'=>['artifact'=>$source['artifact'],'commands'=>$source['commands']],'reason'=>null];
 }
 
 function vp3_coding_canvas_publication_status_v1(
