@@ -171,8 +171,32 @@ function agent_connection_youtube_test_v1(?callable $http = null): void
 /** One bounded public search. The server credential is carried in the header only. */
 function agent_connection_youtube_search_v1(string $query, int $limit = 6, ?callable $http = null): array
 {
+    return agent_connection_youtube_search_bounded_v1($query,$limit,VP3_YOUTUBE_MAX_RESULTS_V1,$http,false);
+}
+
+/** Music Chat can select up to 25 songs in one search without widening ordinary video search. */
+function agent_connection_youtube_music_search_v1(string $query,int $limit=8,?callable $http=null): array
+{
+    $videos=agent_connection_youtube_search_bounded_v1($query,$limit,25,$http,true);
+    if(!$videos)return [];
+    $details=array_column(agent_connection_youtube_video_details_v1(array_column($videos,'video_id'),$http),null,'id');
+    $verified=[];
+    foreach($videos as $video){
+        $detail=$details[$video['video_id']]??[];
+        $context=agent_connection_youtube_public_context_v1($detail);
+        if($context===null||$context['music']!==true)continue;
+        $current=agent_connection_youtube_video_display_v1($video['video_id'],$detail['snippet']??[]);
+        if($current===null)continue;
+        $verified[]=$current+['made_for_kids'=>false,'music_category'=>true,'public_context'=>$context];
+    }
+    return $verified;
+}
+
+/** Fixed provider endpoints and a source-specific upper bound; never accepts a client URL. */
+function agent_connection_youtube_search_bounded_v1(string $query,int $limit,int $maximum,?callable $http,bool $musicOnly): array
+{
     $query = agent_connection_youtube_query_v1($query);
-    $limit = max(1, min($limit, VP3_YOUTUBE_MAX_RESULTS_V1));
+    $limit = max(1, min($limit, max(1,min(25,$maximum))));
     if (!agent_connection_youtube_enabled_v1()) {
         throw new AgentConnectionYoutubeExceptionV1('YouTube search is paused for this installation.', 403);
     }
@@ -185,7 +209,7 @@ function agent_connection_youtube_search_v1(string $query, int $limit = 6, ?call
         'q' => $query,
         'maxResults' => $limit,
         'fields' => 'kind,items(id(kind,videoId),snippet(title,channelTitle,thumbnails(medium(url),default(url))))',
-    ], 'youtube#searchListResponse', $http);
+    ]+($musicOnly?['videoCategoryId'=>'10']:[]), 'youtube#searchListResponse', $http);
 
     $results = [];
     foreach (array_slice($items, 0, $limit) as $item) {

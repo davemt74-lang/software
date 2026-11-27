@@ -38,6 +38,10 @@ let systemSpeakCalls=0;
 let premiumStops=0;
 let premiumPushes=[];
 let premiumCallbacks=null;
+let finishLocalSpeech=false;
+const localMusicCalls=[];
+let musicActive=false;
+let musicGuardAllowed=true;
 function makePremium(){return {
   warm:async()=>premiumReady,
   createStream(callbacks={}){
@@ -45,7 +49,7 @@ function makePremium(){return {
     const startedPromise=new Promise((resolve,reject)=>{resolveStarted=resolve;rejectStarted=reject;});
     return {started:startedPromise,push(text){premiumPushes.push(String(text));if(!started){started=true;premiumStartedBeforeDone=!streamDoneEmitted;callbacks.onStart?.();resolveStarted(true);}},end(){callbacks.onEnd?.();},stop(){premiumStops+=1;rejectStarted?.(new Error('stopped'));}};
   },
-  speak:async(text,callbacks={})=>{callbacks.onStart?.();return true;},
+  speak:async(text,callbacks={})=>{callbacks.onStart?.();if(finishLocalSpeech)queueMicrotask(()=>callbacks.onEnd?.());return true;},
   stop(){premiumStops+=1;}
 };}
 
@@ -57,6 +61,15 @@ const nativeFetch=async(inputArg,init={})=>{
   let payload={};try{payload=JSON.parse(String(init.body||'{}'));}catch(error){}
   fetchCalls.push({url,payload});
   if(url.includes('chat-stream-v121.php')){
+    if(payload.message==='show one music fixture song'){
+      const rows=[{type:'start',conversation_id:42,user_message_id:75,assistant_message_id:76},
+        {type:'done',data:{ok:true,conversation_id:42,user_message_id:75,assistant_message_id:76,
+          input_mode:'voice',answer:'Here is one song.',music_chat_v1:{protocol:'vp3_music_chat_v1',
+            result_id:'a'.repeat(32),items:[{source:'vp3',source_id:'41'}],requested_count:1}}}];
+      return new Response(rows.map(row=>JSON.stringify(row)).join('\n')+'\n',
+        {status:200,headers:{'Content-Type':'application/x-ndjson'}});
+    }
+
     if(payload.message==='search Gmail for project notes'){
       const rows=[{type:'start',conversation_id:42,user_message_id:73,assistant_message_id:74},
         {type:'done',data:{ok:true,conversation_id:42,user_message_id:73,assistant_message_id:74,
@@ -78,6 +91,9 @@ const nativeFetch=async(inputArg,init={})=>{
 const window={
   STONEFELLOW_CHAT:{userId:1,endpoint:'/api/chat.php',csrf:'csrf',initialConversationId:0,initialView:'chat'},
   STONEFELLOW_CHAT_VOICE_BOOT:{button:elements.chatVoiceButtonLegacyDormant,intro:null,legacyDormant:true},
+  STONEFELLOW_CHAT_CONTINUITY:{runMusicLocalTurn:async(message,action)=>{localMusicCalls.push({message,action});return 'Music '+action+'.';}},
+  VP3_MUSIC_CHAT_V1:{command:message=>musicActive?({'pause':'pause','stop':'stop','next song':'next','resume music':'resume'}[message]||null):null},
+
   SpeechRecognition:Recognition,webkitSpeechRecognition:null,StonefellowAgentContext:{refresh:async()=>({surface:'chat',transcript_session_id:22,transcript_source_selected:true}),snapshot:()=>({surface:'chat',...submittedTranscript}),setConversationId(){}},StonefellowPremiumVoiceV122:makePremium,
   fetch:nativeFetch,addEventListener(){},removeEventListener(){},dispatchEvent(){return true;},setTimeout,clearTimeout,setInterval,clearInterval,
   speechSynthesis:{cancel(){},speak(){systemSpeakCalls+=1;}},SpeechSynthesisUtterance:class{constructor(text){this.text=text;this.onstart=null;this.onend=null;this.onerror=null;}}
@@ -87,7 +103,7 @@ const location={href:'https://stonefellow.com/chat.php',origin:'https://stonefel
 const sandbox={window,document,navigator,localStorage,location,CustomEvent,Event,URL,URLSearchParams,Response,AbortController,ReadableStream,TextEncoder,TextDecoder,console,setTimeout,clearTimeout,setInterval,clearInterval,queueMicrotask};
 Object.assign(window,{window,document,navigator,localStorage,location,CustomEvent,Event,URL,URLSearchParams,Response,AbortController,ReadableStream,TextEncoder,TextDecoder});
 let lastResponse;
-elements.chatForm.requestSubmit=()=>{lastResponse=window.fetch('/api/chat.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send',conversation_id:0,message:elements.chatInput.value,input_mode:'text',csrf_token:'csrf',agent_context:submittedTranscript})});};
+elements.chatForm.requestSubmit=()=>{lastResponse=window.fetch('/api/chat.php',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action:'send',conversation_id:0,message:elements.chatInput.value,input_mode:'text',csrf_token:'csrf',music_request_id:'music-request-voice-fixture',agent_context:submittedTranscript})});};
 
 vm.runInNewContext(source,sandbox,{filename:'chat-voice.js'});
 
@@ -142,5 +158,39 @@ assert(/\$spoken=vp3_agent_chat_voice_text_v2160\(\$done\);\s*if\(\$spoken!==''\
 premiumCallbacks?.onError?.(new Error('simulated late ElevenLabs playback failure'));
 await sleep(5);
 assert(systemSpeakCalls===0,'late ElevenLabs playback failure still does not trigger duplicate system voice');
+
+
+// The canonical microphone path must preserve the Music Chat result and replay
+// key through NDJSON, then use guarded local transport without a phantom API turn.
+finishLocalSpeech=true;
+await sleep(500);
+recognizers.at(-1).onresult({resultIndex:0,results:[{0:{transcript:'show one music fixture song'},isFinal:true}]});
+await sleep(1950);
+const musicResult=await (await lastResponse).json();
+const musicFetch=fetchCalls.find(call=>call.payload.message==='show one music fixture song');
+assert(musicFetch?.url.includes('chat-stream-v121.php')&&musicFetch.payload.music_request_id==='music-request-voice-fixture',
+  'spoken music request preserves its idempotency key on the real voice transport');
+assert(musicResult.music_chat_v1?.requested_count===1&&musicResult.music_chat_v1.items[0].source_id==='41',
+  'full Music Chat card result survives the canonical voice stream for the shared Chat renderer');
+musicActive=true;
+window.VP3VoiceGuard={check:async()=>({allowed:musicGuardAllowed}),isEnabled:()=>true,isKnownOnly:()=>true,reset(){},attach(){},detach(){},takeContext(){return null;},wasVoiceTurn(){return false;}};
+const beforeMusicFetches=fetchCalls.length;
+for(const [message,action] of [['pause','pause'],['resume music','resume'],['stop','stop']]){
+  await sleep(400);
+  recognizers.at(-1).onresult({resultIndex:0,results:[{0:{transcript:message},isFinal:true}]});
+  await sleep(1950);
+  assert(localMusicCalls.at(-1)?.message===message&&localMusicCalls.at(-1)?.action===action,
+    'spoken '+message+' controls the active shared music player');
+}
+assert(fetchCalls.length===beforeMusicFetches,'local music controls do not submit a search or leave a pending voice API turn');
+musicGuardAllowed=false;
+const beforeDeniedMusic=localMusicCalls.length;
+await sleep(400);
+recognizers.at(-1).onresult({resultIndex:0,results:[{0:{transcript:'next song'},isFinal:true}]});
+await sleep(1950);
+assert(localMusicCalls.length===beforeDeniedMusic&&fetchCalls.length===beforeMusicFetches,
+  'speaker guard denial blocks local music controls as well as API music requests');
+assert(!window.STONEFELLOW_CHAT_CONTINUITY.pendingVoiceSubmit?.(),'music control completion leaves no phantom pending voice submission');
+window.VP3ConversationControls.stop();
 
 console.log('CHAT_FAST_VOICE_V157=PASS');

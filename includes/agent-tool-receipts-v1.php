@@ -39,6 +39,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'tv.capture.manage'=>['prepare'],
         'media.library.read'=>['status','search'],
         'music.library.read'=>['status','search'],
+        'music.playlists.manage'=>['create','add'],
         'photos.library.read'=>['status','search'],
         'media.assets.read'=>['search'],
         'images.generate'=>['queue','status'],
@@ -91,7 +92,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     foreach(['record_id','count'] as $key)if(!is_int($value[$key]??null)||$value[$key]<0)return null;
     if($reason==='active_request'&&($cap!=='images.generate'||$op!=='queue'||$status!=='blocked'||$value['record_id']!==0||$value['count']!==0))return null;
     // A read, clarification or failed operation can never be a successful mutation.
-    $write=$cap==='email.followups'
+    $write=$cap==='email.followups'||($cap==='music.playlists.manage'&&in_array($op,['create','add'],true))
         ||($cap==='email.send'&&$op==='send')||($cap==='music.releases.create'&&$op==='create')||($cap==='tracky.perception.request'&&$op==='request')||($cap==='radar.gateway.manage'&&$op==='set_policy')||($cap==='images.generate'&&$op==='queue')||($cap==='participants.setup'&&$op==='confirm')||($cap==='tasks.lists'&&in_array($op,['add','create_list','create_task','confirm'],true))||($cap==='system_apps.manage'&&$op==='confirm')||($cap==='tasks.manage')||($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
     if($status==='completed'&&(!$write||$reason!==''))return null;
     if(in_array($status,['read_complete','no_matches'],true)&&$reason!=='')return null;
@@ -146,6 +147,14 @@ function vp3_tool_last_receipt_v1(PDO $pdo,array $user,array $context): ?array
 
 function vp3_tool_diagnosis_v1(?array $last): string
 {
+    if(($last['receipt']['capability']??'')==='music.playlists.manage'&&($last['receipt']['operation']??'')==='add'
+        &&in_array($last['receipt']['status']??'',['completed','read_complete'],true))return
+        (($last['receipt']['status']??'')==='completed'?'The selected song was added to the private playlist.':'The selected song is already in the private playlist; no duplicate was added.')
+        .' A playlist update does not confirm that a song played. Playback is confirmed by the source player.';
+    if(($last['receipt']['capability']??'')==='music.playlists.manage'&&($last['receipt']['operation']??'')==='create'
+        &&in_array($last['receipt']['status']??'',['completed','read_complete'],true))return
+        (($last['receipt']['status']??'')==='completed'?'The private music playlist was saved and verified.':'The existing private music playlist was verified from the same request; no second playlist was created.')
+        .' Saving a playlist does not confirm that a song played. Playback is confirmed by the source player.';
     if(($last['receipt']['capability']??'')==='profile.webmcp.return.read'&&($last['receipt']['status']??'')==='read_complete'&&!isset($last['receipt']['profile_webmcp_outcome']))return 'The preceding Profile return has no verified outcome evidence. Check the Profile action before repeating it.';
     if(array_key_exists('profile_webmcp_outcome',$last['receipt']??[])){
         $r=vp3_tool_receipt_normalize_v1($last['receipt']);

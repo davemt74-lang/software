@@ -849,6 +849,11 @@
   function applyStopControl(text,source='voice'){
     const transcript=String(text||'').trim();
     if(!isStopControl(transcript))return false;
+    // An idle music control must pass the normal speaker/proactive guards below.
+    // Bare stop/pause still interrupt an Agent reply, and stop-listening keeps
+    // its existing microphone meaning.
+    if(!isStopListeningControl(transcript)&&!speaking&&!processing&&!textBusy&&!activeRequest&&!proactiveTurn
+        &&['pause','stop'].includes(window.VP3_MUSIC_CHAT_V1?.command(transcript)))return false;
     proof.stopControls+=1;queuedTranscript='';voiceSubmitPending=false;resetPendingFinal();updateComposer('');
     if(isStopListeningControl(transcript)){
       disableVoice({persist:true});
@@ -1038,16 +1043,25 @@
       if(current())applyTabSetupCommand(transcript,setupTarget);
       return;
     }
-    const youtubeAction = proactive?null:window.VP3_CHAT_YOUTUBE_V1?.command(transcript);
-    if (youtubeAction && ChatRuntime?.runYoutubeLocalTurn && !decision.participant
+    const musicAction = proactive?null:window.VP3_MUSIC_CHAT_V1?.command(transcript);
+    const youtubeAction = musicAction || (proactive?null:window.VP3_CHAT_YOUTUBE_V1?.command(transcript));
+    const runLocalMusic = musicAction ? ChatRuntime?.runMusicLocalTurn : ChatRuntime?.runYoutubeLocalTurn;
+    if (youtubeAction && runLocalMusic && !decision.participant
         && (!window.VP3VoiceGuard?.isEnabled?.() || !decision.reason)) {
       processing = true;
       if (responseWindowOwned) finishResponseWindow();
       setAgentState('processing','Thinking…');
-      const answer = await ChatRuntime.runYoutubeLocalTurn(transcript, youtubeAction);
-      if (!voiceOn || filterGeneration !== voiceDispatchGeneration) return;
-      if (answer) speakAnswer(answer);
-      else { processing = false; scheduleListening(160,'youtube-context-changed'); }
+      try {
+        const answer = await runLocalMusic(transcript, youtubeAction);
+        if (!voiceOn || filterGeneration !== voiceDispatchGeneration) return;
+        if (answer) speakAnswer(answer);
+        else { processing = false; scheduleListening(160,'music-context-changed'); }
+      } catch (error) {
+        if (!voiceOn || filterGeneration !== voiceDispatchGeneration) return;
+        processing = false;
+        setAgentState('idle','The player could not complete that command. Try again.');
+        scheduleListening(160,'music-command-error');
+      }
       return;
     }
     proof.submits+=1;voiceSubmitPending=true;processing=true;if(responseWindowOwned)finishResponseWindow();
