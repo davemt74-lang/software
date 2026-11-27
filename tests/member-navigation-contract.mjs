@@ -77,9 +77,12 @@ const mainFeedIndex=nav.indexOf("$add($links,'chat','Main Feed'");
 const profileResolveIndex=nav.indexOf('$profileUrl=member_navigation_profile_url($user)');
 assert.ok(mainFeedIndex>=0 && profileResolveIndex>=0 && mainFeedIndex<profileResolveIndex, 'Main Feed must be the first canonical user-menu destination');
 
-for (const [name, source] of [['account', account], ['admin', admin], ['site header', header]]) {
+for (const [name, source] of [['account', account], ['site header', header]]) {
   assert.ok(source.includes('member_navigation_menu_links'), `${name} should use canonical member navigation`);
 }
+assert.ok(!admin.includes('member_navigation_menu_links'), 'Admin user menu must not import unrelated public-side navigation');
+for(const key of ['account.access','admin.access','users.manage','ai.manage'])assert.ok(admin.includes(`has_permission('${key}',$user)`), `Admin menu gates ${key} against the signed-in user`);
+assert.ok(admin.includes("'account'=>'Account','admin'=>'Administration','session'=>''"), 'Admin user menu groups account, administration and sign out');
 assert.ok(chatTemplate.includes("require __DIR__ . '/includes/member-user-menu.php'"), 'Chat must render the complete shared account menu, including Auto Greet');
 assert.ok(!chatTemplate.includes('id="chatProfileDropdown"'), 'Chat must not retain a parallel hardcoded account dropdown');
 assert.ok(!chat.includes('$chatProfileLinks'), 'Chat must not patch only the links of a legacy account dropdown');

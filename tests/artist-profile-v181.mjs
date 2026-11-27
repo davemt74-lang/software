@@ -110,7 +110,8 @@ assert.match(helper, /music_workspace_enabled_v320|artist_workspace_v104_is_arti
 assert.match(header, /\$headerArtistProfileUrl = artist_workspace_v181_profile_url_for_user\(\$headerUser\)/);
 assert.match(chat, /\$chatArtistProfileUrl = artist_workspace_v181_profile_url_for_user\(\$user\)/);
 assert.match(account, /member_navigation_menu_links\(\$user\)/);
-assert.match(adminHeader, /member_navigation_menu_links\(\$user\)/);
+assert.match(adminHeader, /has_permission\('account\.access',\$user\)/, 'Admin retains account access through its scoped menu');
+assert.doesNotMatch(adminHeader, /member_navigation_menu_links\(\$user\)/, 'artist public navigation is kept out of the Admin user menu');
 
 console.log('ARTIST_PROFILE_V181=PASS');
 

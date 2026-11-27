@@ -597,7 +597,7 @@ async function browserJourney(baseURL, owner, other) {
 }
 
 async function verifyPhoneTabs(phone) {
-  const connection = phone.getByRole('tab', {name:'Phone', exact:true});
+  const connection = phone.locator('#phone-tab-connection');
   const chat = phone.getByRole('tab', {name:'Chat', exact:true});
   const input = phone.locator('#phone-chat-input');
   async function verifyDock() {
@@ -610,7 +610,7 @@ async function verifyPhoneTabs(phone) {
     }), 'The shared app launcher is reachable at the bottom of the visible phone viewport');
   }
   async function verifyConnection() {
-    assert.equal(await connection.getAttribute('aria-selected'), 'true');
+    assert.equal(await connection.getAttribute('aria-expanded'), 'true');
     assert.equal(await input.isVisible(),false);
     const position = await phone.locator('#phone-label').evaluate(label => {
       const bounds = label.getBoundingClientRect();

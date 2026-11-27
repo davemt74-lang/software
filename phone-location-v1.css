@@ -158,3 +158,6 @@ button.phone-chat-retry { width: auto; min-height: 44px; margin-top: .3rem; colo
 
 /* Chat is the landing view; Phone settings stay in the compact header. */
 .phone-settings-button{display:inline-grid;place-items:center;flex:none;width:42px;min-width:42px;height:42px;min-height:42px;margin:0;padding:9px;border:1px solid #cddbd6;border-radius:12px;background:#fff;color:#294b42}.phone-settings-button svg{width:23px;height:23px}.phone-settings-button[aria-expanded="true"]{background:#e6f1eb}.phone-brand-line>div:first-child{margin-right:auto}
+.phone-brand-line{gap:.5rem}.phone-brand-line>div:first-child{flex:1 1 auto;overflow:hidden;white-space:nowrap}.phone-brand-line .brand{flex:none}.phone-user-menu{flex:0 1 auto;max-width:44%}.phone-user-menu>summary{min-width:0;max-width:100%}.phone-user-menu>summary>span:first-child{min-width:0}
+#phone-location[data-tab]{grid-template-columns:minmax(0,1fr)}#phone-location>.phone-header{min-width:0;width:100%}.phone-header-inner{min-width:0;width:100%}
+@media(max-width:360px){.phone-brand-line>div:first-child>span{display:none}.phone-brand-line .brand{border-right:0;padding-right:0}}
