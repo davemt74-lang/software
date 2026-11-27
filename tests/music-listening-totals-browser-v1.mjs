@@ -256,6 +256,13 @@ try {
   equal(adminDesktopLayout.scrollers, 0, 'Desktop admin lifetime panel has no nested workflow scrollers');
   await admin.screenshot({path:path.join(artifacts,'platform-desktop.png'),fullPage:true});
   await admin.setViewportSize({width:390,height:844});
+  const adminSidebarClosed = () => {
+    const sidebar = document.querySelector('.admin-sidebar');
+    return !sidebar || getComputedStyle(sidebar).display === 'none'
+      || sidebar.getBoundingClientRect().right <= 1 && sidebar.getAnimations().every(animation => animation.playState !== 'running');
+  };
+  await admin.waitForFunction(adminSidebarClosed);
+  check(await admin.evaluate(adminSidebarClosed), 'Admin sidebar is off-screen after the mobile resize transition');
   const adminPhoneLayout = await layout(admin);
   check(adminPhoneLayout.documentWidth <= adminPhoneLayout.viewport + 1, '390px admin report has no document overflow');
   equal(adminPhoneLayout.scrollers, 0, '390px admin lifetime panel has no nested workflow scrollers');
