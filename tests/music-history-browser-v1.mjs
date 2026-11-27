@@ -190,6 +190,37 @@ async function select(page, card, ref, operation) {
   const resolved = resolve ? await (await resolve).json() : null;
   return {data, card:selected, resolved};
 }
+async function settleCaptureScroll(page, target, block, label) {
+  const element = await target.elementHandle();
+  assert.ok(element, label + ': capture target exists');
+  try {
+    // Use the existing Chat scroller; do not change its CSS or move the UI.
+    await element.evaluate((node, block) => node.scrollIntoView({block, behavior:'instant'}), block);
+    await page.waitForFunction(async ({element, block}) => {
+      if (!element.isConnected) return false;
+      const anchor = block === 'start' ? element.querySelector(':scope > header') : element;
+      if (!anchor) return false;
+      const before = anchor.getBoundingClientRect();
+      await new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
+      const box = anchor.getBoundingClientRect();
+      const stable = ['top','left','width','height'].every(key => Math.abs(box[key] - before[key]) < .5);
+      const header = document.querySelector('.fixture-top, .chat-topbar')?.getBoundingClientRect();
+      const composer = document.querySelector('#chatComposerShell')?.getBoundingClientRect();
+      const top = Math.max(0, header?.bottom || 0);
+      const bottom = composer?.height ? Math.min(innerHeight, composer.top) : innerHeight;
+      const hit = document.elementFromPoint(box.left + box.width/2, box.top + box.height/2);
+      return element.isConnected && stable && box.width > 0 && box.height > 0
+        && box.top >= top && box.bottom <= bottom && box.left >= 0 && box.right <= innerWidth
+        && (hit === anchor || anchor.contains(hit));
+    }, {element, block}, {timeout:3000});
+  } catch (error) {
+    error.message = label + ': intended capture target did not settle above the composer. ' + error.message;
+    throw error;
+  } finally {
+    await element.dispose();
+  }
+}
+
 async function capture(page, label, card, lower = null) {
   check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), label + ': no horizontal overflow');
   const violations = await card.evaluate(element => [...element.querySelectorAll('*')].flatMap(child => {
@@ -199,10 +230,10 @@ async function capture(page, label, card, lower = null) {
     return errors;
   }));
   equal(violations, [], label + ': normal scrolling and touch targets');
-  await card.evaluate(element => element.scrollIntoView({block:'start'}));
+  await settleCaptureScroll(page, card, 'start', label);
   await page.screenshot({path:path.join(artifacts, label + '.png'), fullPage:false}); captures.push(label + '.png');
   if (lower) {
-    await lower.evaluate(element => element.scrollIntoView({block:'center'}));
+    await settleCaptureScroll(page, lower, 'center', label + '-lower');
     await lower.click({trial:true});
     check(await lower.evaluate(element => {
       const box = element.getBoundingClientRect();
