@@ -1140,8 +1140,14 @@
       && scope.conversation_id===data.conversation_id && (conversationId===0 || conversationId===scope.conversation_id);
   }
 
+  // Every Agent view shares this conversation's saved feed. Keep it live behind
+  // tools and overlays without changing their view, focus or unsaved work.
+  function conversationFeedActiveV1() {
+    return thread.isConnected;
+  }
+
   function phoneChatForegroundV1(cid) {
-    return cid>0 && cid===conversationId && initiativeIdentityMatchesV1() && thread.dataset.view==='chat'
+    return cid>0 && cid===conversationId && initiativeIdentityMatchesV1() && conversationFeedActiveV1()
       && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.()
       && document.visibilityState==='visible' && document.hasFocus?.()===true;
   }
@@ -1169,7 +1175,7 @@
     activityRequest = controller;
     const timeout = window.setTimeout(() => controller.abort(new DOMException('Chat activity timed out.', 'TimeoutError')), 15000);
     const activeConversationId = contextReady && !initialRestorePending && !restoringConversation
-      && thread.dataset.view === 'chat' ? conversationId : 0;
+      && conversationFeedActiveV1() ? conversationId : 0;
     const activityChatRevision=chatRevision;
     let activityRead=false;
 
@@ -1271,7 +1277,7 @@
       if(!activityRead&&(!controller.signal.aborted||error?.name==='TimeoutError')&&navigator.onLine!==false
         &&activeConversationId>0&&activeConversationId===conversationId&&activityChatRevision===chatRevision
         &&initiativeIdentityMatchesV1()&&!historyParticipant&&!window.VP3ParticipantContinuity?.selectedContext?.()
-        &&!busy&&!document.hidden&&thread.dataset.view==='chat'
+        &&!busy&&!document.hidden&&conversationFeedActiveV1()
         &&(!canvasFallback||canvasFallback.revision!==chatRevision||Date.now()-canvasFallback.at>=6000)){
         canvasFallback={revision:chatRevision,at:Date.now()};
         void syncConversationMessagesV101(activeConversationId)?.catch(()=>{});
@@ -2189,6 +2195,7 @@
     if (context.phoneReplyTo) window.VP3PhoneOwnerReply?.received(element,context.phoneReplyTo);
     const sender=context.phoneSender;
     if (!sender) return;
+    element.dataset.phoneIncoming='true';
     // The holder can be a guest. Keep the phone's name on its own messages in both restored and live Chat.
     element.querySelector('.message-role').textContent = 'Phone · ' + sender;
     const avatar = element.querySelector('.message-avatar');
@@ -4781,7 +4788,7 @@
       &&Number(window.STONEFELLOW_CHAT?.userId)===ownerAtRequest&&Number(window.STONEFELLOW_CHAT?.agentId || 0)===agentAtRequest
       &&window.STONEFELLOW_CHAT?.workingAttentionBinding===bindingAtRequest;
     const current=()=>targetId>0&&targetId===conversationId&&revision===chatRevision&&contextReady
-      &&!busy&&!initialRestorePending&&!restoringConversation&&thread.dataset.view==='chat'&&!document.hidden&&!signal?.aborted
+      &&!busy&&!initialRestorePending&&!restoringConversation&&conversationFeedActiveV1()&&!document.hidden&&!signal?.aborted
       &&navigator.onLine!==false&&(!gmailRefresh.length||gmailScopeCurrent());
     if(!current())return;
     const existing=conversationMessageSync;
@@ -4832,7 +4839,7 @@
       markChatCanvasSync(targetId,revision,'failed','response');
       return;
     }
-    const atEnd = thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 32;
+    const atEnd = thread.dataset.view === 'chat' && thread.scrollHeight - thread.scrollTop - thread.clientHeight <= 32;
     let liveEmailDraft = null;
     data.messages.forEach(message=>{
       let context={sources:[],media:[],stem_media:[],actions:[],cards:[],playlist_title:''};
@@ -5654,7 +5661,18 @@
   });
 
   window.addEventListener('vp3:chat-canvas-view-changed', () => {
-    if (thread.dataset.view === 'chat') void pollAgentActivity();
+    if (conversationFeedActiveV1()) void pollAgentActivity();
+  });
+
+  window.addEventListener('vp3:personal-phone-activity',event => {
+    const update=event.detail;
+    if(update?.owner_id!==Number(cfg.userId)||!initiativeIdentityMatchesV1()||historyParticipant
+      ||window.VP3ParticipantContinuity?.selectedContext?.())return;
+    void refreshHistory();
+    if(update.agent_id!==Number(cfg.agentId||0)||update.conversation_id!==conversationId)return;
+    // The shared bridge already announced the notice. Read its canonical post
+    // without switching tools, copying another thread or speaking it again.
+    void syncConversationMessagesV101(conversationId)?.catch(()=>{});
   });
 
   function cancelChatReads() {

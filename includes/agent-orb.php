@@ -49,7 +49,7 @@ try{$participantUpdatesEnabled=db()?vp3_participant_settings_v1(db(),$orbUser)['
 <script src="<?= e(url('/participant-recovery-v1.js?v=1')) ?>" defer></script>
 <script src="<?= e(url('/agent-participant-continuity.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-participant-continuity.js'),0,12))) ?>" defer></script>
 <script src="<?= e(url('/agent-orb.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-orb.js'),0,12))) ?>" defer></script>
-<?= vp3_agent_phone_shell_assets_v1($orbUser,!in_array(basename((string)($_SERVER['SCRIPT_NAME']??'')),['chat.php','chat-legacy-v108.php'],true)) ?>
+<?= vp3_agent_phone_shell_assets_v1($orbUser) ?>
 <script src="<?= e(url('/agent-orb-particles.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-orb-particles.js'),0,12))) ?>" defer></script>
 <script src="<?= e(url('/agent-eyes.js?v=' . substr(hash_file('sha256', dirname(__DIR__) . '/agent-eyes.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/agent-screen-review-v1.js?v=1')) ?>" defer></script>

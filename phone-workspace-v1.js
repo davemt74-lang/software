@@ -1,5 +1,6 @@
 (() => {
   'use strict';
+  function boot(){
   const config=window.VP3_PHONE_WORKSPACE_V1;
   if(!config||window.VP3PhoneWorkspaceV1)return;
   // The embedding page owns the single phone/audio runtime. Chat popups render
@@ -12,6 +13,12 @@
     document.addEventListener('click',event=>{if(event.target.closest?.('[data-phone-workspace-toggle]')){event.preventDefault();shared.open();}});
     window.dispatchEvent(new Event('vp3:phone-workspace-ready'));return;
   }}catch(_){}
+  const continuity=window.VP3PhoneContinuityV1||(config.continuity_role==='view'?{
+    isView:()=>true,snapshot:()=>({error:'The calling window could not load. Reload VP3 before enabling calls.',registered:false,attention:null,reachable:false}),
+    focus:()=>false,review:()=>false,control:async()=>false,attach:()=>{},revoke:()=>{}
+  }:null),windowOwner=config.continuity_role==='owner';
+  const remoteView=()=>continuity?.isView()===true;
+  const remoteState=()=>continuity?.snapshot()||{registered:false,attention:null,error:'',reachable:false};
   const positive=value=>Number.isSafeInteger(Number(value))&&Number(value)>0;
   const principal=value=>Number.isSafeInteger(Number(value))&&Number(value)>=0?Number(value):0;
   const text=value=>String(value??'').slice(0,5000);
@@ -32,12 +39,15 @@
   let state=null,authorized=true,disposed=false,opened=false,activeTab='connections',opener=null,fetching=null,deviceSession=null,active=null,callBusy=false,sdkPromise=null;
   let callEpoch=0,dialDraft='',recordThisCall=false,preparingTicket=null,setupPending=0,connectedDraft=null,voiceArm=null;
   let restoredGeneration=-1;
+  let windowReview=null;
+  let viewScopeUnavailable=false;
   let pollTimer=0,keepCallError=false,statusText='Checking phone connections…',contactQuery='',initialState=true,stateError='',autoCallDraft=null,calendarDraft=null,phoneContactDraft=null,admissionDraft=null;
   const layer=node('div','vp3-phone-workspace');layer.hidden=true;
   const backdrop=node('button','vp3-phone-backdrop');backdrop.type='button';backdrop.tabIndex=-1;backdrop.setAttribute('aria-label','Close phone workspace');
   const panel=node('aside','vp3-phone-panel');panel.setAttribute('role','dialog');panel.setAttribute('aria-modal','true');panel.setAttribute('aria-labelledby','vp3PhoneTitle');panel.tabIndex=-1;
   const header=node('header','vp3-phone-header'),title=node('h2',null,'Phone');title.id='vp3PhoneTitle';
   const closeButton=button('Close',close,'vp3-phone-close');closeButton.setAttribute('aria-label','Close phone workspace');header.append(title,closeButton);
+  if(windowOwner)closeButton.hidden=true;
   const notice=node('p','vp3-phone-notice');notice.setAttribute('role','status');notice.setAttribute('aria-live','polite');
   const recovery=node('div','vp3-phone-recovery'),retryButton=button('Retry',()=>void refresh());recovery.hidden=true;recovery.append(retryButton);
   const tabs=node('div','vp3-phone-tabs');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Phone workspace');
@@ -145,11 +155,13 @@
     const controller=new AbortController();requests.add(controller);const timer=setTimeout(()=>controller.abort(),['managed_reconcile','managed_end'].includes(action)?50000:15000);
     try{
       const url=new URL(endpoint);const options={method,credentials:'same-origin',cache:'no-store',signal:controller.signal,headers:{Accept:'application/json'}};
+      if(config.attention_binding)options.headers['X-VP3-Working-Attention']=config.attention_binding;
       if(method==='GET'){for(const [key,value] of Object.entries(scopeBody({action,...values})))url.searchParams.set(key,String(value));}
       else{options.headers['Content-Type']='application/json';options.body=JSON.stringify(scopeBody({action,csrf_token:config.csrf,...values}));}
       const response=await fetch(url.href,options);
-      if(current(g)&&(response.status===401||response.status===403)){revoke();throw phoneError('Phone access is unavailable.',response.status);}
-      let data={};try{data=await response.json();}catch(error){if(error.name==='AbortError')throw error;throw phoneError('Phone returned an invalid response. Refresh the page or retry.');}
+      if(current(g)&&response.status===401){revoke(true);throw phoneError('Phone access is unavailable.',response.status);}
+      let data={};try{data=await response.json();}catch(error){if(current(g)&&response.status===403)revoke();if(error.name==='AbortError')throw error;throw phoneError('Phone returned an invalid response. Refresh the page or retry.');}
+      if(current(g)&&response.status===403){revoke(['phone_account_changed','authentication_required','phone_assignment_required','phone_account_unavailable'].includes(data?.error));throw phoneError('Phone access is unavailable.',response.status);}
       if(!data||typeof data!=='object'||Array.isArray(data))throw phoneError('Phone returned an invalid response. Refresh the page or retry.');
       if(!current(g)){if(['prepare_call','prepare_owner_test','prepare_connected_call'].includes(action)&&data.ok===true&&publicId(data.call?.public_id))await cancelPrepared({info:data.call,scope:requestScope,prepared:true});throw new DOMException('Phone context changed.','AbortError');}
       if(!response.ok||data.ok!==true)throw phoneError(requestErrorMessage(action,data,response.status),response.status);
@@ -161,7 +173,7 @@
     return {...raw,numbers:raw.numbers.filter(item=>positive(item?.id)).slice(0,30),contacts:(Array.isArray(raw.contacts)?raw.contacts:[]).filter(item=>positive(item?.id)).slice(0,250),favorites:(Array.isArray(raw.favorites)?raw.favorites:[]).filter(item=>positive(item?.id)).slice(0,100),calls:raw.calls.filter(item=>callKey(item?.public_id)||callKey(item?.call_id)).map(item=>({...item,public_id:callKey(item.public_id)||callKey(item.call_id)})).slice(0,60),voicemails:raw.voicemails.filter(item=>voicemailKey(item?.id)).map(item=>({...item,id:voicemailKey(item.id)})).slice(0,60)};
   }
   async function refresh(){
-    if(!authorized||disposed||!context.ready)return;
+    if(!authorized||disposed||!context.ready||viewScopeUnavailable)return;
     if(fetching)return fetching;
     const g=generation,sequence=++requestSequence;
     const work=(async()=>{
@@ -184,7 +196,7 @@
             state.selected_number_id=preferred;next.selected_number_id=preferred;
           }
         }
-        if(!deviceSession&&restoredGeneration!==g&&canCall()&&registrationPreference(next.selected_number_id)){
+        if(!remoteView()&&!windowOwner&&!deviceSession&&restoredGeneration!==g&&canCall()&&registrationPreference(next.selected_number_id)){
           restoredGeneration=g;
           void enableDevice().catch(()=>{});
         }
@@ -209,6 +221,7 @@
     render();panel.focus({preventScroll:true});void refresh();
   }
   function close(){
+    if(windowOwner&&!disposed&&authorized)return;
     clearGreeting();
     clearManagedReview();
     if(connectedDraft)connectedDraft.confirmed=false;
@@ -237,16 +250,41 @@
     if(opened&&focusKey){const replacement=[...layer.querySelectorAll('[data-phone-focus-key]')].find(item=>item.dataset.phoneFocusKey===focusKey);if(replacement&&!replacement.disabled&&!replacement.closest('[hidden]')){replacement.focus({preventScroll:true});if(selection)try{replacement.setSelectionRange(...selection);}catch(_){}}}
     body.scrollTop=scroll;
   }
+  function remoteControls(host,callId){
+    const s=remoteState(),a=s.attention;if(!a||a.call_id!==callId)return false;
+    const controls=node('div','vp3-phone-remote-controls');
+    const control=(label,action,muted)=>{const b=button(label,()=>void continuity.control(action,callId,muted));b.disabled=a.busy&&action!=='hangup';controls.append(b);};
+    if(a.incoming){control('Answer','answer');control('Decline','decline');}
+    else{control('Hang up','hangup');control(s.muted?'Unmute':'Mute','mute',!s.muted);}
+    controls.append(button('Open calling window',()=>continuity.focus({agent_id:a.agent_id,conversation_id:a.conversation_id})));host.append(controls);return true;
+  }
+  function renderRemotePhone(host){
+    const s=remoteState();
+    if(s.error)host.append(node('p','vp3-phone-continuity-note vp3-phone-continuity-error',s.error));
+    if(!remoteView())return;
+    host.append(node('p','vp3-phone-continuity-note','Calls stay in the Phone window while you move between VP3 pages. Keep that window open.'));
+    if(s.everConnected&&!s.reachable)host.append(node('p','vp3-phone-continuity-note','Calling window status is unconfirmed. Open the window to check the current call.'));
+    const a=s.attention;if(!a)return;
+    const card=node('section','vp3-phone-remote-call');card.append(node('strong',null,a.incoming?'Incoming call':a.phase==='active'?'Call connected':'Call connecting'),node('p',null,a.caller));
+    remoteControls(card,a.call_id);host.append(card);
+  }
   function renderConnections(){
     const renderGeneration=generation,host=node('div');
-    if(!state){listEmpty(host,initialState?'Loading assigned phone connections…':'Phone connections are unavailable.');replacePhoneContent(sections.connections,...host.childNodes);return;}
+    renderRemotePhone(host);
+    if(!state){listEmpty(host,viewScopeUnavailable?'This page has no calling context. Your personal calling window stays connected.':initialState?'Loading assigned phone connections…':'Phone connections are unavailable.');if(viewScopeUnavailable&&remoteView())host.append(button('Open calling window',()=>continuity.focus(context)));replacePhoneContent(sections.connections,...host.childNodes);return;}
     const label=node('label','vp3-phone-field','Phone number'),select=node('select');select.setAttribute('aria-label','Selected phone number');select.dataset.phoneFocusKey='number';
     for(const number of state.numbers){const option=node('option',null,number.phone_e164+(number.agent_name?' · '+number.agent_name:''));option.value=String(number.id);select.append(option);}
-    select.value=String(state.selected_number_id||'');select.disabled=Boolean(stateError||active||callBusy||setupPending||pending.size);
+    select.value=String(state.selected_number_id||'');select.disabled=Boolean(stateError||active||callBusy||setupPending||pending.size||remoteState().attention);
     select.addEventListener('change',async()=>{const g=renderGeneration;if(!current(g))return;const id=Number(select.value);select.disabled=true;try{await api('select_number',{number_id:id},'POST',g);if(!current(g))return;clearGreeting();voicemailDraft=null;stopDevice('Phone number changed. Enable calls for this number.');await refresh();}catch(error){if(current(g))say(error.message);}finally{if(current(g))render();}});
     label.append(select);host.append(label);
-    const connection=node('div','vp3-phone-connection');connection.append(node('strong',null,deviceSession?.phase==='registered'?'Browser ready for incoming calls':deviceSession?'Connecting browser…':'Browser calls are off'));
-    const enable=button(deviceSession?'Turn off browser calls':'Enable calls in this browser',async()=>{
+    const remoteRegistered=remoteView()&&remoteState().registered;
+    const connection=node('div','vp3-phone-connection');connection.append(node('strong',null,remoteRegistered?'Calling window ready for incoming calls':deviceSession?.phase==='registered'?'Browser ready for incoming calls':deviceSession?'Connecting browser…':'Browser calls are off'));
+    const enable=button(remoteRegistered||deviceSession?'Turn off browser calls':remoteView()?'Open calling window':'Enable calls in this browser',async()=>{
+      if(remoteView()){
+        if(remoteRegistered)await continuity.control('disable',remoteState().attention?.call_id||null);
+        else continuity.focus(context);
+        return;
+      }
       if(deviceSession){
         registrationPreference(deviceSession.numberId,false);
         stopDevice('Browser calls are off.');
@@ -256,7 +294,11 @@
           if(sessionCurrent(session))registrationPreference(session.numberId,true);
         }catch{}
       }
-    });enable.disabled=!deviceSession&&(!canCall()||Boolean(voiceArm?.pending));connection.append(enable);host.append(connection);
+    });enable.disabled=!remoteRegistered&&!deviceSession&&(!canCall()||Boolean(voiceArm?.pending));connection.append(enable);host.append(connection);
+    if(windowReview?.kind==='owner_test'){
+      const review=node('section','vp3-phone-remote-call');review.append(node('strong',null,'Personal phone test call'),node('p',null,'Call the private number saved in your account.'));
+      review.append(button('Call my saved phone',()=>void placeCall(windowReview.to_number,{ownerPhoneRevision:windowReview.owner_phone_revision})));host.append(review);
+    }
     if(state.operator_live?.voice_available===true&&window.VP3OperatorVoiceMixerV1?.create){
       const arm=button(deviceSession?.voiceMixer?'Agent voice path prepared':voiceArm?'Disable prepared Agent voice':'Prepare Agent voice for browser calls',event=>void toggleVoiceArm(event,renderGeneration));
       arm.disabled=Boolean(deviceSession||active||callBusy||setupPending||pending.size||voiceArm?.pending);
@@ -266,7 +308,7 @@
     if(!chatEligible()){host.append(node('p','vp3-phone-empty','Open an owner Chat conversation to make or accept a call.'));const link=node('a','vp3-phone-report','Open Chat');link.href=new URL('chat.php',new URL(config.urlbase||'/',location.origin)).href;host.append(link);}
     if(connectedDraft)renderConnectedDial(host,renderGeneration);
     const dial=node('form','vp3-phone-dial'),dialLabel=node('label','vp3-phone-field','Dial a phone number'),input=node('input');input.type='tel';input.autocomplete='tel';input.placeholder='+16025550123';input.required=true;input.maxLength=20;input.pattern='\\+[1-9][0-9]{7,14}';input.setAttribute('aria-label','Phone number to call');input.dataset.phoneFocusKey='dial';input.value=dialDraft;input.addEventListener('input',()=>{dialDraft=input.value.slice(0,20);});dialLabel.append(input);
-    const send=node('button','vp3-phone-button vp3-phone-primary','Call');send.type='submit';send.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size);dial.append(dialLabel,send);
+    const send=node('button','vp3-phone-button vp3-phone-primary',remoteView()?'Review in Phone window':'Call');send.type='submit';send.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size||remoteState().attention);dial.append(dialLabel,send);
     if(enabled(selectedNumber()?.recording_enabled)&&state.recording_readiness?.ready!==false){
       const recordLabel=node('label','vp3-phone-check vp3-phone-record'),record=node('input');record.type='checkbox';record.checked=recordThisCall;record.dataset.phoneFocusKey='record-call';record.addEventListener('change',()=>{if(current(renderGeneration))recordThisCall=record.checked;});recordLabel.append(record,node('span',null,'Record this call'));dial.append(recordLabel,node('p','vp3-phone-empty vp3-phone-record','The person you call hears a recording notice. Your saved after-call settings control transcripts and reports.'));
     }
@@ -1061,6 +1103,7 @@
   }
   const voicePrefix="This is the VP3 AI assistant, relaying the owner's approved response. ";
   async function toggleVoiceArm(event,g){
+    if(remoteView()){if(event.isTrusted)continuity.focus(context);return;}
     if(!event.isTrusted||!current(g)||deviceSession||active||callBusy||pending.size||state?.operator_live?.voice_available!==true)return;
     if(voiceArm){voiceArm.mixer.close();voiceArm=null;render();return;}
     const Audio=window.AudioContext||window.webkitAudioContext;
@@ -1843,7 +1886,9 @@
       if(control?.can_end===true){const end=button('End managed call',event=>{if(event.isTrusted&&current(renderGeneration)&&window.confirm('End this managed call and block any pending destination connection?'))void runManagedControl('managed_end',id,renderGeneration);},'vp3-phone-button vp3-phone-danger');end.disabled=managedControlBusy.has(id);actions.append(end);}
       if(control?.end_state==='uncertain'||control?.end_state==='awaiting_identity'||control?.read_state==='destination_unresolved')card.append(node('p','vp3-phone-meta','Carrier outcome is unconfirmed. Check status or hang up directly on the connected phone. Do not retry a call.'));
     }
-    if(!entry&&!readOnlyLegacy&&!managed&&['ringing','incoming','offered'].includes(currentState))actions.append(button('Open Phone',()=>open()));
+    const remoteControlled=!entry&&remoteView()&&remoteState().attention?.call_id===id;
+    if(remoteControlled)remoteControls(actions,id);
+    if(!entry&&!remoteControlled&&!readOnlyLegacy&&!managed&&['ringing','incoming','offered'].includes(currentState))actions.append(button('Open Phone',()=>open()));
     if(!entry&&!managed&&['ended','completed','voicemail_ready','voicemail','no_answer','no-answer','busy','failed','declined','cancelled','canceled','missed'].includes(currentState)){
       const callback=button('Call back',()=>{if(current(renderGeneration))void placeCall(info.peer_e164);});callback.disabled=!canCall()||Boolean(active||callBusy||setupPending||pending.size)||!/^\+[1-9]\d{7,14}$/.test(info.peer_e164||'');actions.append(callback);
     }
@@ -2025,6 +2070,7 @@
   function expiry(value){const numeric=Number(value);return Number.isFinite(numeric)&&numeric>0?(numeric<1e12?numeric*1000:numeric):Date.parse(value);}
   async function credentials(numberId,g){const result=await api('token',{number_id:numberId},'POST',g);if(typeof result.token!=='string'||result.token.length<20||result.token.length>32768||typeof result.identity!=='string'||!result.identity||result.identity.length>150||!Number.isFinite(expiry(result.expires_at))||expiry(result.expires_at)<=Date.now()+1000)throw new Error('Phone authorization was not confirmed.');return result;}
   async function enableDevice(){
+    if(remoteView())throw new Error('Enable calls in the persistent Phone window.');
     const preparedScope=await ensureContext();if(!preparedScope||preparedScope.generation!==generation)return null;
     if(deviceSession)return deviceSession.ready||Promise.resolve(deviceSession);
     if(!canCall()){say('Select a ready phone number and open a Chat conversation first.');return Promise.resolve(null);}
@@ -2095,6 +2141,11 @@
     const paired=options.connected||null;
     if(paired&&paired!==connectedDraft)return false;
     const destination=String(rawNumber||'').trim();if(!paired&&!/^\+[1-9]\d{7,14}$/.test(destination)){say('Enter a phone number in international format, starting with +.');return;}
+    if(remoteView()){
+      const payload={scope:{agent_id:context.agent_id,conversation_id:context.conversation_id},kind:paired?'connected':ownerTest?'owner_test':'dial',to_number:destination,
+        record:options.record===true,owner_phone_revision:ownerTest?options.ownerPhoneRevision:0,connected:paired?{...paired,confirmed:false}:null};
+      const ok=continuity.review(payload);say(ok?'Review this call in the Phone window.':'Open the Phone window before calling.');return false;
+    }
     if(active||callBusy||setupPending||pending.size){say('Finish the current call before starting another.');return;}
     if(!canCall()){say('Select a ready phone connection and open a Chat conversation first.');open();return;}
     const preparedScope=await ensureContext();if(!preparedScope||active||callBusy||setupPending||pending.size||preparedScope.generation!==generation)return;
@@ -2152,14 +2203,21 @@
   function endActive(message){const entry=active;if(!entry)return;active=null;localStates.set(entry.info.public_id,'ended');releaseEntry(entry);callBusy=false;say(message);render();signalCallState();void refresh();}
   function clearAudio(){for(const audio of [...audioNodes]){audio.pause();audio.removeAttribute('src');audio.load();if(!audio.isConnected)audioNodes.delete(audio);}}
 
-  function revoke(){
+  function revoke(global=false){
+    if(remoteView()&&!global){
+      viewScopeUnavailable=true;generation++;for(const request of requests)request.abort();requests.clear();fetching=null;state=null;initialState=false;clearGreeting();clearAudio();
+      for(const section of Object.values(sections))section.replaceChildren();renderCards();render();return;
+    }
     if(!authorized)return;voicemailDraft=null;voicemailBusy=false;voicemailActions.clear();companionDrafts.clear();connectedDraft=null;clearOwnerSetup();authorized=false;generation++;stateError='';autoCallDraft=null;calendarDraft=null;admissionDraft=null;phoneContactDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone access is unavailable.');state=null;close();
     for(const item of document.querySelectorAll('[data-phone-workspace-toggle]'))item.hidden=true;
     for(const section of Object.values(sections))section.replaceChildren();renderCards();
+    continuity?.revoke();
   }
   function contextChanged(next={}){
     const normalized={conversation_id:principal(next.conversation_id),agent_id:principal(next.agent_id),ready:next.ready!==false};
     if(normalized.conversation_id===context.conversation_id&&normalized.agent_id===context.agent_id&&normalized.ready===context.ready)return;
+    if(windowOwner&&(active||pending.size||callBusy||setupPending))return false;
+    windowReview=null;viewScopeUnavailable=false;
     clearGreeting();voicemailDraft=null;voicemailBusy=false;voicemailActions.clear();companionDrafts.clear();clearManagedReview();connectedDraft=null;clearOwnerSetup();generation++;requestSequence++;stateError='';for(const request of requests)request.abort();requests.clear();fetching=null;clearAudio();removeAnnouncements();stopDevice('Phone context changed. Enable calls for the current conversation.');state=null;context=normalized;dialDraft='';recordThisCall=false;contactQuery='';initialState=true;localStates.clear();policyDrafts.clear();contactDrafts.clear();autoCallDraft=null;calendarDraft=null;admissionDraft=null;phoneContactDraft=null;render();void refresh();
   }
   function dispose(){if(disposed)return;voicemailDraft=null;voicemailBusy=false;voicemailActions.clear();companionDrafts.clear();connectedDraft=null;clearOwnerSetup();generation++;stateError='';autoCallDraft=null;calendarDraft=null;admissionDraft=null;phoneContactDraft=null;contactDrafts.clear();for(const request of requests)request.abort();requests.clear();removeAnnouncements();stopDevice('Phone is closed.');clearAudio();disposed=true;clearInterval(pollTimer);close();state=null;for(const section of Object.values(sections))section.replaceChildren();renderCards();}
@@ -2177,10 +2235,10 @@
   tabs.addEventListener('keydown',event=>{const list=Object.values(tabButtons),index=list.indexOf(event.target);if(index<0||!['ArrowRight','ArrowLeft','Home','End'].includes(event.key))return;event.preventDefault();selectTab(Object.keys(tabNames)[event.key==='Home'?0:event.key==='End'?list.length-1:(index+(event.key==='ArrowRight'?1:-1)+list.length)%list.length],true);});
   window.addEventListener('stonefellow:chat-context-changing',()=>contextChanged({...context,ready:false}));
   window.addEventListener('vp3:participant-selection-changed',()=>{const scope=window.STONEFELLOW_CHAT_CONTINUITY?.phoneCameraScope?.();contextChanged(scope?{conversation_id:scope.conversation,agent_id:scope.agent,ready:true}:{...context,ready:false});});
-  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearManagedReview();if(active?.captionSession)stopRemoteCaptions(active,'Live captions stopped when Chat left the foreground.');render();}});
+  document.addEventListener('visibilitychange',()=>{if(document.hidden){clearManagedReview();if(!windowOwner&&active?.captionSession)stopRemoteCaptions(active,'Live captions stopped when Chat left the foreground.');render();}});
   window.addEventListener('pagehide',dispose,{once:true});window.addEventListener('stonefellow:session-expired',revoke);window.addEventListener('stonefellow:logout',dispose);
   window.addEventListener('stonefellow:voice-lease-lost',()=>{if(greetingCapture){clearGreeting();say('Microphone ownership changed. Greeting recording stopped.');render();}if(active||callBusy)stopDevice('Microphone ownership changed. Phone audio has stopped.');});
-  pollTimer=setInterval(()=>{if(document.visibilityState==='visible'&&(opened||deviceSession||cards.size))void refresh();},10000);
+  pollTimer=setInterval(()=>{if((windowOwner||document.visibilityState==='visible')&&(opened||deviceSession||cards.size))void refresh();},10000);
   function operatorDiagnostics(conversation,agent){
     if(!current(generation)||stateError||!state||!context.ready||!positive(conversation)||context.conversation_id!==conversation||context.agent_id!==agent)return null;
     const routes={another_call:'Another call occupied the line',no_registered_browser:'No recent browser registration',different_agent:'Browser registered to another Agent',line_disabled:'Browser calls disabled for this line',browser_unavailable:'Browser routing unavailable'};
@@ -2210,12 +2268,52 @@
   function openHistory(source=document.activeElement){open(source);if(opened)selectTab('calls');}
   function openRecordings(source=document.activeElement){open(source);if(opened)selectTab('voicemail');}
   function attention(){const entry=active||pending.values().next().value;
+    if(remoteView())return remoteState().attention;
     if(!entry||!current(entry.generation)||!context.ready)return null;
     return {owner_id:Number(config.owner_id),call_id:entry.info.public_id,caller:callerContact(entry.info)?.name||callPeerName(entry.info),
       incoming:pending.has(entry.info.public_id),busy:callBusy||Boolean(setupPending),phase:entry.phase,conversation_id:context.conversation_id,agent_id:context.agent_id};
   }
-  window.VP3PhoneWorkspaceV1=Object.freeze({ownerId:Number(config.owner_id),attention,acceptCall,declineCall,endCall:id=>{if(active?.info.public_id===id)endActive('Call ended.');},operatorDiagnostics,open,openHistory,openRecordings,openOwnerSetup,openConnectedPhone,close,bindMessage,contextChanged,refresh,dispose});
+  function continuitySnapshot(){return {owner_id:Number(config.owner_id),authorized:authorized&&!disposed,generation,call_epoch:callEpoch,number_id:Number(selectedNumber()?.id||0),
+    registered:deviceSession?.phase==='registered',muted:active?.call?.isMuted?.()===true,scope:{agent_id:context.agent_id,conversation_id:context.conversation_id},attention:attention()?{...attention(),caller:String(attention().caller).slice(0,180)}:null};}
+  async function continuityControl(action,id,muted){
+    if(!authorized||disposed||!windowOwner)return false;
+    if(action==='disable'){
+      const number=deviceSession?.numberId;if(number)registrationPreference(number,false);stopDevice('Browser calls are off.');return true;
+    }
+    if(!publicId(id))return false;
+    if(action==='answer'){await acceptCall(id);return active?.info.public_id===id;}
+    if(action==='decline'){if(!pending.has(id))return false;declineCall(id);return true;}
+    if(active?.info.public_id!==id)return false;
+    if(action==='hangup'){endActive('Call ended.');return true;}
+    if(action==='mute'&&typeof muted==='boolean'&&active.call){
+      if(muted&&active.captionSession?.voiceTurn)takeOverVoice(active,'AI voice stopped when you muted the call.');
+      else if(muted&&active.captionSession?.mode==='both')stopRemoteCaptions(active,'Both-sided captions stopped when you muted your audio.');
+      active.call.mute(muted);render();return true;
+    }
+    return false;
+  }
+  function continuityReview(value){
+    if(!windowOwner||!authorized||disposed||active||pending.size||callBusy||setupPending||!value||!['dial','owner_test','connected'].includes(value.kind)||
+      !Number.isSafeInteger(value.scope?.agent_id)||value.scope.agent_id<0||!Number.isSafeInteger(value.scope?.conversation_id)||value.scope.conversation_id<0||
+      typeof value.to_number!=='string'||value.to_number.length>32||typeof value.record!=='boolean')return false;
+    if(value.kind!=='connected'&&!/^\+[1-9]\d{7,14}$/.test(value.to_number))return false;
+    if(value.kind==='owner_test'&&(!Number.isSafeInteger(value.owner_phone_revision)||value.owner_phone_revision<1))return false;
+    const p=value.connected;
+    if(value.kind==='connected'&&(!p||!publicId(p.device_id)||!publicId(p.profile_id)||!Number.isSafeInteger(p.profile_revision)||p.profile_revision<1||
+      !Number.isSafeInteger(p.phone_revision)||p.phone_revision<1||typeof p.name!=='string'||p.name.length>80||typeof p.masked!=='string'||p.masked.length>30))return false;
+    contextChanged({...value.scope,ready:true});windowReview=value;dialDraft=value.kind==='dial'?value.to_number:'';recordThisCall=value.record;
+    connectedDraft=value.kind==='connected'?{device_id:p.device_id,profile_id:p.profile_id,profile_revision:p.profile_revision,phone_revision:p.phone_revision,name:p.name,masked:p.masked,confirmed:false}:null;
+    open();selectTab('connections');say('Review the destination and choose Call in this window.');render();return true;
+  }
+  const publicAccept=id=>remoteView()?continuity.control('answer',id):acceptCall(id),publicDecline=id=>remoteView()?continuity.control('decline',id):declineCall(id);
+  window.VP3PhoneWorkspaceV1=Object.freeze({ownerId:Number(config.owner_id),attention,acceptCall:publicAccept,declineCall:publicDecline,endCall:id=>{if(remoteView())return continuity.control('hangup',id);if(active?.info.public_id===id)endActive('Call ended.');},operatorDiagnostics,open,openHistory,openRecordings,openOwnerSetup,openConnectedPhone,close,bindMessage,contextChanged,refresh,dispose,continuitySnapshot,continuityControl,continuityReview});
   layer.id='vp3PhoneWorkspace';
+  continuity?.attach(window.VP3PhoneWorkspaceV1);
+  window.addEventListener('vp3:phone-continuity-changed',()=>{if(!disposed){render();window.dispatchEvent(new CustomEvent('vp3:phone-call-state',{detail:{busy:Boolean(remoteState().attention),source:'phone-window'}}));}});
   window.dispatchEvent(new Event('vp3:phone-workspace-ready'));
   render();void refresh();
+  }
+  if(window.VP3_PHONE_WORKSPACE_V1?.continuity_role==='owner'){
+    const ready=window.VP3PhoneContinuityV1?.ready;if(ready)void ready.then(ok=>{if(ok)boot();});
+  }else boot();
 })();

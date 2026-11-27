@@ -62,7 +62,8 @@
 
   function collectMessages() {
     const found = new Map();
-    thread.querySelectorAll('.message[data-chat-message-role="assistant"][data-chat-message-id]').forEach(element => {
+    thread.querySelectorAll('.message[data-chat-message-id]').forEach(element => {
+      if(element.dataset.chatMessageRole!=='assistant'&&element.dataset.phoneIncoming!=='true')return;
       const id = Number(element.dataset.chatMessageId);
       if (positiveId(id) && Number(element.dataset.chatConversationId) === conversationId
         && element.querySelector('.message-text')?.textContent.trim()) found.set(id, element);
@@ -227,6 +228,7 @@
       }
       paint();
       try { localStorage.setItem('vp3:chat-read:v1:' + ownerId + ':' + agentId + ':' + id,String(Date.now())); } catch (_error) {}
+      window.dispatchEvent(new CustomEvent('vp3:chat-messages-read',{detail:{owner_id:ownerId,agent_id:agentId,conversation_id:id}}));
     } finally {
       acknowledging = false;
       void acknowledgeScrolled();

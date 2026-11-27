@@ -4,6 +4,19 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-chat-boundary-v380.php';
 require_once __DIR__.'/agent-capability-chat-v1.php';
 
+function vp3_chat_read_phone_posts_v1(PDO $pdo): bool
+{
+    try{$pdo->query('SELECT user_message_id,conversation_id FROM vp3_paired_phone_turns_v1 WHERE 1=0');return true;}
+    catch(PDOException){return false;}
+}
+
+/** Owner-authored turns stay excluded; only canonical incoming phone turns qualify. */
+function vp3_chat_read_eligible_sql_v1(PDO $pdo): string
+{
+    $phone=vp3_chat_read_phone_posts_v1($pdo)?" OR (m.role='user' AND EXISTS (SELECT 1 FROM vp3_paired_phone_turns_v1 p WHERE p.user_message_id=m.id AND p.conversation_id=m.conversation_id))":'';
+    return "(m.role='assistant'".$phone.") AND TRIM(m.message)<>''";
+}
+
 function vp3_chat_read_schema_ready_v1(PDO $pdo): bool
 {
     try{
@@ -42,6 +55,14 @@ function vp3_chat_read_ensure_schema_v1(PDO $pdo): void
                 SELECT c.user_id,COALESCE(c.user_agent_id,0),m.conversation_id,m.id
                 FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id
                 WHERE m.role=\'assistant\' AND TRIM(m.message)<>\'\'');
+        }
+        // One-time rollout for incoming paired-phone posts. Existing phone
+        // history starts read; upgrades never consume subsequently new posts.
+        if($pdo->exec($insert.' INTO agent_chat_read_rollout_v1(singleton_id) VALUES(2)')===1&&vp3_chat_read_phone_posts_v1($pdo)){
+            $pdo->exec($insert." INTO agent_chat_read_receipts_v1(owner_user_id,agent_id,conversation_id,message_id)
+                SELECT c.user_id,COALESCE(c.user_agent_id,0),m.conversation_id,m.id
+                FROM chat_messages m JOIN chat_conversations c ON c.id=m.conversation_id
+                WHERE m.role='user' AND ".vp3_chat_read_eligible_sql_v1($pdo));
         }
         $pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
@@ -88,17 +109,18 @@ function vp3_chat_read_scope_v1(PDO $pdo,array $user,int $agentId,int $conversat
     return $live;
 }
 
-/** Only exact, persisted, completed assistant posts can acquire a read receipt. */
+/** Only exact completed assistant or canonical incoming phone posts qualify. */
 function vp3_chat_read_result_v1(PDO $pdo,int $owner,int $agentId,int $conversationId,array $ids,bool $forUpdate=false): array
 {
     $unread=[];
     if($ids){
         $slots=implode(',',array_fill(0,count($ids),'?'));
         $lock=$forUpdate&&$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)!=='sqlite'?' FOR UPDATE':'';
+        $eligible=vp3_chat_read_eligible_sql_v1($pdo);
         $stmt=$pdo->prepare("SELECT m.id,r.message_id AS read_message_id FROM chat_messages m
             LEFT JOIN agent_chat_read_receipts_v1 r ON r.owner_user_id=? AND r.agent_id=?
                 AND r.conversation_id=m.conversation_id AND r.message_id=m.id
-            WHERE m.conversation_id=? AND m.role='assistant' AND TRIM(m.message)<>'' AND m.id IN ($slots)".$lock);
+            WHERE m.conversation_id=? AND ($eligible) AND m.id IN ($slots)".$lock);
         $stmt->execute([$owner,$agentId,$conversationId,...$ids]);
         $rows=$stmt->fetchAll(PDO::FETCH_ASSOC);
         if(count($rows)!==count($ids))throw new DomainException('message_not_available');
@@ -107,6 +129,34 @@ function vp3_chat_read_result_v1(PDO $pdo,int $owner,int $agentId,int $conversat
         foreach($ids as $id)if(!$read[$id])$unread[]=$id;
     }
     return ['agent_id'=>$agentId,'conversation_id'=>$conversationId,'message_ids'=>$ids,'unread_message_ids'=>$unread];
+}
+
+/** Read-only, bounded sidebar projection; no counts from another account or inactive Agent. */
+function vp3_chat_read_sidebar_v1(PDO $pdo,array $user,array $conversationIds): array
+{
+    $ids=vp3_chat_read_ids_v1($conversationIds);
+    if(count($ids)>50)throw new InvalidArgumentException('too_many_conversations');
+    if(!vp3_chat_read_schema_ready_v1($pdo))throw new RuntimeException('chat_read_schema_not_ready',503);
+    if(function_exists('vp3_participant_scope_v1')&&vp3_participant_scope_v1()!==null)throw new RuntimeException('forbidden',403);
+    $principal=vp3_agent_chat_principal_v380($user,null);
+    $live=vp3_capability_live_user_v1($pdo,$user,$principal,[],null);
+    if(!has_permission('account.access',$live)||!has_permission('chat.access',$live))throw new RuntimeException('forbidden',403);
+    $out=[];
+    if($ids){
+        $slots=implode(',',array_fill(0,count($ids),'?'));$eligible=vp3_chat_read_eligible_sql_v1($pdo);
+        $stmt=$pdo->prepare("SELECT c.id,COALESCE(c.user_agent_id,0) AS agent_id,
+            SUM(CASE WHEN m.id IS NOT NULL AND r.message_id IS NULL THEN 1 ELSE 0 END) AS unread_count
+            FROM chat_conversations c
+            LEFT JOIN chat_messages m ON m.conversation_id=c.id AND ($eligible)
+            LEFT JOIN agent_chat_read_receipts_v1 r ON r.owner_user_id=c.user_id AND r.agent_id=COALESCE(c.user_agent_id,0)
+                AND r.conversation_id=c.id AND r.message_id=m.id
+            WHERE c.user_id=? AND c.id IN ($slots) AND (COALESCE(c.user_agent_id,0)=0 OR EXISTS
+                (SELECT 1 FROM user_agents a WHERE a.id=c.user_agent_id AND a.owner_user_id=c.user_id AND a.is_active=1))
+            GROUP BY c.id,c.user_agent_id");
+        $stmt->execute([(int)$live['id'],...$ids]);
+        foreach($stmt->fetchAll(PDO::FETCH_ASSOC) as $row)$out[]=['conversation_id'=>(int)$row['id'],'agent_id'=>(int)$row['agent_id'],'unread_count'=>(int)$row['unread_count']];
+    }
+    return ['owner_user_id'=>(int)$live['id'],'conversations'=>$out];
 }
 
 function vp3_chat_read_state_v1(PDO $pdo,array $user,int $agentId,int $conversationId,array $messageIds): array

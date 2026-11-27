@@ -68,6 +68,10 @@ jobs:
             "canvas_source_editor": "owner-draft-v1",
             "notification_reliability": "semantic-wake-v1",
             "agent_phone_shell": "account-context-v1",
+            "phone_call_continuity": "persistent-window-v1",
+            "phone_agent_activity": "all-view-background-v1",
+            "chat_sidebar_unread": "native-receipts-v1",
+            "phone_canvas_loading": "bounded-read-retry-v1",
             "member_transcriptions": "account-bound-library-v1",
             "admin_shell": "standard-header-v1",
             "music_catalog_schema": "music-song-metadata-v1-20261126",
@@ -521,6 +525,8 @@ jobs:
           test -f _deploy/chat-coding-canvas-v1.js
           test -f _deploy/coding-canvas-diff-v1.js
           test -f _deploy/coding-canvas-source-editor-v1.js
+          test -f _deploy/chat-sidebar-unread-v1.js
+          test -f _deploy/chat-sidebar-unread-v1.css
           test -f _deploy/includes/coding-canvas-source-v1.php
           test -f _deploy/assets/vendor/acorn-8.19.0.js
           test -f _deploy/assets/vendor/acorn-LICENSE.txt
@@ -641,7 +647,7 @@ jobs:
                       includes/phone-agent-workspace-native-v1.php includes/phone-agent-workspace-view-v1.php \
                       includes/phone-agent-device-grants-v1.php includes/coding-canvas-phone-v1.php \
                       includes/phone-agent-alerts-v1.php includes/notification-read-transactions-v1.php docs/NOTIFICATIONS-RELIABILITY-V1.txt \
-                      includes/agent-phone-shell-v1.php api/agent-phone-shell-v1.php agent-phone-shell-v1.js agent-composer-v1.css includes/member-transcriptions-v1.php admin/admin-header-standard-v1.css docs/AGENT-PHONE-CROSS-PAGE-DEPLOY.txt \
+                      includes/agent-phone-shell-v1.php api/agent-phone-shell-v1.php agent-phone-shell-v1.js agent-composer-v1.css includes/phone-call-continuity-v1.php phone-call-window-v1.php phone-call-window-v1.css phone-call-continuity-v1.js docs/PHONE-CALL-CONTINUITY-DEPLOY.txt includes/member-transcriptions-v1.php admin/admin-header-standard-v1.css docs/AGENT-PHONE-CROSS-PAGE-DEPLOY.txt \
                       phone-agent-workspace-v1.js phone-agent-workspace-v1.css phone-agent-workspace-media-v1.js \
                       phone-agent-item-v1.js phone-agent-item-v1.css docs/PHONE-AGENT-WORKSPACE-V1.txt; do
             test -s "_deploy/$path"
