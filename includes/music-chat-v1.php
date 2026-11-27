@@ -47,6 +47,9 @@ function vp3_music_chat_parse_v1(string $request): ?array
     if($text===''||preg_match('/\A(?:do not|don[\x{2019}\x27]t|never|how|why|what|when|which|who|explain|tell me)\b/iu',$text))return null;
     if(preg_match('/\b(?:watch history|listening history|listen(?:ed|ing) history|played (?:earlier|yesterday)|resume (?:my |the )?last|continue (?:my |the )?last)\b/iu',$text)
         ||preg_match('~\A(?:/dj\b|/music\s+resume\b|(?:start|stop|turn (?:on|off))\s+(?:the\s+)?DJ\b)~iu',$text))return null;
+    // These named local services already have their own read/capability route.
+    // The public parser shields quoted song and playlist titles before this check.
+    if(preg_match('/\b(?:Home\s*Server|(?:Music|Media)\s+Server)\b/iu',$text))return null;
     if(preg_match('/\b(?:videos?|movies?|films?|tutorials?|recipes?|documentar(?:y|ies)|lectures?|podcasts?|games?|chess|checkers|trivia|roleplay)\b/iu',$text))return null;
     if(preg_match('/\A(?:show|tell|teach|explain)(?:\s+me)?\s+(?:how|why|what|whether)\b/iu',$text))return null;
 

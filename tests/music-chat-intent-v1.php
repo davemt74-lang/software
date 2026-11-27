@@ -45,6 +45,10 @@ foreach([
     ['Play "YouTube" by Artist Name','play',1,'both',true,'YouTube'],
     ['Play "YouTube" by Artist Name from VP3','play',1,'vp3',true,'YouTube'],
     ['Play "Twenty Songs" by Artist Name','play',1,'both',true,'Twenty Songs'],
+    ['Play "HomeServer" by Artist Name from VP3','play',1,'vp3',true,'HomeServer'],
+    ['Play "Home Server" by Artist Name from VP3','play',1,'vp3',true,'Home Server'],
+    ['Play "Music Server" by Artist Name on YouTube','play',1,'youtube',true,'Music Server'],
+    ['Play "Media Server" by Artist Name','play',1,'both',true,'Media Server'],
     ['Show me 2 songs but not from YouTube','show',2,'vp3',false,''],
     ['Show me 2 songs not on VP3','show',2,'youtube',false,''],
     ['Play one song from VP3 and not YouTube','play',1,'vp3',true,''],
@@ -69,6 +73,12 @@ foreach([
     'Show my listening history',
     '/dj start',
     'Resume my last track',
+    'Search local Music Server library',
+    'Search local Media Server library',
+    'Search my HomeServer music library for jazz',
+    'Can you play music on HomeServer?',
+    'Can you play music on my home server?',
+    'Search my home server music library for jazz',
 ] as $request)music_intent_equal(vp3_music_chat_plan_v1($request),null,'Unrelated discussion, negation, video, or history stays on its route: '.$request);
 music_intent_equal(vp3_music_chat_plan_v1('Play the second one')['selection']['index'],2,'Ordinal is global result position');
 music_intent_equal(vp3_music_chat_plan_v1('Play that playlist')['intent'],'play_playlist','Saved playlist followup is explicit');

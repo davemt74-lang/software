@@ -5,8 +5,10 @@
 The user approved this build on 2026-11-27 after the read-only audit of main
 `201738f46cb1bfb6c0b0365dff8fb453630f08e6`. Implementation begins from refreshed
 main `bd8a62229164f03d13966a3fef0496ab7395fa40`, preserving the intervening phone
-and Canvas releases. The implementation PR owns exact final candidate, test,
-merge and package qualification.
+and Canvas releases. [PR #957](https://github.com/davemt74-lang/software/pull/957)
+owns exact final candidate, test, merge and package qualification, including
+integration with subsequent main changes. Its release record is authoritative;
+historical local evidence below is not a substitute for the final gates.
 
 The Media/Entertainment specialist has exactly two audio discovery sources:
 **VP3 media/audio** and **YouTube**. Stoneward distributes the VP3 catalog and is

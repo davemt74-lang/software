@@ -71,11 +71,10 @@ function agent_runtime_v125_idempotency_claim($scope,$key,...$args){
 function agent_runtime_v125_idempotency_complete($scope,$key,$result){
     file_put_contents(__DIR__.'/../idempotency-'.hash('sha256',$scope.'|'.$key).'.json',json_encode($result,JSON_THROW_ON_ERROR));
 }
-function track_is_playlist_request($q){return false;}
-function track_is_next_request($q){return false;}
-function track_media_from_answer(...$args){return [];}
-function track_media_suggestions(...$args){return [];}
-function track_merge_media_suggestions(...$args){return [];}
+// These nonmedia fixtures have no native catalog. Keep recommendation and Chat
+// dispatch code real so provisional music searches can correctly fall through.
+function get_tracks(): array{return [];}
+require_once __DIR__.'/recommendations.php';
 function url($path){return $path;}
 function member_navigation_menu_links($u){return [['key'=>'contacts','label'=>'Contacts','url'=>'/contacts.php']];}
 if(!isset($_SERVER['HTTP_X_FIXTURE_RELEASE_READY'])){

@@ -207,6 +207,7 @@ function music_chat_http_page_v1(): void
     ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Music Chat acceptance fixture</title><link rel="stylesheet" href="/chat.css"><link rel="stylesheet" href="/chat-youtube-v1.css"><link rel="stylesheet" href="/assets/css/music-chat-v1.css">
     <style>body{margin:0;background:#f4f6f9;font-family:Arial,sans-serif}.fixture-top{padding:18px 20px;border-bottom:1px solid #d9e1e8;background:#fff;font-weight:700}.chat-app{min-height:100vh;grid-template-columns:minmax(0,1fr)}.chat-main{min-width:0}#chatForm{display:flex;gap:8px;padding:12px}#chatInput{flex:1;min-width:0;min-height:48px}#sendChatButton{min-height:48px}.fixture-label{font-size:12px;color:#526174;font-weight:400}</style></head><body>
+    <nav hidden aria-label="Fixture chat history"><button id="newChatButton" type="button">New chat</button><div id="chatHistory" class="chat-history"></div></nav>
     <div class="chat-app"><main class="chat-main"><header class="fixture-top">Media &amp; Entertainment <span class="fixture-label">VP3 + YouTube</span></header>
     <section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section>
     <div class="chat-composer-shell" id="chatComposerShell"><?= $nowPlaying ?><form class="chat-composer" id="chatForm"><textarea id="chatInput" aria-label="Message"></textarea><button id="sendChatButton">Send</button></form></div>

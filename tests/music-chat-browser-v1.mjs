@@ -15,6 +15,7 @@ const fixture = await startMusicChatFixture();
 let browser;
 let checks = 0;
 const errors = [];
+const openedPages = [];
 const check = (condition, message) => { assert.ok(condition, message); checks += 1; };
 const equal = (actual, expected, message) => { assert.deepEqual(actual, expected, message); checks += 1; };
 
@@ -66,6 +67,7 @@ async function pageFor(viewport = {width:1280, height:900}) {
   const context = await browser.newContext({viewport, hasTouch:viewport.width < 600, extraHTTPHeaders:{'X-User':'11'}});
   await context.addInitScript(mockedYouTubeIframeApi);
   const page = await context.newPage();
+  openedPages.push(page);
   page.on('pageerror', error => errors.push(error.message));
   await page.route('https://www.youtube.com/**', route => route.fulfill({contentType:'text/html', body:
     '<!doctype html><html lang="en"><body style="margin:0;background:#161616;color:white;font:16px Arial;display:grid;place-items:center;height:100vh"><div>Mocked YouTube IFrame API<br><small>Visible player acceptance fixture</small></div></body></html>'}));
@@ -434,6 +436,36 @@ try {
     php:'actual production Music Chat/API, canonical media/receipts and YouTube history',
     youtube:'explicit external search and IFrame API mocks; no live Google certification'}, null, 2));
   console.log(`Music Chat ${engineName}: ${checks} checks passed; screenshots in ${artifactDir}. External YouTube APIs explicitly mocked.`);
+} catch (error) {
+  // Keep the original failing assertion, plus the actual browser/PHP evidence.
+  // In particular, bootstrap errors must not disappear behind a readiness timeout.
+  console.error('Music Chat browser failure:', JSON.stringify({engine:engineName, checks, errors}));
+  const pages = [];
+  for (const [index, page] of openedPages.entries()) {
+    if (page.isClosed()) continue;
+    const state = await page.evaluate(() => ({
+      url:location.href,
+      musicLoaded:!!window.VP3_MUSIC_CHAT_V1,
+      continuityLoaded:!!window.STONEFELLOW_CHAT_CONTINUITY,
+      conversationId:window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.(),
+      cards:document.querySelectorAll('.vp3-music-chat').length,
+      audio:[...document.querySelectorAll('audio')].map(audio => ({
+        paused:audio.paused, ended:audio.ended, readyState:audio.readyState,
+        currentTime:audio.currentTime, duration:audio.duration
+      }))
+    })).catch(reason => ({error:String(reason)}));
+    pages.push(state);
+    await Promise.allSettled([
+      page.screenshot({path:path.join(artifactDir, `failure-page-${index}.png`), fullPage:false}),
+      page.content().then(html => fs.writeFile(path.join(artifactDir, `failure-page-${index}.html`), html))
+    ]);
+  }
+  await Promise.allSettled([
+    fs.writeFile(path.join(artifactDir, 'failure.json'), JSON.stringify({engine:engineName, checks,
+      error:String(error.stack || error), errors, pages}, null, 2)),
+    fs.writeFile(path.join(artifactDir, 'php.log'), fixture.logs)
+  ]);
+  throw error;
 } finally {
   await browser?.close(); fixture.close();
 }
