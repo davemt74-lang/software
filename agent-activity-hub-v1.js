@@ -1022,6 +1022,7 @@
       if (message.followthrough_record && window.VP3EmailFollowthroughV1?.mount && view.followAvailable !== false)
         view.followthroughRecord = window.VP3EmailFollowthroughV1.mount(followup,message.followthrough_record,gmailFollowthroughOptions(view));
       if (!window.VP3GmailEmailDisplayV1?.mount(body,message)) body.append(node('p',message.body || 'No readable text in this email.','vp3-gmail-sent-body'));
+      window.VP3GmailDocumentsV1?.mount(body,message.documents);
       view.message.textContent = '';host.scrollTop = 0;title.focus({preventScroll:true});positionSpecialist();return true;
     } catch (error) {
       if (gmailCurrent(view) && error.name !== 'AbortError' && ![401,403,404,409,419].includes(error.status)) view.message.textContent = error.message;

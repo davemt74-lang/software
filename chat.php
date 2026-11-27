@@ -640,6 +640,7 @@ $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-emai
     . '<link rel="stylesheet" href="'.e(url('/email-writing-preferences-v1.css?v='.substr(hash_file('sha256',__DIR__.'/email-writing-preferences-v1.css'),0,12))).'">'
     . '<link rel="stylesheet" href="'.e(url('/chat-email-composer-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-email-composer-v1.css'),0,12))).'">'
     . '<link rel="stylesheet" href="'.e(url('/chat-email-followthrough-v1.css?v='.substr(hash_file('sha256',__DIR__.'/chat-email-followthrough-v1.css'),0,12))).'">'
+    . '<link rel="stylesheet" href="'.e(url('/gmail-documents-v1.css?v='.substr(hash_file('sha256',__DIR__.'/gmail-documents-v1.css'),0,12))).'">'
     . '<link rel="stylesheet" href="'.e(url('/gmail-email-display-v1.css?v='.substr(hash_file('sha256',__DIR__.'/gmail-email-display-v1.css'),0,12))).'">'
     . '<script>window.VP3_CHAT_EMAIL_V1='.json_encode([
         'endpoint'=>url('/api/chat-email-v1.php'),'csrf'=>csrf_token(),
@@ -649,6 +650,7 @@ $initiativeWorkbenchRuntime .= '<link rel="stylesheet" href="'.e(url('/chat-emai
         'githubWorkflow'=>['endpoint'=>url('/connection-gmail-github.php')],
         'ownerKey'=>(string)$user['id'],'agentId'=>(int)($activeUserAgent['id']??0),
     ],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    . '<script src="'.e(url('/gmail-documents-v1.js?v='.substr(hash_file('sha256',__DIR__.'/gmail-documents-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/gmail-email-display-v1.js?v='.substr(hash_file('sha256',__DIR__.'/gmail-email-display-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-email-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-email-v1.js'),0,12))).'" defer></script>'
     . '<script src="'.e(url('/chat-email-followthrough-v1.js?v='.substr(hash_file('sha256',__DIR__.'/chat-email-followthrough-v1.js'),0,12))).'" defer></script>'

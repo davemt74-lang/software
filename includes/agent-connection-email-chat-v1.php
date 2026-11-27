@@ -235,12 +235,15 @@ function agent_connection_email_chat_open_search_v1(PDO $pdo, array $user, array
     $agent = (int)($principal['agent_id']??0);
     $item = agent_connection_email_chat_search_item_v1($pdo,$owner,$agent,$conversation,$ref);
     $access = agent_connections_access_v1($owner,$item['connection_id'],'read',$http,$item['authorization_key']);
-    $message = agent_connection_gmail_read_v1($access['access_token'],$item['message_id'],$http,true);
+    $raw = agent_connection_gmail_get_v1($access['access_token'],$item['message_id'],true,$http);
+    $message = agent_connection_gmail_read_message_v1($raw,true);
+    require_once __DIR__.'/agent-gmail-documents-v1.php';
+    $documents=agent_gmail_document_source_v1($pdo,$live,$item['connection_id'],$item['authorization_key'],$raw);
     agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
     $current = agent_connection_email_chat_record_v1($owner,$item['connection_id'],'read',$item['authorization_key']);
     return ['subject'=>$message['subject'],'from'=>$message['from'],'body'=>mb_substr($message['body'],0,6000),
         'can_reply'=>!empty($current['permissions']['send']) && !array_intersect($message['labels'],['SENT','DRAFT','SPAM','TRASH'])]
-        + (isset($message['display']) ? ['display'=>$message['display']] : []);
+        + (isset($message['display']) ? ['display'=>$message['display']] : []) + $documents;
 }
 
 function agent_connection_email_chat_view_v1(array $result, string $answer, array $context): array

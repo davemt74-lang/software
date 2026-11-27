@@ -59,7 +59,7 @@ function agent_gmail_workspace_connection_v1(PDO $pdo,int $owner): array
             array_flip(['id','authorization_key','client_fingerprint','account_email','status','read_enabled','send_enabled','followups_enabled']))],JSON_THROW_ON_ERROR))];
 }
 
-function agent_gmail_workspace_capabilities_v1(array $connection,bool $drafts,bool $followthrough=false,bool $writingPreferences=false): array
+function agent_gmail_workspace_capabilities_v1(array $connection,bool $drafts,bool $followthrough=false,bool $writingPreferences=false,bool $documents=false): array
 {
     $permissions = $connection['view']['permissions'] ?? [];
     $send = $connection['send'] && $drafts;
@@ -81,6 +81,9 @@ function agent_gmail_workspace_capabilities_v1(array $connection,bool $drafts,bo
         'images'=>['state'=>'checked_on_request','actions'=>['upload_image','choose_owned_image','generate_image'],
             'limits'=>'Image permissions, supported files, provider readiness and usage limits are checked by the existing composer.'],
         'styled_reader'=>['available'=>$connection['read'],'formats'=>['isolated_html_css','plain_text']],
+        'attachment_understanding'=>['available'=>$connection['read'] && $documents,'surfaces'=>['gmail_popup','chat_canvas','phone_agent'],
+            'entry'=>'Open an exact email, expand Attachments, then choose Analyze attachment.',
+            'limits'=>'Explicit review of one PDF or supported image up to 2 MiB. Saved summaries stay in the private reader. Agent page references need original-file review. Suggested reply wording requires owner review and never saves, sends, creates tasks or changes writing preferences automatically.'],
         'followups'=>['available'=>$connection['read'] && !empty($permissions['followups']),
             'limits'=>'Existing reply and sender watches only; a waiting watch does not prove that no reply exists.'],
         'response_deadlines'=>['available'=>$followthrough && $connection['read'] && !empty($permissions['followups']),
@@ -307,11 +310,12 @@ function agent_gmail_workspace_context_v1(PDO $pdo,array $user,array $principal,
     $connection=agent_gmail_workspace_connection_v1($pdo,$owner);
     require_once __DIR__.'/agent-email-followthrough-v1.php';
     require_once __DIR__.'/agent-email-preferences-schema-v1.php';
+    require_once __DIR__.'/agent-gmail-documents-schema-v1.php';
     $out=['contract'=>VP3_GMAIL_WORKSPACE_CONTEXT_V1,'owner_user_id'=>$owner,'agent_id'=>$agent,'conversation_id'=>$conversationId,
         'observed_at'=>gmdate(DATE_ATOM,$now),'state'=>$connection['state'],'mailbox_revision'=>$connection['revision'],
         'read_available'=>$connection['read'],'send_available'=>$connection['send'],'instructions_authority'=>false,'execution_authority'=>false,
         'capabilities'=>agent_gmail_workspace_capabilities_v1($connection,table_exists('agent_connection_email_drafts_v1'),
-            agent_email_followthrough_ready_v1($pdo),agent_email_preferences_ready_v1($pdo)),
+            agent_email_followthrough_ready_v1($pdo),agent_email_preferences_ready_v1($pdo),agent_gmail_documents_ready_v1($pdo)),
         'coverage'=>['drafts'=>'saved_vp3_drafts_for_selected_agent','sent'=>'verified_vp3_sends_only',
             'mailbox_sent'=>'on_demand_not_loaded','message_bodies'=>'not_loaded','history'=>'bounded_previews','followthrough'=>'saved_owner_deadlines_not_live_mailbox'],
         'drafts'=>['state'=>'unavailable','counts'=>null,'items'=>[]],

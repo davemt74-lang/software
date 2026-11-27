@@ -294,8 +294,10 @@ function agent_email_review_queue_source_v1(PDO $pdo, array $user, array $princi
         throw new DomainException('The original email no longer matches this saved draft.',409);
     }
     $display = agent_connection_gmail_read_message_v1($message,true);
+    require_once __DIR__.'/agent-gmail-documents-v1.php';
+    $documents=agent_gmail_document_source_v1($pdo,$user,(int)$draft['connection_id'],$draft['authorization_key'],$message);
     agent_email_review_queue_source_current_v1($pdo,$user,$principal,$draft,$revision);
     return ['draft_id'=>$id,'edit_revision'=>$revision,'conversation_id'=>$conversation,
         'message'=>['subject'=>$display['subject'],'from'=>$display['from'],'body'=>mb_substr($display['body'],0,8000)]
-            + (isset($display['display']) ? ['display'=>$display['display']] : [])];
+            + (isset($display['display']) ? ['display'=>$display['display']] : []) + $documents];
 }

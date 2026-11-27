@@ -400,12 +400,14 @@ function agent_connection_gmail_inbox_open_match_v1(PDO $pdo, array $user, strin
     agent_connection_gmail_inbox_legacy_item_v1($pdo,$user,$ref);
     $raw = agent_connection_gmail_get_v1($access['access_token'],$id,true,$http);
     $message = agent_connection_gmail_read_message_v1($raw,true);
+    require_once __DIR__.'/agent-gmail-documents-v1.php';
+    $documents=agent_gmail_document_source_v1($pdo,$user,(int)$policy['connection_id'],$policy['authorization_key'],$raw);
     agent_connection_gmail_inbox_legacy_item_v1($pdo,$user,$ref);
     if (!agent_connection_gmail_inbox_legacy_match_v1($item,$message)) throw new DomainException('This Gmail match changed.',409);
     $answered = agent_connection_gmail_inbox_answered_messages_v1($pdo,agent_connection_gmail_inbox_initial_scope_v1($pdo,$user),[$id]);
     return ['subject'=>$message['subject'],'from'=>$message['from'],'body'=>mb_substr($message['body'],0,6000),'auto_reply'=>false]
         + (isset($message['display']) ? ['display'=>$message['display']] : [])
-        + (isset($answered[$id]) ? ['answered_in_gmail'=>true] : []);
+        + (isset($answered[$id]) ? ['answered_in_gmail'=>true] : []) + $documents;
 }
 
 function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string $ref, ?callable $http=null, bool $includeLinks=false): array
@@ -416,8 +418,11 @@ function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string
     $raw = agent_connection_gmail_get_v1($access['access_token'],$item['message_id'],true,$http);
     $message = agent_connection_gmail_read_message_v1($raw,true);
     if ($item !== agent_connection_gmail_inbox_item_v1($pdo,$user,$ref)) throw new DomainException('Gmail review changed.',409);
+    require_once __DIR__.'/agent-gmail-documents-v1.php';
+    $documents=agent_gmail_document_source_v1($pdo,$user,$item['connection_id'],$item['authorization_key'],$raw);
     $result = ['subject'=>$message['subject'],'from'=>$message['from'],'body'=>mb_substr($message['body'],0,6000)]
         + (isset($message['display']) ? ['display'=>$message['display']] : []);
+    $result += $documents;
     if ($includeLinks) {
         require_once __DIR__.'/agent-connection-gmail-link-source-v1.php';
         $result['links'] = agent_connection_gmail_link_message_urls_v1($raw);

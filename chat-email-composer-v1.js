@@ -309,6 +309,13 @@
       state.sourceContent.append(heading);
       const plain = parent => parent.append(node('p',message.body || 'No readable text in this email.'));
       if (!window.VP3GmailEmailDisplayV1?.mount(state.sourceContent,message,{renderPlain:plain})) plain(state.sourceContent);
+      window.VP3GmailDocumentsV1?.mount(state.sourceContent,message.documents,{isCurrent:() => current(state) && sameSelection(selection) && state.sourceKey === sourceKey,
+        onUseReply:async body => {
+          if (!current(state) || !sameSelection(selection) || state.sourceKey !== sourceKey || !state.draft.can_edit) return;
+          navigate(state,() => {if (!current(state) || !sameSelection(selection)) return;
+            state.body.value = body;state.body.dispatchEvent(new Event('input',{bubbles:true}));resizeBody(state.body);
+            setNotice(state,'Suggested wording added. Review the email before saving or sending.');});
+        }});
       state.sourceStatus.textContent = 'Original message for this draft.';state.sourceRead.textContent = 'Refresh original email';
       return true;
     } catch (error) {

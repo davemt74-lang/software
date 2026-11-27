@@ -63,6 +63,8 @@ function agent_connections_install_v1(PDO $pdo): void
     agent_connection_email_followup_install_v1($pdo);
     agent_email_followthrough_install_v1($pdo);
     agent_email_preferences_install_v1($pdo);
+    require_once __DIR__.'/agent-gmail-documents-schema-v1.php';
+    agent_gmail_documents_install_v1($pdo);
     agent_connection_gmail_inbox_install_v1($pdo);
     agent_connection_gmail_inbox_receipts_install_v1($pdo);
     agent_connection_gmail_inbox_initial_install_v1($pdo);

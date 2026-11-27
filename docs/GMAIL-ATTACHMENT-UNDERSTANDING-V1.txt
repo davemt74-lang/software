@@ -1,0 +1,114 @@
+Gmail attachment understanding V1
+================================
+
+Install
+-------
+Deploy the complete Cloud ZIP, then run the existing Database Upgrade once.
+This creates agent_gmail_document_reviews_v1. Until upgraded, original files
+remain reviewable and Analyze explains that the upgrade is required.
+There is no PDF executable, shell command, new service, worker or cron job.
+
+Owner flow
+----------
+Open a private Gmail message in Inbox, search, Sent, the exact draft's Original
+Email panel, or a connected Phone Agent email review. Expand Attachments.
+Open original is read-only. Analyze attachment explicitly asks the selected
+model to summarize that single original, identify missing details and suggest
+reply wording. An optional question can guide the review. Reopening checks
+and reuses its saved analysis; it never starts another inference automatically.
+
+PDF, JPEG, PNG and WebP are supported, up to 2 MiB per file. Images must match
+their declared type, be at most 6000 pixels on either side and 12 megapixels.
+The reader bounds MIME depth, node count and attachments (20 per message).
+Archives, Office documents, encrypted/truncated PDFs and larger files are
+explicitly unsupported in this first phase. Unsupported files are not fetched
+by this review route. Existing outgoing attachment features remain separate.
+
+Review confidence
+-----------------
+The selected Cloud provider receives the original PDF (including scans) using
+its native PDF input, or the original image. A compatible vision/PDF model is
+required on the existing Conversation service/account route. No provider/model
+switch or paid retry occurs if the selected route cannot read the document.
+OpenAI requests use store:false. Provider retention/account policies otherwise
+remain those of the configured provider; this is not a zero-retention claim.
+
+The output distinguishes readable, partial and unreadable coverage. Missing
+or uncertain amounts, terms, dates and identities must be called out rather
+than invented. Agent-supplied page references link to the actual original PDF;
+they are structurally validated but are not independently verified citations
+or a server-derived page count. Check the original before acting on its facts.
+An unreadable review provides no facts or reply wording.
+
+There is no automatic attachment analysis or general conversation retrieval.
+This version exposes summaries and suggested wording in the private review UI.
+The model has no tools and receives no unrelated Chat history. Files, filenames,
+email content and Email Soul are reference data, not execution authority.
+
+Usage and retries
+-----------------
+Inference uses existing foreground Conversation policy, model selection, payer
+and quota accounting. It reserves usage before the final dispatch check and
+records measured or unknown provider usage through the existing ledger.
+PDF base64 remains in the conservative input estimate: larger documents can
+require substantially more allowance than their final measured usage. Images
+use the existing image allowance estimate. A file within the 2 MiB limit may
+still exceed the current account budget. Output is bounded to 2200 tokens.
+
+A persistent one-use owner/Agent/Chat request key is consumed at dispatch.
+Replaying that exact request returns its saved state and cannot spend again.
+Changing the source or question under that key is refused. An interrupted or
+uncertain request is inspected with Check saved review; it is not retried.
+Only another explicit Analyze again starts a new request and potential charge.
+
+Private source and stale access
+-------------------------------
+Only existing private message readers issue a 15-minute encrypted source
+reference. It binds the Gmail connection, current authorization, account,
+message, thread and exact MIME payload revision. Browser requests cannot supply
+file bytes, provider attachment IDs, arbitrary URLs or another mailbox.
+Bytes are fetched only from the exact Gmail API message attachment endpoint
+or that message's inline body. Actual size, type and saved hash are checked.
+
+The real signed-in owner session, password fingerprint, private Agent/Chat,
+Gmail grant and connection fingerprint are rechecked around I/O, after usage
+reservation before dispatch, and before returning a result. The native Phone
+wrapper also rechecks the exact enrolled device and email item. Revocation,
+reassignment, stale source revisions and changed bytes withhold private output.
+The client aborts and removes private UI when its account/Chat/Phone scope ends.
+Results are encrypted at rest, owner/Agent/Chat/source scoped, and separate
+from canonical drafts, send receipts, follow-up watches and Email Soul.
+
+Reply review
+------------
+Use wording in this draft uses the current composer dirty-navigation guard,
+changes editable text and invalidates the existing voice approval via its
+normal input handling. It never saves or sends. In desktop readers, explicit
+Create reply draft resolves sender and reply headers from the real Gmail
+message, requires current outgoing permission and uses the canonical composer.
+Its one-use review ID creates at most one reply draft. Sending still needs
+the exact normal recipient/body/attachment/watch and call-approval checks.
+Phone attention items show suggested wording without creating another native
+item inside the exact-email frame. Phone draft reviews use their own composer.
+Attachment analysis never creates a task, changes a writing preference,
+approves a call, enables auto-send or edits an already reviewed email.
+
+Verification and remaining live checks
+-------------------------------------
+Native tests use real MySQL, encryption, sessions, source readers, composer and
+guards with simulated Gmail/model transports. Provider tests retain the actual
+broker/meter/dispatch pipeline. Browser tests use production controllers on
+desktop and 390/320-pixel layouts with controlled API responses. They verify
+flow and boundaries, not the semantic accuracy of a live model's OCR.
+
+After deployment, review one known text PDF, one scanned PDF and one image with
+the configured model; compare totals and page references to their originals.
+Repeat from the actual iPhone email review. The prior controlled notification/
+call -> AGENT -> exact email -> confirmed send/saved draft run remains a
+separate real-device release check; this build does not claim it was performed.
+
+Primary provider contracts
+--------------------------
+https://developers.google.com/workspace/gmail/api/reference/rest/v1/users.messages.attachments/get
+https://developers.openai.com/api/docs/guides/file-inputs
+https://platform.claude.com/docs/en/build-with-claude/pdf-support

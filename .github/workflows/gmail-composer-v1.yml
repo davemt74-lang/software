@@ -154,6 +154,11 @@ jobs:
           php tests/agent-email-preferences-v1.php
           php tests/agent-email-preferences-provider-v1.php
           for file in includes/agent-email-preferences-*.php; do php -l "$file"; done
+      - name: Explicit attachment understanding, original bytes, private scope and provider accounting
+        run: |
+          php tests/agent-gmail-documents-v1.php
+          php tests/agent-gmail-documents-provider-v1.php
+          for file in includes/agent-gmail-document*.php api/gmail-documents-v1.php; do php -l "$file"; done
       - name: Private Phone Agent enrollment, native sources, receipts and background push
         run: |
           for file in tests/phone-agent-workspace-*.php; do php "$file"; done
@@ -192,6 +197,7 @@ jobs:
       VP3_PHONE_AGENT_SCREENSHOT_DIR: artifacts/phone-agent
       VP3_EMAIL_CALLS_SCREENSHOT_DIR: artifacts/email-calls
       VP3_EMAIL_WRITING_SCREENSHOT_DIR: artifacts/email-writing
+      VP3_GMAIL_DOCUMENTS_SCREENSHOT_DIR: artifacts/gmail-documents
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -212,6 +218,8 @@ jobs:
         run: |
           node tests/email-writing-preferences-state-v1.mjs
           node tests/email-writing-preferences-browser-v1.mjs
+      - name: Attachment summaries, source pages, explicit replies, Phone scope and responsive review
+        run: node tests/gmail-documents-browser-v1.mjs
       - name: Response deadlines, verified outcomes, pause, resolve and follow-up review
         run: node tests/gmail-followthrough-browser.mjs
       - name: Connected Phone Agent native review, dirty navigation, private canvases and push targets

@@ -203,6 +203,8 @@ function agent_email_sent_open_v1(PDO $pdo, array $user, array $principal, int $
     $verified = agent_email_sent_message_v1($raw,$item['thread']);
     if ($verified===null) throw new DomainException('This message is no longer in Sent. Refresh the list.',409);
     $message = agent_connection_gmail_read_message_v1($raw,true);
+    require_once __DIR__.'/agent-gmail-documents-v1.php';
+    $documents=agent_gmail_document_source_v1($pdo,$user,$scope[3],$scope[4],$raw);
     agent_email_sent_current_v1($pdo,$user,$principal,$scope);
     $followthrough=null;
     require_once __DIR__.'/agent-email-followthrough-v1.php';
@@ -222,5 +224,5 @@ function agent_email_sent_open_v1(PDO $pdo, array $user, array $principal, int $
     return array_diff_key(agent_email_sent_row_v1($verified),['snippet'=>true])
         + ['account_email'=>$scope[6],'mailbox_revision'=>agent_email_sent_revision_v1($scope),
             'body'=>mb_substr($message['body'],0,8000),'can_reply'=>false,'followthrough_record'=>$followthrough]
-        + (isset($message['display']) ? ['display'=>$message['display']] : []);
+        + (isset($message['display']) ? ['display'=>$message['display']] : []) + $documents;
 }

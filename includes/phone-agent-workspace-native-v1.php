@@ -111,9 +111,14 @@ function vp3_phone_agent_native_action_v1(PDO $pdo,array $context,string $kind,a
 {
     $item=$context['resolved']['item'];$target=$context['resolved']['source']['target'];
     $action=$input['action']??null;
-    if ($kind==='email' || $kind==='canvas') {
+    if ($kind==='email' || $kind==='canvas' || $kind==='documents') {
         vp3_phone_agent_workspace_need_v1(($input['agent_id']??null)===$target['agent_id']
             &&($input['conversation_id']??null)===$target['conversation_id'],403);
+    }
+    if ($kind==='documents') {
+        vp3_phone_agent_workspace_need_v1(in_array($item['source_kind'],['gmail_draft','gmail_attention'],true)
+            &&in_array($action,['list','open','get','analyze'],true),403);
+        return;
     }
     if ($kind==='email') {
         if ($item['source_kind']==='gmail_attention') {
@@ -193,7 +198,7 @@ function vp3_phone_agent_native_attention_v1(PDO $pdo,array $context,array $inpu
     require_once __DIR__.'/agent-connection-gmail-inbox-initial-v1.php';
     $message=agent_connection_gmail_inbox_open_item_v1($pdo,$context['scope']['user'],$input['item_ref'],$http,true);
     vp3_phone_agent_native_response_current_v1($pdo,$context,'email');
-    return ['message'=>array_intersect_key($message,array_flip(['subject','from','body','display','answered_in_gmail','links']))];
+    return ['message'=>array_intersect_key($message,array_flip(['subject','from','body','display','answered_in_gmail','links','documents']))];
 }
 
 /** Native mutations may change their own email revision; access loss never releases earlier private output. */
@@ -217,7 +222,7 @@ function vp3_phone_agent_native_execution_current_v1(PDO $pdo): void
 {
     $saved=$GLOBALS['VP3_PHONE_AGENT_NATIVE_EXECUTION_CONTEXT_V1']??null;
     vp3_phone_agent_workspace_need_v1(is_array($saved)&&is_array($saved['context']??null)
-        &&in_array($saved['kind']??null,['email','image','canvas','media'],true),403);
+        &&in_array($saved['kind']??null,['email','image','canvas','media','documents'],true),403);
     $transaction=vp3_phone_transaction_active_v1($pdo);
     try {
         if (!$transaction&&session_status()!==PHP_SESSION_ACTIVE) {
@@ -319,7 +324,7 @@ function vp3_phone_agent_native_dispatch_v1(string $kind): never
             } catch(Throwable $error) {return vp3_phone_agent_native_error_v1($error);}
         });
         require dirname(__DIR__).'/api/'.match($kind){
-            'email'=>'chat-email-v1.php','canvas'=>'coding-canvas-v1.php',
+            'email'=>'chat-email-v1.php','documents'=>'gmail-documents-v1.php','canvas'=>'coding-canvas-v1.php',
             'image'=>'media-library-image-v1.php','media'=>'media-library-v86.php',
             default=>throw new DomainException('Choose a Phone Agent view.',422),
         };

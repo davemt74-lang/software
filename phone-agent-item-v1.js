@@ -234,6 +234,7 @@
     const reader = node('div');content.append(reader);
     const mounted = window.VP3GmailEmailDisplayV1?.mount?.(reader,message);
     if (!mounted) {const body = node('p',message.body);body.className = 'phone-agent-email-text';reader.append(body);}
+    window.VP3GmailDocumentsV1?.mount(reader,message.documents);
     content.append(node('p','Use “Discuss with your Agent” to continue in your private Chat.'));
     report('');
   }

@@ -4,7 +4,7 @@ declare(strict_types=1);
 // The paired-device cookie is scoped to this exact path. Keep private owner
 // routes here without broadening that holder credential's cookie authority.
 $workspaceRoutes=array_values(array_intersect(array_keys($_GET),[
-    'workspace','workspace_view','workspace_email','workspace_canvas','workspace_image','workspace_media','workspace_calls',
+    'workspace','workspace_view','workspace_email','workspace_canvas','workspace_image','workspace_media','workspace_calls','workspace_documents',
 ]));
 if ($workspaceRoutes) {
     if (count($workspaceRoutes)!==1 || $_GET[$workspaceRoutes[0]]!=='1') {
