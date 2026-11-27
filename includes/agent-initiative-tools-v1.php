@@ -449,6 +449,12 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
         }
         if(!is_array($output))throw new RuntimeException('Saved tool evidence is unavailable.',409);
         if($tool==='chat.check_in'){
+            if(str_starts_with($goal['primary']??'','curiosity-finding:')){
+                require_once __DIR__.'/agent-curiosity-gmail-outcomes-v1.php';
+                $marker=$output['curiosity_email_reply']??null;
+                if(!is_array($marker)||($marker['source_ref']??null)!==$goal['primary'])throw new Vp3InitiativeSourcesChangedV1();
+                vp3_curiosity_gmail_checkin_current_v1($pdo,$scope['user'],$binding,$marker);
+            }
             if(vp3_live_context_eyes_visit_ref_v1($goal['primary']??null)){
                 if(($output['eyes_visit_ref']??null)!==$goal['primary'])throw new RuntimeException('Eyes visit receipt changed.',409);
                 vp3_initiative_work_sources_v1($pdo,$scope['user'],$binding,$goal);
@@ -616,7 +622,25 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
         if(vp3_initiative_capability_definition_v1($tool))return vp3_initiative_capability_execute_v1($pdo,$scope,$binding,$job,$evidence,$model);
         if($tool==='chat.check_in'){
             if(($job['report']??null)!==true)throw new InvalidArgumentException('A check-in must report to its saved Chat.');
+            $emailResponse=$evidence[$job['primary']]['gmail_response']??null;$emailRead=null;
+            if(str_starts_with($job['primary'],'curiosity-finding:')){
+                require_once __DIR__.'/agent-curiosity-gmail-outcomes-v1.php';
+                $outcome=$evidence[$job['primary']]['curiosity_gmail_outcome']??null;
+                if(!is_array($emailResponse)||!is_array($outcome)||empty($outcome['question']))throw new Vp3InitiativeSourcesChangedV1();
+                $marker=['source_ref'=>$job['primary'],'response_revision'=>$emailResponse['revision'],'run_id'=>(int)($workflow['run_id']??0)];
+                vp3_curiosity_gmail_checkin_current_v1($pdo,$scope['user'],$binding,$marker);
+                $emailAuthorize=static function()use($pdo,$user,$binding,$evidence,$checkLease):void{
+                    if($checkLease)$checkLease();vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence);
+                };
+                $emailRead=vp3_curiosity_gmail_response_read_v1($pdo,$scope['user'],$binding,$emailResponse,$emailAuthorize,$researchTransport['gmail_http']??null);
+                if($emailRead['content_digest']!==$outcome['content_digest'])throw new Vp3InitiativeSourcesChangedV1();
+            }
             $result=vp3_initiative_checkin_prepare_v1($pdo,$scope,$binding,$job,$evidence,$model);
+            if($emailRead!==null){
+                $fresh=vp3_curiosity_gmail_response_read_v1($pdo,$scope['user'],$binding,$emailResponse,$emailAuthorize,$researchTransport['gmail_http']??null);
+                if($fresh['content_digest']!==$emailRead['content_digest'])throw new Vp3InitiativeSourcesChangedV1();
+                $result['output']['curiosity_email_reply']=$marker;
+            }
             $scope=vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence);
             vp3_initiative_checkin_current_v1($pdo,$scope,$result['output']);
             return $result;

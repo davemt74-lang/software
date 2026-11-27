@@ -225,6 +225,11 @@ function agent_workflow_initiative_result_v1400(array $value): array
             require_once __DIR__.'/agent-live-context-v1.php';
             if(vp3_live_context_eyes_visit_ref_v1($output['eyes_visit_ref']))$safe['output']['eyes_visit_ref']=$output['eyes_visit_ref'];
         }
+        if(isset($output['curiosity_email_reply'])){
+            require_once __DIR__.'/agent-curiosity-gmail-outcomes-v1.php';
+            $marker=vp3_curiosity_gmail_checkin_marker_v1($output['curiosity_email_reply']);
+            if($marker!==null)$safe['output']['curiosity_email_reply']=$marker;
+        }
     }elseif(($output['type']??'')==='initiative_record_read'&&in_array($output['tool']??'', ['brain.read','knowledge.search'],true)
         &&in_array($output['status']??'', ['read_complete','no_matches'],true)){
         $revisions=[];

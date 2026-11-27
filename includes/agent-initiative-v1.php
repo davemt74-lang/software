@@ -115,12 +115,16 @@ function vp3_initiative_jobs_v1(string $answer,array $evidence,array $allowedToo
                 throw new Vp3InitiativePlanValidationV1('invalid_job_sources','Email Canvas preparation requires its exact workflow source.');
             }
             if(($evidence[$ref]['kind']??null)==='curiosity_finding'
-                &&!in_array($job['tool'],['work.prepare_private','canvas.prepare','image.prepare','gmail.prepare_reply'],true)){
+                &&!in_array($job['tool'],['work.prepare_private','canvas.prepare','image.prepare','gmail.prepare_reply','chat.check_in'],true)){
                 throw new Vp3InitiativePlanValidationV1('invalid_job_sources','This Curiosity finding supports only private preparation or creative proposals.');
             }
+            if(($evidence[$ref]['kind']??null)==='curiosity_finding'&&$job['tool']==='chat.check_in'
+                &&($ref!==$primary||count($job['refs'])!==1||empty($evidence[$ref]['curiosity_gmail_outcome']['question'])))throw new Vp3InitiativePlanValidationV1('invalid_job_sources','Use the exact reviewed email decision as the only check-in source.');
             $refs[$ref]=true;
         }
         if($job['tool']==='gmail.prepare_reply'&&($job['refs']!==[$primary]||$job['report']!==true||!isset($evidence[$primary]['curiosity_gmail_reply'])))throw new Vp3InitiativePlanValidationV1('invalid_job_sources','Gmail reply preparation needs its exact verified owner answer.');
+        if($job['tool']==='chat.check_in'&&$primaryKind==='curiosity_finding'
+            &&($job['refs']!==[$primary]||empty($evidence[$primary]['curiosity_gmail_outcome']['question'])))throw new Vp3InitiativePlanValidationV1('invalid_job_sources','A Curiosity check-in needs its exact reviewed email decision.');
         $job['focus']=trim($job['focus']);
         if(!isset($refs[$primary])||isset($primaries[$assignment])){
             throw new Vp3InitiativePlanValidationV1('invalid_job_sources','Invalid initiative assignment scope.');

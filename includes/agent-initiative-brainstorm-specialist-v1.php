@@ -103,6 +103,14 @@ function vp3_brainstorm_snapshot_v1(PDO $pdo,array $user,array $binding,?array $
     if($base===null)$base=vp3_initiative_evidence_v1($pdo,$live,new DateTimeImmutable('now',new DateTimeZone('UTC')),
         false,[],$coverage,null,vp3_initiative_binding_agent_v1($binding),false);
     $evidence=vp3_brainstorm_sources_v1($base,$binding);
+    if(!$includeCuriosity){
+        // Curiosity's own interpretation cannot manufacture another paid analysis pass.
+        foreach($evidence as &$source){
+            if(isset($source['gmail_response_native_revision']))$source['revision']=$source['gmail_response_native_revision'];
+            unset($source['curiosity_gmail_outcome']);
+        }
+        unset($source);
+    }
     $authority=[];
     $reports=vp3_initiative_specialist_reports_v1($pdo,$live,$binding,$evidence,$authority,false,false);
     $reports=array_merge($reports,vp3_brainstorm_completed_reports_v1($pdo,$live,$binding,$evidence));

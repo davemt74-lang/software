@@ -321,3 +321,61 @@ busy-account progress and exact send receipts. Existing creative, follow-through
 Top of Mind, Gmail document and desktop/mobile composer gates remain in force.
 All provider and model transports in these gates are synthetic. Live installation
 scheduling and paid-model writing quality remain deployment acceptance checks.
+
+## Section 8: watched replies return to the original objective
+
+Curiosity now links an existing, separately enabled thread watch to the exact
+Curiosity-created Gmail draft, verified send receipt and authenticated native
+response notice. The owner, Agent, private Chat, current mailbox grant, original
+request, recipient and sent/thread identity must all agree. Status discovery uses
+local records only. It neither enables a watch nor fetches mail. Stopped, expired,
+unlinked, superseded or revoked sources do not supply this context.
+
+The existing leased Curiosity analysis may compare at most two watched responses
+with the original question, the actual authenticated owner request, and the wording
+that was actually sent. This preserves owner edits instead of treating the generated
+draft as the final email. Only that worker reads the exact sent and received
+messages through native Gmail transport. The complete strict thread must still
+prove the sent anchor, matching reply and current usable head, including later
+outbound mail. Source, access and content are checked around inference. Repeated
+unchanged input does not dispatch another model pass.
+Read/unread and other non-content Gmail labels cannot invalidate a valid response
+interpretation. Sent, draft, spam and trash flags retain their source checks.
+
+Optional typed assessments use answered, partial, conflict or unclear, a concise
+summary and an optional useful owner-decision question. References come only from
+the supplied watched responses. The server binds each interpretation to its native
+source revision, read content digest and observed time. Truncated messages or unreviewed attachments cannot
+establish an answered question. Model summaries cannot contain addresses or URLs.
+No supplier statement automatically completes a business objective or confirms an
+owner preference; the owner objective remains explicitly unverified.
+
+These interpretations stay in the canonical Curiosity action/receipt. There is no
+second findings ledger or schema upgrade. Brainstorming and OB1 receive a verified
+per-source projection without copied raw message bodies. Curiosity excludes its
+own interpretations from its next input revision, so saving the analysis cannot
+manufacture novelty or a paid feedback loop. Unrelated later analyses do not erase
+the exact response identity or authorize repeating an already-delivered decision.
+
+Brainstorming may propose a useful decision. OB1 alone assigns the existing native
+Chat check-in, using only the exact reviewed source with a nonempty question. A
+second source or an unreviewed finding cannot bypass that boundary. The worker
+rechecks actual mail and source revisions before preparing the message. Existing
+Chat activity, delivery, voice and interruption controls remain in force. A
+canonical delivered decision binds its native watched-response revision, preventing
+another paid prompt for the same reply. Non-content composer metadata cannot
+reset that response identity. The actual owner answer uses the existing
+Chat anchor and follow-through engine for the next bounded private objective.
+Sending, new reply watches and domain actions retain their existing authorization.
+
+Acceptance uses a delivery request for December 4, an owner-edited email asking
+for December 5 and a supplier response offering December 6. It exercises native
+watch registration and delivery from a synthetic verified-send boundary, Curiosity
+analysis, canonical interpretation, Brainstorming, OB1, actual Agent Chat delivery
+and authenticated owner follow-through. SQLite and native MySQL cover the complete
+loop, receipt mismatches, no automatic analysis loop, no repeated decision or paid
+call, no unnecessary question, sibling Chat isolation, access withdrawal, newer
+mail, changed response content, unknown model references, truncated coverage and unreviewed attachments.
+Existing native Gmail tests cover composer/send lifecycle; provider and model
+transports remain synthetic. Live installation timing and model quality remain
+separate deployment acceptance checks.
