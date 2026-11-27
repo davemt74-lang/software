@@ -25,7 +25,7 @@
   const commandBridges = new Set(['app-data','gmail',...Object.keys(privateSources),...publicSources]);
   const mailboxIdPattern = /^[A-Za-z0-9_-]{1,128}$/;
   const publicSlugPattern = /^(?=.{3,64}$)[a-z\d]+(?:-[a-z\d]+)*$/;
-  const jobLabels = {queued:'Waiting to build',running:'Working on the canvas',ready:'Draft ready to test',failed:'Coding Agent could not complete this run',stopped:'Build stopped'};
+  const jobLabels = {queued:'Waiting to build',running:'Working on the canvas',paused:'Build paused',ready:'Draft ready to test',failed:'Coding Agent could not complete this run',stopped:'Build stopped'};
   const previewErrors = {
     source_syntax:'The app code has a JavaScript syntax error.',
     source_startup:'The app code threw an error during startup.',
@@ -35,7 +35,7 @@
     timeout:'The app did not finish starting.',
     render:'The app could not render its content.'
   };
-  const activeJob = job => ['queued','running'].includes(job?.state);
+  const activeJob = job => ['queued','running','paused'].includes(job?.state);
   const specialistKey = job => Number.isSafeInteger(job?.run_id) && job.run_id > 0 ? 'coding:' + job.run_id : '';
   const specialistJobs = new Set();
   const chat = () => window.STONEFELLOW_CHAT_CONTINUITY_V87 || window.STONEFELLOW_CHAT_CONTINUITY;
@@ -96,6 +96,25 @@
   controls.append(build,emailStart,repair,stop);
   const notice = node('p','','vp3-coding-canvas-status');
   notice.setAttribute('role','status');
+  const progress = node('section','','vp3-coding-canvas-progress');
+  progress.setAttribute('aria-label','Build progress');
+  const stages = node('ol','','vp3-coding-canvas-stages');
+  stages.setAttribute('aria-label','Canvas build stages');
+  const stageItems = ['Build','Test','Use'].map(label => node('li',label));
+  stages.append(...stageItems);
+  const recoveryDetail = node('p','','vp3-coding-canvas-description');
+  const recoveryActions = node('div','','vp3-coding-canvas-controls');
+  const checkStatus = button('Check build status',() => void checkBuildStatus());
+  const viewBuild = button('Open build result',() => {
+    if (job?.state !== 'ready' || locked || !matches()) return;
+    const latest = job;
+    openPanel(false);
+    void openSaved(latest.canvas_id,latest.revision,false);
+  });
+  const retryBuild = button('Retry saved request',() => void retrySavedRequest());
+  const editRequest = button('Edit saved request',() => void editSavedRequest());
+  recoveryActions.append(checkStatus,viewBuild,retryBuild,editRequest);
+  progress.append(node('p','Latest build in this Chat','vp3-coding-canvas-description'),stages,notice,recoveryDetail,recoveryActions);
   const appFeedback = node('div','','vp3-coding-canvas-app-feedback');
   const appNotice = node('p');
   appNotice.setAttribute('role','status');
@@ -327,7 +346,7 @@
   workspace.append(workspaceTitle,previewDescription,actions,phoneNotice,deletion,libraryImagePanel,permissions,publishing,frameHost,source);
   workspace.hidden = true;
   const editorControls = node('div','','vp3-coding-canvas-editor-controls');
-  editorControls.append(promptLabel,commandLibrary,controls,notice,savedControls,editorAppIcons);
+  editorControls.append(promptLabel,commandLibrary,controls,progress,savedControls,editorAppIcons);
   panel.append(header,editorControls,appFeedback,workspace);
   thread.append(panel);
 
@@ -382,8 +401,11 @@
   let suspended = false;
   let locked = false;
   let pollingError = false;
+  let pollingBlocked = false;
   let browserTest = null;
   let lastIntent = null;
+  let checkingBuild = false;
+  let lastBuildCheck = 0;
   let lastEmailStart = null;
   let failedPreview = null;
   let ticked = null;
@@ -1019,7 +1041,7 @@
     }
   }
 
-  function report(text) { notice.textContent = text; }
+  function report(text) { notice.textContent = text; updateBuildProgress(); }
   function reportApp(text,retry = false) {
     appNotice.textContent = text;
     appRetry.hidden = !retry;
@@ -1093,9 +1115,10 @@
   }
   function updateControls() {
     const working = activeJob(job);
-    build.disabled = locked || working;
-    emailStart.disabled = locked || working;
-    repair.disabled = locked || working || !current?.revision;
+    const uncertain = lastIntent?.pending === true;
+    build.disabled = locked || working || uncertain;
+    emailStart.disabled = locked || working || uncertain;
+    repair.disabled = locked || working || uncertain || !current?.revision;
     openInApp.disabled = locked || !current?.revision;
     sendPhone.disabled=locked||!current?.revision||current.canvas.hidden===true;
     stop.hidden = !working;
@@ -1109,8 +1132,35 @@
     apply.disabled = locked || working || !current?.revision || !frame?.ready || !validFrame(frame) ||
       (!current.revision.can_rollback && (current.revision.status !== 'draft' || !tested())) || current.revision.id === current.canvas.active_revision;
     apply.textContent = current?.revision?.can_rollback ? 'Restore this version' : 'Use this version';
+    updateBuildProgress();
     updateLibraryImageControls();
     updatePublicationControls();
+  }
+
+  function updateBuildProgress() {
+    progress.hidden = !job && !current?.revision && !lastIntent?.pending && !notice.textContent;
+    const phase = activeJob(job) || ['failed','stopped'].includes(job?.state) || lastIntent?.pending ? 0 : !current?.revision ? (job?.state === 'ready' ? 1 : 0) :
+      current.revision.id === current.canvas.active_revision ? 3 : tested() ? 2 : 1;
+    for (const [index,item] of stageItems.entries()) {
+      item.dataset.state = index < phase ? 'complete' : index === phase ? 'current' : 'waiting';
+      if (index === phase) item.setAttribute('aria-current','step');
+      else item.removeAttribute('aria-current');
+    }
+    checkStatus.hidden = !job && !lastIntent?.pending;
+    checkStatus.disabled = locked || checkingBuild;
+    viewBuild.hidden = job?.state !== 'ready';
+    viewBuild.disabled = locked || checkingBuild;
+    retryBuild.hidden = job?.can_retry !== true || activeJob(job) || lastIntent?.pending === true;
+    retryBuild.disabled = locked || checkingBuild;
+    editRequest.hidden = !job;
+    editRequest.disabled = locked || checkingBuild || activeJob(job);
+    recoveryDetail.textContent = lastIntent?.pending ? 'The request has not been confirmed. Check its saved status before starting another build.' :
+      pollingBlocked ? 'Automatic status checks stopped. Restore access, then check build status.' :
+      pollingError ? 'Connection interrupted. Checking the existing run; a new build has not been started.' :
+      job?.state === 'paused' ? 'This run is paused. Stop it before starting a replacement.' :
+      job?.can_retry ? 'Retry uses the saved instruction and starts a new Coding Agent run. Edit saved request to change the brief first.' :
+      activeJob(job) && lastBuildCheck ? 'Saved run '+job.run_id+' · Status checked '+new Date(lastBuildCheck).toLocaleTimeString([], {hour:'2-digit',minute:'2-digit',second:'2-digit'}) :
+      current?.revision ? (phase === 3 ? 'This version is active.' : phase === 2 ? 'Preview tested. Use this version when you are ready.' : 'Draft saved. Test the preview, then use this version.') : '';
   }
 
   function libraryImageSettings() {
@@ -1248,13 +1298,32 @@
 
   async function api(action,payload = {},conversationId = scope(),signal) {
     if (!matches()) throw new Error('Private Canvas is available in your own Chat.');
-    const response = await fetch(cfg.endpoint,{
-      method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},signal,
-      body:JSON.stringify({action,csrf_token:cfg.csrf,agent_id:agent,conversation_id:conversationId,...payload})
-    });
-    const data = await response.json().catch(() => null);
-    if (!response.ok || !data?.ok) throw new Error(typeof data?.error === 'string' ? data.error : 'Canvas request did not complete.');
-    return data;
+    const controller = new AbortController();
+    let cancellation;
+    const abort = () => { cancellation = signal.reason || new DOMException('Canvas request cancelled.','AbortError'); controller.abort(cancellation); };
+    if (signal?.aborted) abort();
+    else signal?.addEventListener('abort',abort,{once:true});
+    const timeout = Object.assign(new Error('The Canvas connection timed out. Check the saved build status before retrying.'),{code:'canvas_timeout'});
+    const timer = setTimeout(() => { cancellation = timeout; controller.abort(timeout); },action === 'tick' ? 110000 : 15000);
+    try {
+      const cancelled = new Promise((_,reject) => {
+        if (controller.signal.aborted) reject(cancellation);
+        else controller.signal.addEventListener('abort',() => reject(cancellation),{once:true});
+      });
+      const operation = (async () => {
+        const response = await fetch(cfg.endpoint,{
+          method:'POST', credentials:'same-origin', headers:{'Content-Type':'application/json'},signal:controller.signal,
+          body:JSON.stringify({action,csrf_token:cfg.csrf,agent_id:agent,conversation_id:conversationId,...payload})
+        });
+        const data = await response.json().catch(() => null);
+        if (!response.ok || !data?.ok) throw Object.assign(new Error(typeof data?.error === 'string' ? data.error : 'Canvas request did not complete.'),{status:response.status});
+        return data;
+      })();
+      return await Promise.race([operation,cancelled]);
+    } finally {
+      clearTimeout(timer);
+      signal?.removeEventListener('abort',abort);
+    }
   }
 
   function closeArtworkFrame() {
@@ -1694,12 +1763,13 @@
     });
   }
 
-  function renderJob(next) {
-    const changed = job?.state !== next?.state || job?.run_id !== next?.run_id;
+  function renderJob(next,refresh = false) {
+    const changed = refresh || job?.state !== next?.state || job?.run_id !== next?.run_id || job?.reason !== next?.reason;
     job = next;
     const status = jobLabels[next?.state] || '';
     const model = next?.model?.model;
     publishSpecialist(next,status,model);
+    updateBuildProgress();
     if (!changed) return;
     dockStatus.textContent = next?.state === 'running' ? '' : status;
     if (next) {
@@ -1708,11 +1778,21 @@
     updateControls();
   }
 
-  async function advance(next,version,conversation) {
+  function verifyJob(next,conversation) {
+    if (!next || !Number.isSafeInteger(next.run_id) || next.run_id < 1 || next.conversation_id !== conversation
+      || !canvasIdPattern.test(next.canvas_id) || !Object.hasOwn(jobLabels,next.state)
+      || (next.state === 'ready' && (!Number.isSafeInteger(next.revision) || next.revision < 1))) {
+      throw new Error('The saved Coding Agent status could not be verified.');
+    }
+  }
+
+  async function advance(next,version,conversation,refreshStatus = false) {
     if (suspended || version !== epoch || conversation !== scope() || !matches()) return;
+    verifyJob(next,conversation);
     if (job?.run_id === next.run_id && !activeJob(job) && activeJob(next)) return;
     const newlyTerminal = !activeJob(next) && (job?.run_id !== next.run_id || activeJob(job));
-    renderJob(next);
+    lastBuildCheck = Date.now();
+    renderJob(next,refreshStatus);
     if (next.state === 'queued' && (ticked?.run !== next.run_id || ticked.retryAt <= Date.now())) {
       const attempt = {run:next.run_id,retryAt:Infinity};
       ticked = attempt;
@@ -1743,15 +1823,118 @@
     try {
       const data = await api('job',{run_id:runId},conversation);
       if (job?.run_id !== runId) return;
-      if (pollingError && version === epoch) report(jobLabels[data.job?.state] || '');
+      const recovered = pollingError;
       pollingError = false;
-      await advance(data.job,version,conversation);
+      pollingBlocked = false;
+      await advance(data.job,version,conversation,recovered);
     } catch (error) {
       if (suspended || version !== epoch || job?.run_id !== runId || !activeJob(job)) return;
       window.VP3ChatSpecialists?.remove(specialistKey(job));
-      if (!pollingError) report(error.message + ' Checking again…');
+      pollingBlocked = [401,403,404,419,422].includes(error.status);
+      if (!pollingError || pollingBlocked) report(error.message + (pollingBlocked ? ' Restore access, then check build status.' : ' Checking again…'));
       pollingError = true;
-      poll = setTimeout(() => void pollJob(runId,version,conversation),2600);
+      updateControls();
+      if (!pollingBlocked) poll = setTimeout(() => void pollJob(runId,version,conversation),2600);
+    }
+  }
+
+  function acceptAdmission(attempt,next,version,conversation) {
+    if (attempt !== lastIntent || version !== epoch || conversation !== scope() || !matches()) return;
+    verifyJob(next,conversation);
+    lastIntent = null;
+    if (attempt.text && prompt.value.trim() === attempt.text) prompt.value = '';
+    if (attempt.command && input?.value === attempt.command) {
+      input.value = '';
+      input.dispatchEvent(new Event('input'));
+    }
+    return advance(next,version,conversation);
+  }
+
+  async function recoverAdmission(attempt,version,conversation) {
+    if (!attempt || attempt !== lastIntent || !matches()) return;
+    let data;
+    try { data = await api('recover',{request_id:attempt.id},conversation); }
+    catch (error) {
+      if ([401,403,404,419,422].includes(error.status)) attempt.blocked = true;
+      throw error;
+    }
+    if (attempt !== lastIntent || version !== epoch || conversation !== scope() || !matches()) return;
+    if (data.job) await acceptAdmission(attempt,data.job,version,conversation);
+    else {
+      attempt.pending = false;
+      report('No saved run was found for that request. Your instruction was kept; you can submit it again.');
+    }
+    updateControls();
+  }
+
+  async function checkBuildStatus() {
+    if (checkingBuild || locked || !matches()) return;
+    const version = epoch,conversation = scope(),attempt = lastIntent,running = job;
+    checkingBuild = true;
+    updateControls();
+    try {
+      if (attempt?.pending) await recoverAdmission(attempt,version,conversation);
+      else if (running) {
+        const data = await api('job',{run_id:running.run_id},conversation);
+        if (version === epoch && job?.run_id === running.run_id) {
+          pollingError = false;
+          pollingBlocked = false;
+          await advance(data.job,version,conversation,true);
+        }
+      } else await resume();
+    } catch (error) {
+      if (version === epoch && matches()) report(error.message);
+    } finally {
+      if (version === epoch) { checkingBuild = false; updateControls(); }
+    }
+  }
+
+  async function retrySavedRequest() {
+    const previous = job,version = epoch,conversation = scope();
+    if (!previous?.can_retry || activeJob(previous) || locked || checkingBuild || lastIntent?.pending || !matches()) return;
+    const intent = JSON.stringify([conversation,'retry',previous.run_id]);
+    if (lastIntent?.intent !== intent) lastIntent = {intent,id:crypto.randomUUID()};
+    const attempt = lastIntent;
+    attempt.pending = true;
+    locked = true;
+    updateControls();
+    try {
+      const data = await api('retry',{run_id:previous.run_id,request_id:attempt.id},conversation);
+      await acceptAdmission(attempt,data.job,version,conversation);
+    } catch (error) {
+      if (version !== epoch || !matches()) return;
+      if (error.status) attempt.pending = false;
+      report(error.message);
+      if (attempt.pending) {
+        try { await recoverAdmission(attempt,version,conversation); }
+        catch (_) { if (version === epoch) report('The retry has not been confirmed. Check build status to recover the saved run.'); }
+      }
+    } finally {
+      if (version === epoch) { locked = false; updateControls(); }
+    }
+  }
+
+  async function editSavedRequest() {
+    const previous = job,version = epoch,conversation = scope();
+    if (!previous || locked || checkingBuild || activeJob(previous) || !matches()) return;
+    if (prompt.value.trim()) { report('Your unsent instruction was kept. Clear it before loading the saved request.'); return; }
+    locked = true;
+    updateControls();
+    try {
+      const data = await api('saved_request',{run_id:previous.run_id},conversation);
+      if (version !== epoch || conversation !== scope() || !matches() || job?.run_id !== previous.run_id) return;
+      const request = data.request;
+      if (!request || typeof request.prompt !== 'string' || request.prompt.length > 8000 || !['build','repair'].includes(request.operation)) throw new Error('The saved instruction could not be verified.');
+      if (request.operation === 'repair' && current?.canvas.id !== request.canvas_id
+          && !await openSaved(request.canvas_id,undefined,false)) return;
+      if (version !== epoch || conversation !== scope() || !matches() || prompt.value.trim()) return;
+      prompt.value = request.prompt;
+      prompt.focus();
+      report('Saved request loaded. Edit it, then choose '+(request.operation === 'repair' ? 'Repair for the selected version.' : 'Build new.'));
+    } catch (error) {
+      if (version === epoch && matches()) report(error.message);
+    } finally {
+      if (version === epoch) { locked = false; updateControls(); }
     }
   }
 
@@ -1788,13 +1971,14 @@
     text = text.trim();
     if (/^\/commands$/i.test(text)) { openCommandLibrary();return; }
     if (!text && action === 'repair' && previewFailed()) text = 'Fix this app so it opens and works in Canvas.';
-    if (!text || text.length > 8000 || locked || activeJob(job) || !matches() || !chat()?.isReady()) {
+    if (!text || text.length > 8000 || locked || activeJob(job) || lastIntent?.pending || !matches() || !chat()?.isReady()) {
       if (shown() && !text) report('Describe what you want the Coding Agent to make or change.');
       return;
     }
     const version = epoch;
     let conversation = scope();
     const fields = {prompt:text};
+    let attempt = null;
     const requestedCommands = promptCommands(text);
     if (action === 'repair') {
       if (!current?.revision) return;
@@ -1822,20 +2006,21 @@
       }
       const intent = JSON.stringify([conversation,action,fields]);
       if (lastIntent?.intent !== intent) lastIntent = {intent,id:crypto.randomUUID()};
+      attempt = lastIntent;
+      Object.assign(attempt,{pending:true,text,command});
       fields.request_id = lastIntent.id;
       const data = await api(action,fields,conversation);
-      if (version !== epoch || !matches() || conversation !== scope()) return;
-      lastIntent = null;
-      prompt.value = '';
-      if (command && input?.value === command) {
-        input.value = '';
-        input.dispatchEvent(new Event('input'));
-      }
-      await advance(data.job,version,conversation);
+      await acceptAdmission(attempt,data.job,version,conversation);
     } catch (error) {
       if (version === epoch) {
+        if (attempt && error.status) attempt.pending = false;
         if (!shown() && chat()?.isReady()) void openPanel();
         report(error.message);
+        if (attempt?.pending) {
+          report('Connection interrupted. Checking whether the saved request was accepted…');
+          try { await recoverAdmission(attempt,version,conversation); }
+          catch (_) { if (version === epoch) report('The build has not been confirmed. Check build status to recover the saved run.'); }
+        }
       }
     } finally {
       if (version === epoch) {
@@ -1984,6 +2169,10 @@
     const version = epoch;
     const conversation = scope();
     if (suspended || document.hidden || !conversation || !matches() || !chat()?.isReady() || chat()?.isRestoring() || locked || activeJob(job)) return;
+    if (lastIntent?.pending) {
+      if (!lastIntent.blocked && !checkingBuild) void checkBuildStatus();
+      return;
+    }
     if (resuming) { resumeAgain = true; return; }
     resuming = true;
     try {
@@ -2059,6 +2248,9 @@
     clearTimeout(footerTimer);
     locked = false;
     pollingError = false;
+    pollingBlocked = false;
+    checkingBuild = false;
+    lastBuildCheck = 0;
     lastIntent = null;
     lastEmailStart = null;
     emailStart.hidden = true;

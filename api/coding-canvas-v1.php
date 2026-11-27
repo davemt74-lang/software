@@ -33,7 +33,7 @@ try {
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Canvas storage is unavailable.', 503);
     $user = vp3_coding_canvas_scope_v1($pdo, $user, $aid, $cid);
-    vp3_coding_canvas_authority_v1($pdo, $user, $aid, in_array($action, ['build', 'repair'], true));
+    vp3_coding_canvas_authority_v1($pdo, $user, $aid, in_array($action, ['build', 'repair', 'retry'], true));
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
     $canvasId = $input->canvas_id ?? null;
@@ -98,17 +98,27 @@ try {
     } elseif ($action === 'set_hidden') {
         if(!is_bool($input->hidden??null))throw new InvalidArgumentException('Choose whether to hide this app from Chat.');
         $result=['canvas'=>vp3_coding_canvas_set_hidden_v1($pdo,$user,$aid,$canvasId,$input->hidden)];
+    } elseif ($action === 'recover') {
+        if ($cid < 1 || !is_string($input->request_id ?? null)) throw new InvalidArgumentException('Choose the original Coding Agent request.');
+        $result = ['job'=>vp3_coding_canvas_recover_request_v1($pdo,$user,$aid,$cid,$input->request_id)];
     } elseif ($action === 'resume') {
         if ($cid < 1) throw new InvalidArgumentException('Choose a current Chat.');
         $result = ['job' => vp3_coding_canvas_resume_v1($pdo, $user, $aid, $cid)];
-    } elseif (in_array($action, ['job', 'tick', 'stop'], true)) {
+    } elseif (in_array($action, ['job', 'tick', 'stop', 'retry', 'saved_request'], true)) {
         $runId = $input->run_id ?? null;
         if ($cid < 1 || !is_int($runId) || $runId < 1) throw new InvalidArgumentException('Choose an exact Coding Agent run.');
         if ($action === 'tick') {
             ignore_user_abort(true);
             @set_time_limit(150);
         }
-        $result = ['job' => vp3_coding_canvas_job_v1($pdo, $user, $aid, $cid, $runId, $action)];
+        if ($action === 'retry') {
+            if (!is_string($input->request_id ?? null)) throw new InvalidArgumentException('Choose a new Coding Agent retry request.');
+            $result = ['job'=>vp3_coding_canvas_retry_v1($pdo,$user,$aid,$cid,$runId,$input->request_id)];
+        } elseif ($action === 'saved_request') {
+            $result = ['request'=>vp3_coding_canvas_saved_request_v1($pdo,$user,$aid,$cid,$runId)];
+        } else {
+            $result = ['job' => vp3_coding_canvas_job_v1($pdo, $user, $aid, $cid, $runId, $action)];
+        }
     } else {
         $stateRevision = $input->state_revision ?? null;
         if (in_array($action, ['test', 'save_state'], true) && (!is_string($stateRevision)

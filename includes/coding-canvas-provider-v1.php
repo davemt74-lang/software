@@ -6,6 +6,15 @@ require_once __DIR__.'/coding-canvas-model-v1.php';
 
 require_once __DIR__.'/coding-canvas-commands-v1.php';
 
+/** A bounded failure category may enter job status; provider text never does. */
+final class Vp3CodingCanvasFailureV1 extends RuntimeException
+{
+    public function __construct(public readonly string $failureClass)
+    {
+        parent::__construct('The Coding Agent did not produce a complete usable draft.', 502);
+    }
+}
+
 /** Validate the stored source shape. The preview host enforces runtime isolation. */
 function vp3_coding_canvas_artifact_v1(mixed $artifact): array
 {
@@ -90,7 +99,7 @@ function vp3_coding_canvas_provider_output_v1(string $provider,array $decoded): 
 {
     if(($provider==='openai'&&($decoded['status']??'completed')!=='completed')
         ||($provider==='anthropic'&&!in_array($decoded['stop_reason']??'end_turn',['end_turn','stop_sequence'],true))){
-        throw new RuntimeException('The Coding Agent did not finish its Canvas. Try a smaller request.',502);
+        throw new Vp3CodingCanvasFailureV1('coding_output_incomplete');
     }
     $parts=[];
     if($provider==='openai'){
@@ -115,7 +124,7 @@ function vp3_coding_canvas_provider_output_v1(string $provider,array $decoded): 
         unset($output['title']);
         return ['title'=>$title,'artifact'=>vp3_coding_canvas_artifact_v1($output)];
     }catch(InvalidArgumentException|JsonException $error){
-        throw new RuntimeException('The Coding Agent returned an invalid Canvas. Try refining the request.',502);
+        throw new Vp3CodingCanvasFailureV1('coding_invalid_source');
     }
 }
 
@@ -168,18 +177,26 @@ function vp3_coding_canvas_generate_v1(PDO $pdo,array $user,array $pin,string $j
         :['system'=>$instructions,'messages'=>$messages,'max_tokens'=>12000]);
     $result=ai_curl_json($endpoint,$headers,$payload,80,$meter,$pin,$personalKey,true);
     if(empty($result['ok'])){
+        $failure=match($result['failure_code']??''){
+            'provider_attempt_unconfirmed'=>'coding_provider_unconfirmed',
+            'anthropic_credit_balance_low'=>'coding_provider_credits',
+            'provider_response_too_large','provider_response_invalid'=>'coding_invalid_source',
+            default=>null,
+        };
+        if($failure!==null)throw new Vp3CodingCanvasFailureV1($failure);
         $code=match($result['failure_code']??''){
             'service_quota_exhausted'=>402,
             'service_disabled','personal_route_unavailable'=>403,
             'service_usage_unavailable'=>503,
             default=>502,
         };
-        throw new RuntimeException((string)($result['error']??'The Coding Agent could not generate a Canvas.'),$code);
+        if($code===502)throw new Vp3CodingCanvasFailureV1('coding_provider_unavailable');
+        throw new RuntimeException('The Coding Agent service is unavailable for this account.',$code);
     }
     $decoded=$result['data'];
     $usage=vp3_ai_service_usage_tokens_v1(is_array($decoded['usage']??null)?$decoded['usage']:[]);
     if($usage===null||$usage['total_tokens']<1){
-        throw new RuntimeException('The Coding Agent provider did not confirm usage for this response.',502);
+        throw new Vp3CodingCanvasFailureV1('coding_usage_unconfirmed');
     }
     return $meter->attach(vp3_coding_canvas_provider_output_v1($provider,$decoded)+['usage'=>$usage]);
 }

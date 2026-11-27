@@ -311,6 +311,8 @@ jobs:
           node tests/chat-research-canvas-browser.mjs
           node tests/chat-coding-canvas-browser.mjs
           node tests/chat-coding-canvas-email-browser.mjs
+          node tests/coding-canvas-recovery-browser.mjs
+          node tests/coding-canvas-recovery-http-v1.mjs
       - name: Shared Agent capability adapters and actual work results
         run: |
           php tests/agent-capability-contract-v1.php

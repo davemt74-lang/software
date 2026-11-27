@@ -62,6 +62,10 @@ $job = vp3_coding_canvas_queue_v1($pdo, $owner, 7, 11, $request, 'Make a prep bo
 $id = $job['run_id'];
 check($job['state'] === 'queued' && $job['model'] === $selected + ['funding' => 'system'], 'Pinned model is frozen at admission');
 check(vp3_coding_canvas_resume_v1($pdo, $owner, 7, 11) === $job, 'A reload resumes exactly the active Chat job');
+check(vp3_coding_canvas_recover_request_v1($pdo, $owner, 7, 11, $request) === $job, 'An uncertain admission recovers its exact request without starting it');
+check(vp3_coding_canvas_recover_request_v1($pdo, $owner, 7, 11, agent_event_uuid_v1920()) === null, 'An unknown request cannot substitute a previous run');
+rejects(fn() => vp3_coding_canvas_recover_request_v1($pdo, $owner, 7, 12, $request), 404, 'Request recovery retains exact Chat binding');
+check(vp3_coding_canvas_recover_request_v1($pdo, $foreign, 7, 11, $request) === null, 'Request recovery cannot find another owner admission');
 check(vp3_coding_canvas_resume_v1($pdo, $owner, 8, 12) === null, 'A different Agent does not see the job');
 rejects(fn() => vp3_coding_canvas_job_v1($pdo, $foreign, 7, 11, $id, 'job'), 404, 'A different owner cannot read the job');
 rejects(fn() => vp3_coding_canvas_job_v1($pdo, $owner, 7, 12, $id, 'tick'), 404, 'A different Chat cannot tick the job');
@@ -88,6 +92,13 @@ check(vp3_coding_canvas_execute_v1($pdo, $owner, $lease, $generate)['ok'], 'One 
 check(!vp3_coding_canvas_execute_v1($pdo, $owner, $lease, $generate)['ok'] && $calls === 1, 'Replaying a settled lease does not call the provider');
 $done = vp3_coding_canvas_job_v1($pdo, $owner, 7, 11, $id, 'job');
 check($done['state'] === 'ready' && $done['revision'] === 1, 'A ready run points at its exact saved revision');
+check(vp3_coding_canvas_resume_v1($pdo, $owner, 7, 11) === $done,
+    'Reloading after completion recovers the exact finished run instead of losing its result');
+check(!$done['can_retry'] && !isset($done['prompt']), 'A completed run cannot offer a metered retry or copy its prompt into progress');
+rejects(fn() => vp3_coding_canvas_retry_v1($pdo, $owner, 7, 11, $id, agent_event_uuid_v1920()), 409, 'A completed run cannot start a replacement through Retry');
+$savedRequest = vp3_coding_canvas_saved_request_v1($pdo, $owner, 7, 11, $id);
+check($savedRequest['prompt'] === 'Make a prep board' && $savedRequest['operation'] === 'build', 'An explicit private request restores the original brief');
+rejects(fn() => vp3_coding_canvas_saved_request_v1($pdo, $owner, 8, 12, $id), 404, 'A different Agent cannot load a private build instruction');
 $canvasId = $done['canvas_id'];
 $canvas = vp3_coding_canvas_read_v1($pdo, $owner, 7, $canvasId);
 check($canvas['revision']['artifact'] === $source && $canvas['canvas']['folder_id'] > 0, 'The draft has a real private folder and code');
@@ -122,7 +133,56 @@ check(!vp3_coding_canvas_execute_v1($pdo, $owner, $failedLease, static function 
 })['ok'], 'Provider failure does not save a draft');
 $failedView = vp3_coding_canvas_job_v1($pdo, $owner, 7, 11, $failed['run_id'], 'tick');
 check($failedView['state'] === 'failed' && !str_contains($failedView['reason'], 'private provider output'), 'Failed jobs expose a safe status');
+check(vp3_coding_canvas_resume_v1($pdo, $owner, 7, 11) === $failedView && $failedView['can_retry'], 'Reload recovers a failed build and its explicit retry affordance');
 rejects(fn() => agent_job_retry_v1900($pdo, $owner, $failed['run_id']), 409, 'Generic retry cannot replay a metered request');
+
+$retryRequest = agent_event_uuid_v1920();
+$retry = vp3_coding_canvas_retry_v1($pdo, $owner, 7, 11, $failed['run_id'], $retryRequest);
+check($retry['run_id'] !== $failed['run_id'] && $retry['state'] === 'queued', 'An explicit retry creates a separate bounded run');
+$retryGoal = json_decode(vp3_coding_canvas_job_row_v1($pdo, $owner, $retry['run_id'])['goal'], true);
+check($retryGoal['prompt'] === 'Will fail' && $retryGoal['retry_of'] === $failed['run_id'], 'Retry copies the saved instruction and retains native provenance');
+check(vp3_coding_canvas_retry_v1($pdo, $owner, 7, 11, $failed['run_id'], $retryRequest) === $retry,
+    'A lost Retry response recovers the same admission without adding another run');
+rejects(fn() => vp3_coding_canvas_retry_v1($pdo, $owner, 8, 12, $failed['run_id'], agent_event_uuid_v1920()), 404, 'A retry cannot cross Agent or Chat scope');
+$retryLease = $claim($retry['run_id']);
+$retryCalls = 0;
+$retryDone = vp3_coding_canvas_execute_v1($pdo, $owner, $retryLease, function () use (&$retryCalls, $source): array {
+    $retryCalls++; return ['title'=>'Recovered board', 'artifact'=>$source];
+});
+check($retryDone['ok'] && $retryCalls === 1, 'Only the explicitly admitted replacement invokes generation');
+check(vp3_coding_canvas_retry_v1($pdo, $owner, 7, 11, $failed['run_id'], $retryRequest)['state'] === 'ready'
+    && !vp3_coding_canvas_execute_v1($pdo, $owner, $retryLease, $generate)['ok'] && $retryCalls === 1,
+    'Retry replay after completion returns its saved result rather than dispatching another provider attempt');
+rejects(fn() => vp3_coding_canvas_retry_v1($pdo,$owner,7,11,$stopping['run_id'],$retryRequest),409,
+    'A retry id cannot be reassigned to another stopped request');
+$recoveredCanvas = vp3_coding_canvas_job_v1($pdo,$owner,7,11,$retry['run_id'],'job')['canvas_id'];
+vp3_coding_canvas_delete_v1($pdo,$owner,7,$recoveredCanvas,false);
+$missingResult = vp3_coding_canvas_job_v1($pdo,$owner,7,11,$retry['run_id'],'job');
+check($missingResult['state'] === 'failed' && !$missingResult['can_retry'] && str_contains($missingResult['reason'],'no longer available'),
+    'A deleted completed result is unavailable rather than permission to repeat its metered request');
+
+$cutoff = vp3_coding_canvas_queue_v1($pdo, $owner, 7, 11, agent_event_uuid_v1920(), 'Large Canvas');
+vp3_coding_canvas_execute_v1($pdo, $owner, $claim($cutoff['run_id']), static function (): never {
+    vp3_coding_canvas_provider_output_v1('anthropic', ['stop_reason'=>'max_tokens', 'content'=>[['type'=>'text','text'=>'private incomplete source']]]);
+});
+$cutoffView = vp3_coding_canvas_job_v1($pdo, $owner, 7, 11, $cutoff['run_id'], 'job');
+check(str_contains($cutoffView['reason'], 'stopped before finishing') && !str_contains($cutoffView['reason'], 'private incomplete source'),
+    'Truncated model output has a concrete bounded recovery reason without exposing provider output');
+
+$invalid = vp3_coding_canvas_queue_v1($pdo, $owner, 7, 11, agent_event_uuid_v1920(), 'Invalid Canvas');
+vp3_coding_canvas_execute_v1($pdo, $owner, $claim($invalid['run_id']), static function (): never {
+    vp3_coding_canvas_provider_output_v1('openai', ['output_text'=>'{"title":"Bad","html":"<script>private</script>","css":"","js":""}']);
+});
+check(str_contains(vp3_coding_canvas_job_v1($pdo,$owner,7,11,$invalid['run_id'],'job')['reason'], 'code that Canvas could not use'),
+    'Invalid model code is distinguished from a disconnected browser or incomplete output');
+
+$staleRepair = vp3_coding_canvas_queue_v1($pdo,$owner,7,11,agent_event_uuid_v1920(),'Try another repair',$canvasId,2);
+vp3_coding_canvas_job_v1($pdo,$owner,7,11,$staleRepair['run_id'],'stop');
+vp3_coding_canvas_save_draft_v1($pdo,$owner,7,11,$canvasId,'Prep board',$source,[],0,2,1);
+rejects(fn() => vp3_coding_canvas_retry_v1($pdo,$owner,7,11,$staleRepair['run_id'],agent_event_uuid_v1920()),409,
+    'A stale retry cannot replace an app that gained a newer saved draft');
+check(vp3_coding_canvas_read_v1($pdo,$owner,7,$canvasId)['canvas']['draft_revision'] === 3,
+    'Refusing a stale retry preserves the newer draft and live state');
 
 $interrupted = vp3_coding_canvas_queue_v1($pdo, $owner, 7, 11, agent_event_uuid_v1920(), 'Interrupted build');
 $interruptedLease = $claim($interrupted['run_id']);
@@ -131,6 +191,15 @@ $pdo->prepare('UPDATE agent_workflow_runs SET lease_expires_at=? WHERE id=?')
 $recovered = vp3_coding_canvas_job_v1($pdo, $owner, 7, 11, $interrupted['run_id'], 'job');
 check($interruptedLease !== null && $recovered['state'] === 'failed' && $claim($interrupted['run_id']) === null,
     'Polling an interrupted worker settles its expired lease without repeating the request');
+
+$paused = vp3_coding_canvas_queue_v1($pdo,$owner,7,11,agent_event_uuid_v1920(),'Paused build');
+$pdo->prepare("UPDATE agent_workflow_runs SET status='paused' WHERE id=?")->execute([$paused['run_id']]);
+check(vp3_coding_canvas_job_v1($pdo,$owner,7,11,$paused['run_id'],'job')['state'] === 'paused',
+    'Paused work is not mislabeled as a failed or completed build');
+check(vp3_coding_canvas_resume_v1($pdo,$owner,7,11)['run_id'] === $paused['run_id'],
+    'A reload still discovers paused work instead of a previous completed run');
+check(vp3_coding_canvas_job_v1($pdo,$owner,7,11,$paused['run_id'],'stop')['state'] === 'stopped',
+    'The owner can explicitly stop a paused build before replacing it');
 
 $abandoned = vp3_coding_canvas_queue_v1($pdo, $owner, 8, 12, agent_event_uuid_v1920(), 'Deleted Chat');
 $pdo->exec('DELETE FROM chat_conversations WHERE id=12');
