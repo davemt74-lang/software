@@ -115,11 +115,12 @@ function vp3_initiative_jobs_v1(string $answer,array $evidence,array $allowedToo
                 throw new Vp3InitiativePlanValidationV1('invalid_job_sources','Email Canvas preparation requires its exact workflow source.');
             }
             if(($evidence[$ref]['kind']??null)==='curiosity_finding'
-                &&!in_array($job['tool'],['work.prepare_private','canvas.prepare','image.prepare'],true)){
+                &&!in_array($job['tool'],['work.prepare_private','canvas.prepare','image.prepare','gmail.prepare_reply'],true)){
                 throw new Vp3InitiativePlanValidationV1('invalid_job_sources','This Curiosity finding supports only private preparation or creative proposals.');
             }
             $refs[$ref]=true;
         }
+        if($job['tool']==='gmail.prepare_reply'&&($job['refs']!==[$primary]||$job['report']!==true||!isset($evidence[$primary]['curiosity_gmail_reply'])))throw new Vp3InitiativePlanValidationV1('invalid_job_sources','Gmail reply preparation needs its exact verified owner answer.');
         $job['focus']=trim($job['focus']);
         if(!isset($refs[$primary])||isset($primaries[$assignment])){
             throw new Vp3InitiativePlanValidationV1('invalid_job_sources','Invalid initiative assignment scope.');
@@ -449,6 +450,7 @@ function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array
     }
     if(($payload['tool']??null)==='brainstorm.explore')$label='Explore ideas across specialist briefs';
     if(($payload['tool']??null)==='curiosity.analyze')$label='Analyze specialist data and email activity';
+    if(($payload['tool']??null)==='gmail.prepare_reply')$label='Prepare a Gmail reply for owner review';
     if($transcriptResearch)$label='Research a saved transcript question';
     if($capability==='initiative.prepare'&&($payload['tool']??null)==='canvas.prepare'
         &&is_string($payload['primary']??null)&&str_starts_with($payload['primary'],'canvas-feedback:')){
@@ -1727,7 +1729,7 @@ function vp3_initiative_execute_v1(PDO $pdo,array $user,array $claim,?callable $
 function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?callable $model,array $run,array $payload,?array $researchTransport=null,bool $allowDelivery=true): array
 {
     $toolResult=[];$draft='';$jobs=[];$opportunities=[];$discarded=0;$youtubePlaylist=null;$finding=null;
-    $gmailReplyDraft=null;
+    $gmailReplyDraft=null;$curiosityGmailDraft=null;
     $failurePhase='binding';
     $sourcePreflightPassed=false;
     $sourcePreflightBlocked=false;
@@ -2005,6 +2007,8 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 }
                 $youtubePlaylist=$toolResult['youtube_playlist']??null;
                 unset($toolResult['youtube_playlist']);
+                $curiosityGmailDraft=$toolResult['curiosity_gmail_draft']??null;
+                unset($toolResult['curiosity_gmail_draft']);
             }
             $failurePhase='validation';
             $draft=is_string($toolResult['draft']??null)?trim($toolResult['draft']):'';
@@ -2028,7 +2032,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             &&vp3_initiative_can_report_v1($pdo,$live,(int)$binding['conversation_id'])){
             $stage('Presenting the verified result.');
         }
-        $commit=static function()use($pdo,$live,$binding,$sources,$canonicalSources,$planning,$canvasDiscovery,$jobs,$opportunities,$discarded,$activityOmitted,$finding,$ob1Inputs,$claim,$payload,$toolResult,$draft,$run,$agentId,$youtubePlaylist,$topicRefs,$reportOnly,$specialistAuthority,$officeEntry,$officeTask,$coordination,$gmailReplyDraft,$allowDelivery,$creativeFeedback,&$failurePhase):array{
+        $commit=static function()use($pdo,$live,$binding,$sources,$canonicalSources,$planning,$canvasDiscovery,$jobs,$opportunities,$discarded,$activityOmitted,$finding,$ob1Inputs,$claim,$payload,$toolResult,$draft,$run,$agentId,$youtubePlaylist,$topicRefs,$reportOnly,$specialistAuthority,$officeEntry,$officeTask,$coordination,$gmailReplyDraft,$curiosityGmailDraft,$allowDelivery,$creativeFeedback,&$failurePhase):array{
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_initiative_access_v1($pdo,$live,$binding);
         $evidence=$reportOnly===null
@@ -2101,6 +2105,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                     throw new InvalidArgumentException('Invalid private Canvas report.');
                 }
             }
+            if($curiosityGmailDraft!==null)vp3_curiosity_gmail_store_v1($pdo,$live,$binding,$payload,$curiosityGmailDraft);
             vp3_initiative_result_current_v1($pdo,$live,$binding,$payload,$toolResult,$evidence);
             if(($payload['tool']??null)==='curiosity.analyze'){
                 vp3_curiosity_analysis_threads_commit_v1($pdo,$live,$binding,$toolResult,(int)$run['id']);

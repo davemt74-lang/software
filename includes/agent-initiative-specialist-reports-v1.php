@@ -115,6 +115,13 @@ function vp3_initiative_specialist_reports_v1(PDO $pdo,array $user,array $bindin
             $reports[]=$report;
         }
     }catch(RuntimeException|JsonException $error){}
+    require_once __DIR__.'/agent-curiosity-gmail-draft-v1.php';
+    $drafts=vp3_curiosity_gmail_progress_v1($pdo,$user,$binding);
+    if($drafts){
+        $authority['curiosity_reply_drafts']=$drafts;
+        $reports=array_merge($reports,array_values($drafts));
+        foreach($drafts as $report)$authority['report_keys'][hash('sha256',json_encode($report,JSON_THROW_ON_ERROR))]=$report;
+    }
     if(!$completedOnly){
         require_once __DIR__.'/agent-initiative-task-reports-v1.php';
         try{$reports=array_merge($reports,vp3_initiative_task_reports_v1($pdo,$user,$binding,$now,$authority['tasks']));}
@@ -158,6 +165,10 @@ function vp3_initiative_specialist_report_only_v1(PDO $pdo,array $user,array $bi
 /** Recheck a saved report's source/consent before an external inference, including a provider fallback. */
 function vp3_initiative_specialist_reports_current_v1(PDO $pdo,array $user,array $binding,array $authority): void
 {
+    if(!empty($authority['curiosity_reply_drafts'])){
+        require_once __DIR__.'/agent-curiosity-gmail-draft-v1.php';
+        if(vp3_curiosity_gmail_progress_v1($pdo,$user,$binding,array_keys($authority['curiosity_reply_drafts']))!==$authority['curiosity_reply_drafts'])throw new Vp3InitiativeSourcesChangedV1();
+    }
     if($authority['gmail']!==null){
         $scope=vp3_initiative_specialist_gmail_scope_v1($pdo,$user,$binding);
         if($scope===null||!hash_equals($authority['gmail'],vp3_initiative_specialist_gmail_authority_v1($scope))){

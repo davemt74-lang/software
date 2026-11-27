@@ -83,19 +83,30 @@ function vp3_coordination_gmail_draft_store_v1(PDO $pdo,array $user,array $goal,
     if($source!==$draft['source']||$connection['account_email']!==$draft['from']){
         throw new Vp3InitiativeSourcesChangedV1();
     }
+    vp3_gmail_private_reply_store_v1($pdo,$user,$binding,$goal['followthrough']['reply_message_id'],$draft,$source);
+}
+
+/** Shared canonical draft storage; callers verify the exact source before entering this boundary. */
+function vp3_gmail_private_reply_store_v1(PDO $pdo,array $user,array $binding,int $ownerMessageId,array $draft,array $source): void
+{
+    if(!$pdo->inTransaction())throw new LogicException('Store a private reply with its workflow receipt.');
+    $owner=(int)$user['id'];$agent=vp3_initiative_binding_agent_v1($binding);
     $payload=$draft['payload'];
     agent_email_composer_validate_v1(['expires_at'=>0],$payload);
     if(($payload['composer']['version']??null)!==2)throw new Vp3InitiativeSourcesChangedV1();
     $insert=$pdo->prepare('INSERT INTO agent_connection_email_drafts_v1
         (id,owner_user_id,agent_id,conversation_id,user_message_id,connection_id,authorization_key,account_email,recipient,message_enc,status,expires_at)
         VALUES (?,?,?,?,?,?,?,?,?,?,\'prepared\',0)');
-    $insert->execute([$draft['id'],$owner,$agent,$binding['conversation_id'],$goal['followthrough']['reply_message_id'],
+    $insert->execute([$draft['id'],$owner,$agent,$binding['conversation_id'],$ownerMessageId,
         $source['connection_id'],$source['authorization_key'],$draft['from'],$draft['to'],
         ai_encrypt_secret(json_encode($payload,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE))]);
-    require_once __DIR__.'/agent-email-preferences-v1.php';
-    agent_email_preferences_capture_generated_v1($pdo,
-        agent_connection_email_chat_draft_v1($pdo,$owner,$agent,(int)$binding['conversation_id'],$draft['id']),
-        'organic:'.$draft['id']);
+    require_once __DIR__.'/agent-email-preferences-schema-v1.php';
+    if(agent_email_preferences_ready_v1($pdo)){
+        require_once __DIR__.'/agent-email-preferences-v1.php';
+        agent_email_preferences_capture_generated_v1($pdo,
+            agent_connection_email_chat_draft_v1($pdo,$owner,$agent,(int)$binding['conversation_id'],$draft['id']),
+            'organic:'.$draft['id']);
+    }
 }
 
 function vp3_coordination_gmail_draft_action_v1(PDO $pdo,array $user,int $agent,int $conversation,string $id): array

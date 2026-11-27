@@ -244,6 +244,9 @@ jobs:
           php tests/agent-curiosity-analysis-v1.php
           php tests/agent-curiosity-attachment-threads-v1.php
           php tests/agent-curiosity-attachment-threads-v1.php factual
+          for scenario in gmail gmail-no-request gmail-new-mail gmail-outbound gmail-revoked gmail-stale-bytes gmail-soul; do
+            php tests/agent-curiosity-attachment-threads-v1.php "$scenario"
+          done
           php tests/agent-curiosity-live-screen-v1.php
           php tests/agent-creative-feedback-v1.php
           php tests/agent-initiative-opportunity-sources-v1.php
@@ -556,6 +559,9 @@ jobs:
           php tests/agent-curiosity-analysis-v1.php
           php tests/agent-curiosity-attachment-threads-v1.php
           php tests/agent-curiosity-attachment-threads-v1.php factual
+          for scenario in gmail gmail-no-request gmail-new-mail gmail-outbound gmail-revoked gmail-stale-bytes gmail-soul; do
+            php tests/agent-curiosity-attachment-threads-v1.php "$scenario"
+          done
           php tests/agent-creative-feedback-v1.php
           php tests/agent-initiative-opportunity-view-v1.php
           php tests/agent-initiative-opportunity-sources-v1.php

@@ -529,17 +529,21 @@ function vp3_curiosity_followup_prompt_v1(array $thread,int $position,string $an
 }
 
 function vp3_curiosity_apply_reply_v1(PDO $pdo,array $user,int $agentId,int $conversationId,string $threadId,string $questionId,
-    int $replyMessageId,string $disposition,?int $now=null): array
+    int $replyMessageId,string $disposition,?int $now=null,bool $gmailReplyRequested=false): array
 {
     if(!in_array($disposition,['answered','skipped','deferred'],true)||$replyMessageId<1)throw new InvalidArgumentException('Choose a Curiosity response.');
     $now??=time();$ref=vp3_curiosity_ref_v1($threadId,$questionId);
     require_once __DIR__.'/agent-initiative-followthrough-v1.php';
-    return agent_commerce_atomic_pa2($pdo,static function()use($pdo,$user,$agentId,$conversationId,$threadId,$questionId,$replyMessageId,$disposition,$now,$ref):array{
+    return agent_commerce_atomic_pa2($pdo,static function()use($pdo,$user,$agentId,$conversationId,$threadId,$questionId,$replyMessageId,$disposition,$now,$ref,$gmailReplyRequested):array{
         vp3_initiative_owner_lock_v1($pdo,$user);
         $scope=vp3_curiosity_private_scope_v1($pdo,$user,$agentId,$conversationId);
         $thread=vp3_curiosity_read_threads_v1($pdo,$scope,[$threadId])[$threadId]??null;
         if($thread===null)throw new RuntimeException('The Curiosity thread is unavailable.',404);
         if(!vp3_curiosity_thread_source_current_v1($pdo,$scope,$thread))throw new RuntimeException('The source for this Curiosity question changed.',409);
+        if($gmailReplyRequested){
+            require_once __DIR__.'/agent-curiosity-gmail-draft-v1.php';
+            if($disposition!=='answered'||!vp3_curiosity_gmail_option_v1($pdo,$user,$agentId,$conversationId,$threadId))throw new RuntimeException('The Gmail reply source changed.',409);
+        }
         $index=array_search($questionId,array_column($thread['questions'],'id'),true);
         if($index===false)throw new RuntimeException('The Curiosity question is unavailable.',404);
         $question=$thread['questions'][$index];
@@ -561,11 +565,11 @@ function vp3_curiosity_apply_reply_v1(PDO $pdo,array $user,int $agentId,int $con
         $answer=vp3_curiosity_safe_text_v1($raw,400);
         $question['state']=$disposition;$question['reply_message_id']=$replyMessageId;$question['reply_hash']=hash('sha256',$raw);
         $thread['questions'][$index]=$question;$thread['updated_at']=$now;$thread['state']=$disposition;
-        $actionable=$disposition==='answered'&&vp3_curiosity_answer_is_actionable_v1($answer);
+        $actionable=$disposition==='answered'&&($gmailReplyRequested||vp3_curiosity_answer_is_actionable_v1($answer));
         // An attachment answer describes this file/order, never a standing personal preference.
         if($actionable||(!isset($thread['analysis_origin'])&&$disposition==='answered'&&vp3_curiosity_taste_v1($answer))){
             $thread['confirmed'][$actionable?'goal':'taste']=['conversation_id'=>$conversationId,'message_id'=>$replyMessageId,
-                'question_id'=>$questionId,'answer_hash'=>$question['reply_hash']];
+                'question_id'=>$questionId,'answer_hash'=>$question['reply_hash']]+($gmailReplyRequested?['gmail_reply_requested'=>true]:[]);
         }
         $followup=$disposition==='answered'?vp3_curiosity_followup_prompt_v1($thread,$index+1,$answer,$actionable):null;
         if($followup!==null){
@@ -575,6 +579,7 @@ function vp3_curiosity_apply_reply_v1(PDO $pdo,array $user,int $agentId,int $con
         $context=json_decode((string)$reply['context_json'],true,32,JSON_THROW_ON_ERROR);
         $context['skip_brain_archive']=true;
         $context['curiosity_reply_v1']=['thread_id'=>$threadId,'question_id'=>$questionId,'state'=>$disposition];
+        if($gmailReplyRequested)$context['curiosity_reply_v1']['gmail_reply_requested']=true;
         $pdo->prepare('UPDATE chat_messages SET context_json=? WHERE id=? AND conversation_id=? AND user_id=?')
             ->execute([json_encode($context,JSON_THROW_ON_ERROR),$replyMessageId,$conversationId,(int)$scope['user']['id']]);
         vp3_curiosity_write_thread_v1($scope,$thread);
@@ -616,7 +621,10 @@ function vp3_curiosity_confirmed_row_v1(PDO $pdo,array $scope,array $thread,stri
     $row=vp3_curiosity_reply_source_v1($pdo,$scope,$cid,$mid,$proof['answer_hash'],$matched['message_id']);
     if($row===null)return null;
     $summary=vp3_curiosity_safe_text_v1($row['message'],400);
-    if(!($kind==='goal'?vp3_curiosity_answer_is_actionable_v1($summary):vp3_curiosity_taste_v1($summary)))return null;
+    $context=json_decode((string)$row['context_json'],true);
+    $draftRequested=isset($thread['analysis_origin'])&&($proof['gmail_reply_requested']??null)===true
+        &&($context['curiosity_reply_v1']['gmail_reply_requested']??null)===true;
+    if(!($kind==='goal'?($draftRequested||vp3_curiosity_answer_is_actionable_v1($summary)):vp3_curiosity_taste_v1($summary)))return null;
     return ['id'=>$thread['id'],'title'=>$thread['title'],'summary'=>$summary,'conversation_id'=>$cid,'message_id'=>$mid,
         'href'=>vp3_curiosity_href_v1($scope,$cid,$mid),'revision'=>hash('sha256',$thread['id'].'|'.$matched['id'].'|'.$mid.'|'.$proof['answer_hash'])];
 }
