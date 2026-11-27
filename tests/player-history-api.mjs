@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import {spawn,execFileSync} from 'node:child_process';
 const php=process.env.PHP_BINARY||'php',repo=process.cwd(),root=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-history-'));
 fs.mkdirSync(path.join(root,'api'));fs.mkdirSync(path.join(root,'includes'));
-for(const p of ['api/playback.php','api/player-library-v76.php','includes/player-v76.php','includes/music-media.php','includes/notifications.php','includes/agent-chat-activity.php','includes/recommendations.php','includes/music-catalog.php','includes/music-listening-v1.php'])fs.copyFileSync(p,path.join(root,p));
+for(const p of ['api/playback.php','api/player-library-v76.php','includes/player-v76.php','includes/music-media.php','includes/notifications.php','includes/notification-read-transactions-v1.php','includes/agent-chat-activity.php','includes/recommendations.php','includes/music-catalog.php','includes/music-listening-v1.php'])fs.copyFileSync(p,path.join(root,p));
 fs.writeFileSync(path.join(root,'includes/bootstrap.php'),`<?php
 define('STONEFELLOW_ROOT',dirname(__DIR__));
 class HistoryPDO extends PDO {public function prepare(string $q,array $opts=[]):PDOStatement|false{return parent::prepare(str_replace([' FOR UPDATE','COALESCE(user_id,0)=?','INSERT IGNORE INTO'],['','COALESCE(user_id,0)=CAST(? AS INTEGER)','INSERT OR IGNORE INTO'],$q),$opts);}}

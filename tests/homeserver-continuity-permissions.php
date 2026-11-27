@@ -45,6 +45,7 @@ foreach(['homeserver_agent_events','homeserver_agent_state','homeserver_reconcil
 if(!table_exists('users'))$pdo->exec($mysql?'CREATE TABLE users(id INT UNSIGNED PRIMARY KEY,is_active TINYINT NOT NULL DEFAULT 1) ENGINE=InnoDB':'CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER NOT NULL DEFAULT 1)');
 $pdo->exec('INSERT INTO users(id) VALUES(91)');
 $pdo->exec($mysql?"CREATE TABLE IF NOT EXISTS notifications(id BIGINT AUTO_INCREMENT PRIMARY KEY,user_id INT,type VARCHAR(50),title VARCHAR(190),body TEXT,target_url TEXT,source_type VARCHAR(80),source_id BIGINT NULL,is_read INT DEFAULT 0,read_at DATETIME NULL,created_at DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB":"CREATE TABLE notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,type TEXT,title TEXT,body TEXT,target_url TEXT,source_type TEXT,source_id INTEGER,is_read INTEGER DEFAULT 0,read_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+$pdo->exec("DELETE FROM notifications WHERE user_id=91 AND type='homeserver_connection_update'");
 if(!$mysql)$pdo->sqliteCreateFunction('NOW',static fn():string=>gmdate('Y-m-d H:i:s'));
 if(!$mysql){
     $pdo->exec("CREATE TABLE homeserver_federated_records(user_id INTEGER,authority_source TEXT,dataset TEXT,authority_key TEXT,canonical_id TEXT,observed_source TEXT,record_hash TEXT,source_updated_at TEXT,tombstoned INTEGER,last_seen_at TEXT,UNIQUE(user_id,authority_source,dataset,authority_key,observed_source))");
