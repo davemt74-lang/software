@@ -1,0 +1,10 @@
+.vp3-gmail-documents{min-width:0;max-width:100%;padding:16px 0;color:#243249;font:14px/1.5 system-ui,sans-serif}
+.vp3-gmail-documents *{box-sizing:border-box;min-width:0}.vp3-gmail-documents h3,.vp3-gmail-documents h4{margin:12px 0 8px;color:#18212e}
+.vp3-gmail-documents>details{border:1px solid #d8e0eb;border-radius:9px;padding:12px;margin:10px 0;background:#f8fafc}
+.vp3-gmail-documents summary{min-height:44px;padding:10px 0;font-weight:600;cursor:pointer;overflow-wrap:anywhere}
+.vp3-gmail-documents p,.vp3-gmail-documents li{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}
+.vp3-gmail-documents label{display:grid;gap:8px;margin:12px 0}.vp3-gmail-documents textarea{width:100%;min-height:82px;overflow:hidden;resize:none;padding:11px;border:1px solid #c6d0de;border-radius:7px;background:white;color:#18212e;font:inherit}
+.vp3-gmail-documents button,.vp3-gmail-documents a{min-height:44px;max-width:100%;padding:10px 14px;border:1px solid #bccbdd;border-radius:7px;background:white;color:#233d64;font:600 13px/1.4 system-ui;cursor:pointer;overflow-wrap:anywhere}
+.vp3-gmail-documents button:disabled{opacity:.55;cursor:default}.vp3-gmail-documents button:focus-visible,.vp3-gmail-documents textarea:focus-visible,.vp3-gmail-documents summary:focus-visible{outline:2px solid #386bc1;outline-offset:3px}
+.vp3-gmail-document-actions{display:flex;flex-wrap:wrap;gap:8px}.vp3-gmail-document-result>small{display:block;color:#617087}.vp3-gmail-document-result li>button{margin-left:8px}
+@media(max-width:600px){.vp3-gmail-documents textarea{font-size:16px}.vp3-gmail-document-actions>button{flex:1 1 auto}.vp3-gmail-documents>details{padding:10px}}

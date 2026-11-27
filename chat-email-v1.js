@@ -461,13 +461,14 @@
       details.append(headers);
       const body = message.body || 'This message has no readable text.';
       const renderBody = window.VP3GmailInboxInitialV1?.renderMessageBody;
-      if (renderBody) renderBody(details,body,message.links,'vp3-chat-email-message-body',message.display,message.subject);
+      if (renderBody) renderBody(details,body,message.links,'vp3-chat-email-message-body',message.display,message.subject,message.documents);
       else if (window.VP3GmailEmailDisplayV1?.mount(details,message)) { /* Formatted private reader. */ }
       else {
         const text = element('p',body);
         text.className = 'vp3-chat-email-message-body';
         details.append(text);
       }
+      if (!renderBody) window.VP3GmailDocumentsV1?.mount(details,message.documents);
       if (message.can_reply) {
         const instruction = element('input');
         instruction.type = 'text';

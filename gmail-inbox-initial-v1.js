@@ -189,7 +189,7 @@
     return visible;
   }
 
-  function renderOpenedEmail(panel,text,links,proof,bodyClass = '',display = null,subject = '') {
+  function renderOpenedEmail(panel,text,links,proof,bodyClass = '',display = null,subject = '',documents = null) {
     const approved = new Map();
     for (const entry of Array.isArray(links) ? links.slice(0,30) : []) {
       const url = httpLink(entry?.url);
@@ -222,6 +222,7 @@
           .catch(() => {});
       }});
     if (!formatted) renderPlain(panel);
+    window.VP3GmailDocumentsV1?.mount(panel,documents);
   }
 
   function renderGmailPostLinks(row) {
@@ -400,7 +401,7 @@
       const ref = itemRef(payload.item_ref) ? payload.item_ref : itemRef(message.item_ref) ? message.item_ref : null;
       const proof = ref ? linkScope({conversation_id:payload.conversation_id,message_id:payload.chat_message_id},ref)
         || {mailbox:true,item_ref:ref} : null;
-      renderOpenedEmail(panel,message.body || 'No readable text in this message.',message.links,proof,'',message.display,message.subject);
+      renderOpenedEmail(panel,message.body || 'No readable text in this message.',message.links,proof,'',message.display,message.subject,message.documents);
       if (message.answered_in_gmail === true) {
         panel.append(node('small','Already replied in Gmail.'));
         return;
@@ -1398,7 +1399,7 @@
     }
     for (const row of thread.querySelectorAll('[data-gmail-content-post="true"]')) renderGmailPostLinks(row);
     window.VP3GmailInboxInitialV1 = Object.freeze({openTriageItem,openArrivedItem,openReportedItem,
-      renderMessageBody:(panel,text,links,bodyClass,display,subject) => renderOpenedEmail(panel,text,links,null,bodyClass,display,subject)});
+      renderMessageBody:(panel,text,links,bodyClass,display,subject,documents) => renderOpenedEmail(panel,text,links,null,bodyClass,display,subject,documents)});
   }
   listenForReviewChanges();
   render();

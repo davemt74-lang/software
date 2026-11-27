@@ -10,6 +10,7 @@ require_once __DIR__.'/../includes/user-llm-v1.php';
 // Use the shipped prompt builders, broker and metered transport. Only the
 // cURL handle is simulated, so the dispatch guard runs on the real call path.
 $source = file_get_contents(__DIR__.'/../includes/ai-settings.php');
+$source=str_replace("require_once __DIR__.'/agent-gmail-document-input-v1.php';",'require_once '.var_export(dirname(__DIR__).'/includes/agent-gmail-document-input-v1.php',true).';',$source);
 $start = strpos($source, 'function ai_context_prompt(');
 $end = strpos($source, 'function ai_curl_json(', $start);
 eval(str_replace("require_once __DIR__.'/agent-tool-json-v1.php';", '', substr($source,$start,$end-$start)));

@@ -71,6 +71,7 @@ jobs:
             "phone_agent_email_calls": "owner-consented-v1",
             "phone_agent_email_call_delivery_default": "off",
             "gmail_draft_preferences": "owner-reviewed-email-soul-v1",
+            "gmail_attachment_understanding": "owner-reviewed-documents-v1",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
             "tracky_agent_eyes_section": "1G5",
@@ -515,6 +516,13 @@ jobs:
           test -f _deploy/email-writing-preferences-v1.js
           test -f _deploy/email-writing-preferences-v1.css
           test -f _deploy/docs/GMAIL-DRAFT-PREFERENCES-V1.txt
+          test -f _deploy/api/gmail-documents-v1.php
+          test -f _deploy/includes/agent-gmail-documents-v1.php
+          test -f _deploy/includes/agent-gmail-documents-schema-v1.php
+          test -f _deploy/includes/agent-gmail-document-input-v1.php
+          test -f _deploy/gmail-documents-v1.js
+          test -f _deploy/gmail-documents-v1.css
+          test -f _deploy/docs/GMAIL-ATTACHMENT-UNDERSTANDING-V1.txt
           test -f _deploy/includes/agent-initiative-youtube-offer-v1.php
           test -f _deploy/includes/agent-initiative-model-recovery-v1.php
           test -f _deploy/includes/agent-token-balance-notice-v1.php

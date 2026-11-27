@@ -162,7 +162,7 @@ function agent_email_composer_connection_v1(PDO $pdo, array $user): array
 
 /** Idempotent composer creation. The generic Chat marker carries no recipient, body, or attachment bytes. */
 function agent_email_composer_create_v1(PDO $pdo, array $user, array $principal, int $conversation, array $input,
-    string $key, ?int $userMessage=null, string $instruction=''): array
+    string $key, ?int $userMessage=null, string $instruction='', ?array $nativeReply=null): array
 {
     $user = agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
     $request = $input['request_id'] ?? null;
@@ -174,15 +174,27 @@ function agent_email_composer_create_v1(PDO $pdo, array $user, array $principal,
     $owner = (int)$user['id'];
     $agent = (int)($principal['agent_id'] ?? 0);
     $id = substr(hash('sha256',json_encode(['vp3-email-composer-v1',$owner,$agent,$conversation,$request],JSON_THROW_ON_ERROR)),0,32);
-    $draft = agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$user,$principal,$conversation,$userMessage,$owner,$agent,$id,$to,$subject,$body,$instruction): array {
+    $draft = agent_commerce_atomic_pa2($pdo,static function () use ($pdo,$user,$principal,$conversation,$userMessage,$owner,$agent,$id,$to,$subject,$body,$instruction,$nativeReply): array {
         agent_connection_email_chat_authority_v1($pdo,$user,$principal,$conversation);
         $connection = agent_email_composer_connection_v1($pdo,$user);
+        if ($nativeReply!==null) {
+            if ($instruction!=='' || (int)$connection['id']!==$nativeReply['connection_id'] || $connection['account_email']!==$nativeReply['account']) throw new DomainException('The reply connection changed.',409);
+            $connection=agent_connections_require_grant_v1($pdo,$owner,$nativeReply['connection_id'],'reply',$nativeReply['grant']);
+            $nativeReply['reply']=agent_connection_gmail_reply_binding_v1($nativeReply['reply']);
+        }
         if (!vp3_agent_chat_conversation_v380($pdo,$conversation,$owner,$agent > 0 ? ['id'=>$agent] : null,$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql')) {
             throw new DomainException('Open the original private Chat to compose an email.',403);
         }
         $existing = $pdo->prepare('SELECT * FROM agent_connection_email_drafts_v1 WHERE id=? AND owner_user_id=? AND agent_id=? AND conversation_id=?');
         $existing->execute([$id,$owner,$agent,$conversation]);
-        if ($saved = $existing->fetch(PDO::FETCH_ASSOC)) return $saved;
+        if ($saved = $existing->fetch(PDO::FETCH_ASSOC)) {
+            if ($nativeReply!==null) {
+                $existingPayload=agent_connection_email_chat_payload_v1($saved);
+                if (($existingPayload['reply']??null)!==$nativeReply['reply']||(int)$saved['connection_id']!==$nativeReply['connection_id']
+                    ||$saved['authorization_key']!==$nativeReply['grant']||$saved['recipient']!==$to) throw new DomainException('This reply request belongs to another saved email.',409);
+            }
+            return $saved;
+        }
         $now = time();
         if ($userMessage === null) {
             $context = json_encode(['source'=>'agent_email_composer','skip_brain_archive'=>true],JSON_THROW_ON_ERROR);
@@ -194,6 +206,7 @@ function agent_email_composer_create_v1(PDO $pdo, array $user, array $principal,
         }
         if ($userMessage < 1) throw new DomainException('Use a saved Agent Chat to prepare an email.',422);
         $payload = ['subject'=>$subject,'body'=>$body,'attachments'=>[], 'composer'=>['version'=>1,'saved_at'=>$now]];
+        if ($nativeReply!==null) $payload += ['reply'=>$nativeReply['reply'],'soul_version'=>$nativeReply['soul_version'],'soul_revision'=>$nativeReply['soul_revision']];
         $status = 'prepared';
         if ($instruction !== '') {
             $payload['write'] = agent_connection_email_chat_write_request_v1('compose_new',$instruction);
@@ -204,7 +217,12 @@ function agent_email_composer_create_v1(PDO $pdo, array $user, array $principal,
             (id,owner_user_id,agent_id,conversation_id,user_message_id,connection_id,authorization_key,account_email,recipient,message_enc,status,expires_at)
             VALUES (?,?,?,?,?,?,?,?,?,?,?,0)')->execute([$id,$owner,$agent,$conversation,$userMessage,
                 (int)$connection['id'],$connection['authorization_key'],$connection['account_email'],$to,$encoded,$status]);
-        return agent_connection_email_chat_draft_v1($pdo,$owner,$agent,$conversation,$id);
+        $saved=agent_connection_email_chat_draft_v1($pdo,$owner,$agent,$conversation,$id);
+        if ($nativeReply!==null) {
+            require_once __DIR__.'/agent-email-preferences-v1.php';
+            agent_email_preferences_capture_generated_v1($pdo,$saved,$nativeReply['generation_key']);
+        }
+        return $saved;
     });
     return agent_connection_email_chat_public_draft_v1($draft,$key,time());
 }

@@ -55,6 +55,7 @@ $asset=static fn(string $file):string=>url('/'.$file.'?v='.substr(hash_file('sha
   <link rel="stylesheet" href="<?= e($asset('chat-email-composer-v1.css')) ?>">
   <link rel="stylesheet" href="<?= e($asset('chat-email-followthrough-v1.css')) ?>">
   <link rel="stylesheet" href="<?= e($asset('email-writing-preferences-v1.css')) ?>">
+  <link rel="stylesheet" href="<?= e($asset('gmail-documents-v1.css')) ?>">
   <link rel="stylesheet" href="<?= e($asset('gmail-email-display-v1.css')) ?>">
   <link rel="stylesheet" href="<?= e($asset('phone-agent-item-v1.css')) ?>">
   <?php if($clientPayload!==null): ?>
@@ -62,6 +63,7 @@ $asset=static fn(string $file):string=>url('/'.$file.'?v='.substr(hash_file('sha
   <script src="<?= e($asset('phone-agent-item-v1.js')) ?>" defer></script>
   <?php endif; ?>
   <?php if($payload!==null): ?>
+  <script src="<?= e($asset('gmail-documents-v1.js')) ?>" defer></script>
   <script src="<?= e($asset('gmail-email-display-v1.js')) ?>" defer></script>
   <script src="<?= e($asset('chat-email-followthrough-v1.js')) ?>" defer></script>
   <script src="<?= e($asset('email-writing-preferences-v1.js')) ?>" defer></script>
