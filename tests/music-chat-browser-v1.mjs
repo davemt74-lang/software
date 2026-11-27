@@ -80,7 +80,7 @@ async function pageFor(viewport = {width:1280, height:900}) {
 }
 
 const cards = page => page.locator('.vp3-music-chat');
-const lastCard = page => cards(page).last();
+const resultCard = (page, result) => page.locator(`[data-chat-message-id="${result.assistant_message_id}"] .vp3-music-chat`).last();
 const rows = card => card.locator('.vp3-music-item');
 const requestCount = action => fixture.requests().filter(row => row.path === '/api/music-chat-v1.php' && row.action === action).length;
 const nativeCount = () => Number(fixture.readDb('SELECT COUNT(*) AS total FROM track_play_sessions')[0].total);
@@ -103,7 +103,9 @@ async function attach(page, seed, live = false) {
     message.dataset.chatConversationId = '42'; message.dataset.chatMessageRole = 'assistant';
     const avatar = document.createElement('div'); avatar.className = 'message-avatar'; avatar.textContent = 'AI';
     const body = document.createElement('div'); body.className = 'message-body';
-    message.append(avatar, body); document.querySelector('#chatThread').append(message);
+    message.append(avatar, body);
+    const thread = document.querySelector('#chatThread');
+    thread.insertBefore(message, thread.querySelector('.chat-listening-continuation'));
     await window.VP3_MUSIC_CHAT_V1.attach(message, seed.music_chat_v1, {live});
   }, {seed, live});
   return page.locator(`[data-chat-message-id="${seed.assistant_message_id}"] .vp3-music-chat`).last();
@@ -130,7 +132,7 @@ async function waitUntil(fn, message) {
   }
   assert.fail(message + '\n' + fixture.logs);
 }
-async function layout(page, label) {
+async function layout(page, label, card) {
   check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `${label}: horizontal overflow`);
   const violations = await page.locator('.vp3-music-chat').evaluateAll(elements => elements.flatMap(card => {
     const errors = [];
@@ -142,7 +144,8 @@ async function layout(page, label) {
     return errors;
   }));
   equal(violations, [], `${label}: touch controls and normal card scrolling`);
-  await lastCard(page).screenshot({path:path.join(artifactDir, `${label}.png`)});
+  await card.evaluate(element => element.scrollIntoView({block:'start'}));
+  await card.screenshot({path:path.join(artifactDir, `${label}.png`)});
   await page.screenshot({path:path.join(artifactDir, `${label}-page.png`), fullPage:false});
 }
 
@@ -153,32 +156,35 @@ try {
   const page = desktop.page;
 
   const one = await send(page, 'show me one song');
+  const oneCard = resultCard(page, one);
   equal(one.music_chat_v1.items.length, 1, 'One song has one global result');
-  equal(await rows(lastCard(page)).count(), 1, 'One song renders one row');
-  equal(await lastCard(page).locator('iframe,audio').count(), 0, 'Show is quiet');
+  equal(await rows(oneCard).count(), 1, 'One song renders one row');
+  equal(await oneCard.locator('iframe,audio').count(), 0, 'Show is quiet');
   equal(nativeCount() + youtubeCount(), 0, 'Display creates no listening receipts');
   const youtube = await send(page, 'show me one YouTube song');
+  const youtubeCard = resultCard(page, youtube);
   equal(youtube.music_chat_v1.items[0].source, 'youtube', 'YouTube source selection');
-  equal(await rows(lastCard(page)).count(), 1, 'YouTube song is a single unified row');
-  equal(await lastCard(page).locator('.vp3-youtube-results').count(), 0, 'No duplicate legacy source card');
-  await layout(page, 'desktop-song');
+  equal(await rows(youtubeCard).count(), 1, 'YouTube song is a single unified row');
+  equal(await youtubeCard.locator('.vp3-youtube-results').count(), 0, 'No duplicate legacy source card');
+  await layout(page, 'desktop-song', youtubeCard);
   const shortfall = await fixture.seed({playlist:true,title:'Short playlist',requested_count:8,
     items:[{source:'vp3',source_id:'41'},{source:'vp3',source_id:'42'}]});
   const shortfallCard = await attach(page, shortfall, true);
   await shortfallCard.getByText('Found 2 of 8 requested songs.', {exact:true}).waitFor();
   checks += 1;
-  await layout(page, 'desktop-results');
+  await layout(page, 'desktop-results', shortfallCard);
 
   const three = await send(page, 'show me three songs');
   const chosen = three.music_chat_v1.items[1];
   fixture.run('db()->exec("UPDATE tracks SET sort_order=-id");');
   const followup = await send(page, 'play the second song');
+  const followupCard = resultCard(page, followup);
   equal(followup.music_chat_v1.items.map(item => [item.source,item.source_id]), [[chosen.source,chosen.source_id]], 'Exact follow-up uses stored ordering');
-  await nativeStarted(page, lastCard(page));
+  await nativeStarted(page, followupCard);
   await waitUntil(() => nativeCount() === 1, 'Native player did not use the existing receipt endpoint');
   const commandsBefore = fixture.requests().filter(row => row.path === '/api/chat.php' && row.action === 'send').length;
   await page.locator('#chatInput').fill('pause'); await page.locator('#sendChatButton').click();
-  await playbackState(lastCard(page), 'paused');
+  await playbackState(followupCard, 'paused');
   equal(fixture.requests().filter(row => row.path === '/api/chat.php' && row.action === 'send').length, commandsBefore, 'Local pause did not re-run a search');
   await page.evaluate(() => window.VP3_MUSIC_CHAT_V1.runCommand('stop'));
 
@@ -232,7 +238,7 @@ try {
   await waitUntil(() => fixture.readDb('SELECT state FROM music_listening_sessions_v1 WHERE session_id=?', [restarted.session_id])[0].state === 'stopped',
     'The replayed native session did not accept its terminal Stop');
   equal(nativeCount(), beforeResumeSessions + 1, 'Stop and same-song replay created exactly one new native session');
-  await layout(page, 'desktop-playlist');
+  await layout(page, 'desktop-playlist', mixedCard);
 
   // Queued results preserve the currently playing song and validate each saved
   // source selection when it reaches the front. Creating a ready queue is quiet.
@@ -409,17 +415,17 @@ try {
   // Phone-size rendering uses the same production controllers and real API.
   const mobile = await pageFor({width:390, height:844});
   const phone = mobile.page;
-  await send(phone, 'show me one YouTube song');
-  await layout(phone, 'phone-result');
+  const phoneSong = await send(phone, 'show me one YouTube song');
+  await layout(phone, 'phone-result', resultCard(phone, phoneSong));
   const phonePlaylist = await fixture.seed({playlist:true,title:'Phone playlist',items:[{source:'vp3',source_id:'41'},
     {source:'youtube',source_id:'vp300000001'},{source:'vp3',source_id:'42'}]});
   const phoneCard = await attach(phone, phonePlaylist, true);
   await phoneCard.getByRole('button', {name:'Edit playlist', exact:true}).click();
-  await layout(phone, 'phone-playlist-edit');
+  await layout(phone, 'phone-playlist-edit', phoneCard);
   await phoneCard.getByRole('button', {name:'Done editing', exact:true}).click();
   await rows(phoneCard).nth(1).getByRole('button', {name:'Play YouTube Song 1', exact:true}).click();
   await playbackState(phoneCard, 'playing');
-  await layout(phone, 'phone-visible-youtube');
+  await layout(phone, 'phone-visible-youtube', phoneCard);
   await phone.evaluate(() => window.VP3_MUSIC_CHAT_V1.runCommand('stop'));
   await phoneCard.getByRole('button', {name:'Edit playlist', exact:true}).click();
   await phoneCard.getByRole('button', {name:'Delete playlist', exact:true}).click();

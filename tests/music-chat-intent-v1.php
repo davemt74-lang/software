@@ -49,11 +49,14 @@ foreach([
     ['Play "Home Server" by Artist Name from VP3','play',1,'vp3',true,'Home Server'],
     ['Play "Music Server" by Artist Name on YouTube','play',1,'youtube',true,'Music Server'],
     ['Play "Media Server" by Artist Name','play',1,'both',true,'Media Server'],
+    ['Play "The Next One" by Artist Name','play',1,'both',true,'The Next One'],
+    ['Play "Previous Track" by Artist Name on YouTube','play',1,'youtube',true,'Previous Track'],
     ['Show me 2 songs but not from YouTube','show',2,'vp3',false,''],
     ['Show me 2 songs not on VP3','show',2,'youtube',false,''],
     ['Play one song from VP3 and not YouTube','play',1,'vp3',true,''],
     ['Queue one calm song from VP3','queue_append',1,'vp3',true,'calm'],
     ['Play "Native Midnight" next','play_next',1,'both',true,'Native Midnight'],
+    ['Play one calm song next','play_next',1,'both',true,'calm'],
 ] as [$request,$intent,$count,$source,$autoplay,$query]){
     $plan=vp3_music_chat_plan_v1($request);
     music_intent_assert($plan!==null,'Recognized music request: '.$request);
@@ -79,6 +82,13 @@ foreach([
     'Can you play music on HomeServer?',
     'Can you play music on my home server?',
     'Search my home server music library for jazz',
+    'Play the next one',
+    'Play the next',
+    'Show me the next result',
+    'Play the next song',
+    'Play previous one',
+    'Play the previous track',
+    'Play the next YouTube song',
 ] as $request)music_intent_equal(vp3_music_chat_plan_v1($request),null,'Unrelated discussion, negation, video, or history stays on its route: '.$request);
 music_intent_equal(vp3_music_chat_plan_v1('Play the second one')['selection']['index'],2,'Ordinal is global result position');
 music_intent_equal(vp3_music_chat_plan_v1('Play that playlist')['intent'],'play_playlist','Saved playlist followup is explicit');

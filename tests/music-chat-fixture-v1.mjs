@@ -19,7 +19,7 @@ export async function startMusicChatFixture() {
     for (const directory of ['includes', 'assets']) fs.cpSync(path.join(repository, directory), path.join(root, directory), {recursive:true});
     for (const file of ['api/music-chat-v1.php', 'api/player-library-v76.php', 'api/playback.php',
       'api/chat-youtube-playback-v1.php', 'media.php', 'chat.js', 'chat.css', 'chat-youtube-v1.js',
-      'chat-youtube-v1.css', 'chat-legacy-v108.php', 'tests/fixtures/music-chat-library-v1.php',
+      'chat-youtube-v1.css', 'chat-legacy-v108.php', 'images/stonefellow-studio.png', 'tests/fixtures/music-chat-library-v1.php',
       'tests/fixtures/music-chat-v1.php']) {
       fs.mkdirSync(path.dirname(path.join(root, file)), {recursive:true});
       fs.copyFileSync(path.join(repository, file), path.join(root, file));

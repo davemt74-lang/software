@@ -50,6 +50,9 @@ function vp3_music_chat_parse_v1(string $request): ?array
     // These named local services already have their own read/capability route.
     // The public parser shields quoted song and playlist titles before this check.
     if(preg_match('/\b(?:Home\s*Server|(?:Music|Media)\s+Server)\b/iu',$text))return null;
+    // Relative playback controls belong to the existing active media context,
+    // not a fresh title search. A quoted title such as "The Next One" stays literal.
+    if(preg_match('/\A(?:show(?:\s+me)?|list|find|open|play|replay|watch|listen\s+to)\s+(?:the\s+)?(?:next|previous)(?:\s+(?:you\s*tube\s+)?(?:one|song|track|video|clip|result))?\z/iu',$text))return null;
     if(preg_match('/\b(?:videos?|movies?|films?|tutorials?|recipes?|documentar(?:y|ies)|lectures?|podcasts?|games?|chess|checkers|trivia|roleplay)\b/iu',$text))return null;
     if(preg_match('/\A(?:show|tell|teach|explain)(?:\s+me)?\s+(?:how|why|what|whether)\b/iu',$text))return null;
 

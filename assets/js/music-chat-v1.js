@@ -369,6 +369,8 @@
     if (!record || !current(record, true)) return null;
     const phrase = String(message).trim().toLowerCase().replace(/[.!?]+$/, '').replace(/^(?:please |(?:can|could|would) you )+/, '');
     if (/^(?:play|start)(?: (?:the )?(?:music|song|track|playlist|queue))?$/.test(phrase)) return 'resume';
+    const relative = /^(?:play |skip to )?(?:the )?(next|previous)(?: (?:one|song|track))?$/.exec(phrase.replace(/ please$/, ''));
+    if (relative) return relative[1];
     const match = /^(?:play |skip to )?(pause|resume|continue|stop|next|previous)(?: (?:the )?(?:music|song|track|playlist|player))?$/.exec(phrase.replace(/ please$/, ''));
     return match ? (['continue', 'resume'].includes(match[1]) ? 'resume' : match[1]) : null;
   }

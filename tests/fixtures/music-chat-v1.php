@@ -210,7 +210,7 @@ function music_chat_http_page_v1(): void
     <nav hidden aria-label="Fixture chat history"><button id="newChatButton" type="button">New chat</button><div id="chatHistory" class="chat-history"></div></nav>
     <div class="chat-app"><main class="chat-main"><header class="fixture-top">Media &amp; Entertainment <span class="fixture-label">VP3 + YouTube</span></header>
     <section class="chat-thread" id="chatThread"><div id="chatWelcome" hidden></div></section>
-    <div class="chat-composer-shell" id="chatComposerShell"><?= $nowPlaying ?><form class="chat-composer" id="chatForm"><textarea id="chatInput" aria-label="Message"></textarea><button id="sendChatButton">Send</button></form></div>
+    <div class="chat-composer-shell" id="chatComposerShell"><?= $nowPlaying ?><form class="chat-composer" id="chatForm"><textarea id="chatInput" rows="1" aria-label="Message"></textarea><button id="sendChatButton" type="submit" aria-label="Send message">↑</button></form></div>
     </main></div><div id="chatQueueDrawer" hidden><div id="chatQueueList"></div></div>
     <script>window.STONEFELLOW_CHAT=<?= json_encode($config,JSON_HEX_TAG|JSON_HEX_AMP) ?>;window.STONEFELLOW_PLAYER={tracks:{},albums:{},playlists:{}};
     window.VP3_MUSIC_CHAT_CONFIG_V1=<?= json_encode($music,JSON_HEX_TAG|JSON_HEX_AMP) ?>;window.VP3_YOUTUBE_PLAYBACK_V1=<?= json_encode($youtube,JSON_HEX_TAG|JSON_HEX_AMP) ?>;</script>
