@@ -2,7 +2,7 @@
 
 Canonical planning entry point for the VP3 music revival, `/music-workspace.php`, song metadata and rights, hosted streaming, and the standalone Stoneward integration.
 
-**Status:** ML0 planning, ML1 catalog/metadata, ML2A native listening, ML2B provider and ML2C Stoneward import are merged. Stoneward [PR #390](https://github.com/davemt74-lang/stoneward/pull/390) delivered v1.3.332 at `d4844b48cb36bcbbbd3f6c6061c80891d3e28930`, paired with VP3 `41603520b24c3ac6146dca5cb7310d04a8a3de9e`. ML3 adds artist reporting and the public-page attribution follow-up; its current implementation/release evidence is tracked in the implementation PRs. See [ML3 reporting contract](ML3-IMPLEMENTATION.md) and [development status](DEVELOPMENT-STATUS.md). Joint live acceptance, funded earnings, payments and managed hosting retain their separate gates.
+**Status:** ML0 through ML3 are merged. VP3 [PR #948](https://github.com/davemt74-lang/software/pull/948) delivered Music Workspace reporting as `aae15539187a8226463b41f9a02e0da67b99cc59`; Stoneward [PR #391](https://github.com/davemt74-lang/stoneward/pull/391) delivered the paired public-page attribution in v1.3.333 as `a15a0505627a18e0ead2310c9ac3915b044711d6`. Their complete release archives were verified. The current follow-up is [ML3A all-time listening totals](ML3A-LIFETIME-TOTALS.md), with exact candidate/release evidence owned by its implementation PR. See [development status](DEVELOPMENT-STATUS.md). Joint live acceptance, funded earnings, payments and managed hosting retain their separate gates.
 
 ## Product direction
 
@@ -28,6 +28,7 @@ These user requirements are distinct from engineering recommendations and unreso
 | [ML2A implementation](ML2A-IMPLEMENTATION.md) | Native receipt protocol, timing/identity/source boundaries, migration and acceptance scope |
 | [ML2B implementation](ML2B-IMPLEMENTATION.md) | Site verification, selected public catalog grants, visitor sessions, pinned streaming, provider API and rollout |
 | [ML3 implementation](ML3-IMPLEMENTATION.md) | Workspace-scoped listening reports, cohort/timezone definitions, coverage, public page attribution and acceptance |
+| [ML3A lifetime totals](ML3A-LIFETIME-TOTALS.md) | All retained measured history per song/workspace and authorized platform, SQL aggregation, retention limits and acceptance |
 | [Development status](DEVELOPMENT-STATUS.md) | Current completion state, test evidence, pending verification and next action |
 
 ## First complete integration milestone

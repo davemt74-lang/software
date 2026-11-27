@@ -9,6 +9,8 @@ import {fileURLToPath} from 'node:url';
 const repository = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const analyticsProtocol = 'vp3_music_analytics_v1';
 export const analyticsRoute = '/api/music-analytics-v1.php';
+export const totalsProtocol = 'vp3_music_listening_totals_v1';
+export const totalsRoute = '/api/music-listening-totals-v1.php';
 
 /**
  * Production Music Workspace, analytics HTTP route, services and database.
@@ -26,6 +28,8 @@ export async function musicAnalyticsFixture() {
   try {
     fs.cpSync(path.join(repository, 'includes'), path.join(root, 'includes'), {recursive:true});
     const files = ['music-workspace.php','api/music-analytics-v1.php','assets/js/music-analytics-v1.js','assets/css/music-analytics-v1.css',
+      'admin/listening.php','admin/admin.css','admin/admin-tech.css','site-branding.css',
+      'api/music-listening-totals-v1.php','assets/js/music-listening-totals-v1.js','assets/css/music-listening-totals-v1.css',
       'tests/music-song-metadata-v1.php','tests/fixtures/music-listening-v1.php','tests/fixtures/music-analytics-v1.php','tests/fixtures/stem-mp3-metadata-v1.json',
       'chat.css','member-shell-v77.js','chat-header-ui.css','stonefellow-ui.css','member-page-scroll.css','agent-ui-v034.css'];
     for (const file of files) {
@@ -40,7 +44,13 @@ putenv('MUSIC_LISTENING_TEST_DB='.STONEFELLOW_ROOT.'/data.sqlite');
 $config=['site'=>['base_path'=>'','base_url'=>'https://vp3.example.test'],'uploads'=>[]];
 require STONEFELLOW_ROOT.'/tests/fixtures/music-analytics-v1.php';
 function require_login():void{if(!current_user()){http_response_code(401);exit('Please sign in.');}}
+function require_permission(string $permission):void{require_login();if(!has_permission($permission)){http_response_code(403);exit('Access denied.');}}
+function role_label(string $role):string{return ucfirst($role);}
 `);
+    // Unrelated admin account menus are an explicit chrome adapter. The actual
+    // listening page, both reporting runtimes and shared admin styles are used.
+    fs.writeFileSync(path.join(root,'admin/_header.php'), `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title><?= e($adminTitle??'Listening Analytics') ?></title><link rel="stylesheet" href="/admin/admin.css"><link rel="stylesheet" href="/admin/admin-tech.css"><link rel="stylesheet" href="/site-branding.css"></head><body><div class="admin-layout"><aside class="admin-sidebar" aria-label="Administration"><a href="/admin/listening.php">Listening Analytics</a></aside><main class="admin-content"><h1><?= e($adminTitle??'Listening Analytics') ?></h1>`);
+    fs.writeFileSync(path.join(root,'admin/_footer.php'), '</main></div></body></html>');
     fs.writeFileSync(path.join(root, 'includes/workspace-sidebar-v82.php'), `<link rel="stylesheet" href="/agent-ui-v034.css">
 <aside id="chatSidebar" class="chat-sidebar workspace-main-sidebar" data-shell-active="music_workspace">
 <div class="chat-sidebar-top"><a class="chat-brand" href="/music-workspace.php?workspace=1">VP3</a><button class="chat-icon-button mobile-only" id="closeChatSidebar" type="button" aria-label="Close menu">×</button></div>
@@ -51,6 +61,7 @@ function require_login():void{if(!current_user()){http_response_code(401);exit('
     fs.writeFileSync(path.join(root, '_test-session.php'), "<?php require __DIR__.'/includes/bootstrap.php';header('Content-Type: application/json');echo json_encode(['csrf_token'=>csrf_token()]);");
     const run = (code, ...args) => execFileSync(php, ['-r','require $argv[1];'+code,path.join(root,'includes/bootstrap.php'),...args], {encoding:'utf8',cwd:repository});
     const seed = JSON.parse(run(`$seed=music_analytics_test_seed();
+      db()->exec('ALTER TABLE users ADD COLUMN email VARCHAR(190)');
       foreach(['track_projects','track_stems','shows','release_plans','release_items','track_credits'] as $name)
         db()->exec('CREATE TABLE '.$name.' (id INTEGER PRIMARY KEY,workspace_id INTEGER)');
       echo json_encode($seed,JSON_THROW_ON_ERROR);`));
@@ -86,6 +97,10 @@ function require_login():void{if(!current_user()){http_response_code(401);exit('
       method:'POST',headers:{...credentials.headers,'X-User':String(user),'Content-Type':'application/json',...headers},
       body:JSON.stringify({protocol:analyticsProtocol,action:'report',workspace_id:1,period:'30d',timezone:'UTC',channel:'all',traffic:'audience',csrf_token:csrf,...input}),
     });
-    return {root,base,php,run,seed,execute,readDb,snapshot,auth,post,json,initial,close,get logs(){return logs;}};
+    const totalsPost=(input={}, {credentials=initial,user=credentials.user,csrf=credentials.csrf,headers={},path=totalsRoute}={})=>fetch(base+path,{
+      method:'POST',headers:{...credentials.headers,'X-User':String(user),'Content-Type':'application/json',...headers},
+      body:JSON.stringify({protocol:totalsProtocol,action:'report',scope:'workspace',workspace_id:1,channel:'all',traffic:'audience',group:'tracks',csrf_token:csrf,...input}),
+    });
+    return {root,base,php,run,seed,execute,readDb,snapshot,auth,post,totalsPost,json,initial,close,get logs(){return logs;}};
   } catch(error){close();throw error;}
 }

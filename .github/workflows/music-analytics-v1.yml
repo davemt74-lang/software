@@ -72,12 +72,24 @@ jobs:
         run: php tests/music-analytics-v1.php
       - name: Actual analytics HTTP authority and error contract
         run: node tests/music-analytics-api-v1.mjs
+      - name: All retained listening totals, large history and stable pagination
+        run: php tests/music-listening-totals-v1.php
+      - name: Actual platform permission grants and account revocation
+        run: php tests/music-listening-totals-authority-v1.php
+      - name: Actual lifetime totals HTTP authority and safe errors
+        run: node tests/music-listening-totals-api-v1.mjs
       - name: Native MySQL reporting and snapshot semantics
         env:
           MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
           MUSIC_TEST_MYSQL_USER: root
           MUSIC_TEST_MYSQL_PASSWORD: music-test-only
         run: php tests/music-analytics-mysql-v1.php
+      - name: Native MySQL all-history aggregation and source consistency
+        env:
+          MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
+          MUSIC_TEST_MYSQL_USER: root
+          MUSIC_TEST_MYSQL_PASSWORD: music-test-only
+        run: php tests/music-listening-totals-mysql-v1.php
 
   analytics-browser:
     runs-on: ubuntu-latest
@@ -89,6 +101,7 @@ jobs:
     env:
       MUSIC_ANALYTICS_BROWSER: ${{ matrix.browser }}
       MUSIC_ANALYTICS_ARTIFACT_DIR: artifacts/music-analytics-v1/${{ matrix.browser }}
+      MUSIC_LISTENING_TOTALS_ARTIFACT_DIR: artifacts/music-analytics-v1/${{ matrix.browser }}/totals
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -105,6 +118,8 @@ jobs:
           npx playwright install --with-deps "$MUSIC_ANALYTICS_BROWSER"
       - name: Actual desktop and phone workspace reporting
         run: node tests/music-analytics-browser-v1.mjs
+      - name: Actual desktop and phone lifetime totals and admin drilldown
+        run: node tests/music-listening-totals-browser-v1.mjs
       - name: Publish screenshots and assertion evidence
         if: always()
         uses: actions/upload-artifact@v4

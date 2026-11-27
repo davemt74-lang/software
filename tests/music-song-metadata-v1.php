@@ -55,6 +55,11 @@ function user_has_role(string $role, ?array $user = null): bool
 }
 function has_permission(string $permission, ?array $user = null): bool
 {
+    // Later isolated fixtures can model a fresh global permission assignment;
+    // production permission helpers are verified in their own process.
+    if (isset($GLOBALS['musicSongTestPermissionResolver'])) {
+        return ($GLOBALS['musicSongTestPermissionResolver'])($permission, $user ?? current_user());
+    }
     // Workspace owners have no global tracks.manage grant in this fixture.
     return $permission === 'chat.access' && ($user ?? current_user()) !== null;
 }

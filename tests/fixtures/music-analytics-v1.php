@@ -5,6 +5,22 @@ declare(strict_types=1);
 require_once __DIR__.'/music-listening-v1.php';
 require_once dirname(__DIR__,2).'/includes/music-analytics-v1.php';
 
+// Explicit authentication adapter for aggregate HTTP/browser fixtures. It has
+// no artist-management grant; a separate suite loads real permissions.php.
+$GLOBALS['musicSongTestPermissionResolver']=static function(string $permission,?array $user): bool {
+    if(!$user)return false;
+    if($permission==='chat.access')return true;
+    if($permission!=='listening.view')return false;
+    $q=db()->prepare('SELECT role FROM users WHERE id=? AND is_active=1');$q->execute([(int)($user['id']??0)]);
+    $role=$q->fetchColumn();if($role===false)return false;
+    if($role==='admin')return true;
+    $q=db()->prepare('SELECT 1 FROM role_permissions WHERE role=? AND permission_key=?');$q->execute([$role,$permission]);
+    return (bool)$q->fetchColumn();
+};
+if(db()->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){
+    db()->sqliteCreateFunction('CONCAT',static fn(...$values):string=>implode('',array_map(static fn($value)=>(string)$value,$values)));
+}
+
 function music_analytics_test_native(int $trackId,int $userId,int $clock,int $played=0,bool $resume=true): array
 {
     $pdo=db();$q=$pdo->prepare('SELECT * FROM users WHERE id=?');$q->execute([$userId]);$user=$q->fetch(PDO::FETCH_ASSOC);
@@ -74,6 +90,9 @@ function music_analytics_test_seed(?int $now=null): array
     $now??=(int)floor(microtime(true)*1000);
     $clock=(new DateTimeImmutable('@'.intdiv($now,1000)))->setTimezone(new DateTimeZone('UTC'))->setTime(12,0)->modify('-2 days')->getTimestamp()*1000;
     $pdo=db();music_listening_test_seed();
+    $pdo->exec('CREATE TABLE role_permissions (role VARCHAR(32),permission_key VARCHAR(120),PRIMARY KEY(role,permission_key))');
+    $pdo->exec("INSERT INTO role_permissions VALUES ('supervisor','listening.view')");
+    $pdo->exec("INSERT INTO users VALUES (91,'supervisor',1,0,'Listening administrator')");
     $pdo->exec("INSERT INTO users VALUES (16,'customer',1,0,'PRIVATE LISTENER'),(17,'customer',0,1,'Inactive artist')");
     music_song_metadata_v1_install($pdo);music_listening_v1_install($pdo);music_provider_v1_install($pdo);
     $recordings=$pdo->query('SELECT catalog_track_id,recording_id FROM music_recordings_v1')->fetchAll(PDO::FETCH_KEY_PAIR);

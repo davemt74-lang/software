@@ -15,8 +15,8 @@ class MusicListeningTestPDO extends MusicSongTestPDO
     {
         // These are pre-existing MySQL-only expressions in legacy adapters.
         $query = str_replace(
-            ['COALESCE(user_id,0)=?', 'INSERT IGNORE INTO'],
-            ['COALESCE(user_id,0)=CAST(? AS INTEGER)', 'INSERT OR IGNORE INTO'],
+            ['COALESCE(user_id,0)=?', 'INSERT IGNORE INTO', 'DATE_SUB(NOW(), INTERVAL ? DAY)'],
+            ['COALESCE(user_id,0)=CAST(? AS INTEGER)', 'INSERT OR IGNORE INTO', "datetime(NOW(), '-' || ? || ' days')"],
             $query
         );
         return parent::prepare($query, $options);
