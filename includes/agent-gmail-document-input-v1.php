@@ -3,13 +3,23 @@ declare(strict_types=1);
 const AGENT_GMAIL_DOCUMENT_MAX_BYTES_V1=2097152;
 
 /** Legacy HomeServer Chat cannot receive these native provider file inputs. */
-function agent_gmail_document_cloud_route_v1(PDO $pdo,array $user,int $agent): void
+function agent_gmail_document_cloud_route_v1(PDO $pdo,array $user,int $agent,?array $reservedRoute=null): array
 {
     if (!function_exists('vp3_agent_runtime_plan_v420')) require_once __DIR__.'/agent-runtime-routing-v420.php';
     $plan=vp3_agent_runtime_plan_v420($pdo,$user,$agent,'chat',['service'=>'conversation','background'=>false]);
-    if (!empty($plan['blocked'])||($plan['route']??null)!=='vp3_cloud'||empty($plan['cloud']['ready'])) {
+    $ready=static fn(array $p):bool=>empty($p['blocked'])&&($p['route']??null)==='vp3_cloud'&&!empty($p['cloud']['ready']);
+    // The real transport has already reserved this request's allowance when
+    // invoking its dispatch guard. Do not mistake its own held tokens for a
+    // new privacy restriction; unchanged compute/scope authority is required.
+    $authority=static fn(array $p):array=>[$p['requested_preference']??null,$p['effective_preference']??null,
+        $p['policy_source']??null,$p['compute_policy']??null,$p['home']['cloud_allowed']??null,$p['home']['scope_checked']??null];
+    $held=$reservedRoute!==null&&$ready($reservedRoute)&&$authority($reservedRoute)===$authority($plan)
+        &&($plan['cloud']['reason']??null)==='cloud_balance_exhausted'&&!empty($plan['cloud']['entitled'])
+        &&($plan['effective_preference']??null)!=='homeserver_only';
+    if (!$ready($plan)&&!$held) {
         throw new DomainException('Attachment review needs an available Cloud PDF/image model under this Agent’s current compute preference. No attachment analysis was dispatched.',503);
     }
+    return $plan;
 }
 
 /** Provider-bound input: no URL, uploaded browser data, active document or archive. */

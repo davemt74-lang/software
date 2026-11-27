@@ -249,7 +249,7 @@ function agent_gmail_document_action_v1(PDO $pdo,array $user,array $principal,in
         return ['review'=>agent_gmail_document_public_v1($old)];
     }
     try {
-        if ($model===null) agent_gmail_document_cloud_route_v1($pdo,$user,$agent);
+        $route=$model===null?agent_gmail_document_cloud_route_v1($pdo,$user,$agent):null;
         agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
         $bytes=agent_gmail_document_bytes_v1($read,$part,$http);
         agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
@@ -259,9 +259,9 @@ function agent_gmail_document_action_v1(PDO $pdo,array $user,array $principal,in
             'email_soul'=>$soul['content'],'message'=>['subject'=>$mail['subject'],'from'=>$mail['from'],'body'=>mb_substr($mail['body'],0,4000)],
             'attachment'=>['name'=>$part['name'],'mime'=>$part['mime']]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
         $byteHash=hash('sha256',$bytes);$dispatched=false;
-        $before=static function()use($pdo,$user,$principal,$chat,$source,$current,$http,$owner,$agent,$id,$part,$byteHash,$model,&$dispatched): bool {
+        $before=static function()use($pdo,$user,$principal,$chat,$source,$current,$http,$owner,$agent,$id,$part,$byteHash,$model,$route,&$dispatched): bool {
             if ($dispatched) throw new DomainException('This attachment review was already dispatched.',409);
-            if ($model===null) agent_gmail_document_cloud_route_v1($pdo,$user,$agent);
+            if ($model===null) agent_gmail_document_cloud_route_v1($pdo,$user,$agent,$route);
             $liveRead=agent_gmail_document_read_v1($pdo,$user,$principal,$chat,$source,$current,$http);
             if (!hash_equals($byteHash,hash('sha256',agent_gmail_document_bytes_v1($liveRead,$part,$http)))) throw new DomainException('The attachment bytes changed before analysis.',409);
             agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);

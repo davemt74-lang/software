@@ -8,9 +8,10 @@ require_once dirname(__DIR__).'/includes/agent-gmail-document-input-v1.php';
 
 $protocol='vp3.gmail-document-review.v1';$pdf=file_get_contents(__DIR__.'/fixtures/gmail-documents/quote.pdf');
 $document=['mime'=>'application/pdf','name'=>'Quote Q-104','bytes'=>$pdf];
+$initialRoute=agent_gmail_document_cloud_route_v1($pdo,$owner,17);
 $control=static fn(Closure $guard):array=>['surface'=>'tool_json','protocol'=>$protocol,'gmail_document_review'=>true,
-    'gmail_document'=>$document,'before_gmail_document_dispatch'=>static function()use($guard,$pdo,$owner):bool{
-        agent_gmail_document_cloud_route_v1($pdo,$owner,17);return $guard();
+    'gmail_document'=>$document,'before_gmail_document_dispatch'=>static function()use($guard,$pdo,$owner,$initialRoute):bool{
+        agent_gmail_document_cloud_route_v1($pdo,$owner,17,$initialRoute);return $guard();
     }];
 $review=static fn(Closure $guard):array=>ai_v100_with_service_context(['service'=>'conversation','background'=>false,
     'stage'=>$protocol,'agent_id'=>17,'conversation_id'=>11],static fn()=>ai_generate_chat_response(
@@ -52,6 +53,20 @@ check_gmail_summary(empty($blockedRoute['ok'])&&count($GLOBALS['gmailSummaryDisp
     &&(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,
     'the shipped document route fence honors HomeServer-only preferences after usage reservation and releases the unsent allowance');
 $GLOBALS['gmailSummaryHomeOnly']=false;
+$GLOBALS['gmailSummaryOnRoute']=static function()use($pdo):?array{
+    return (int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===1
+        ?['blocked'=>true,'route'=>'none','cloud'=>['ready'=>false,'entitled'=>true,'reason'=>'cloud_balance_exhausted']]:null;
+};
+$heldResponse=$review(static fn():bool=>true);unset($GLOBALS['gmailSummaryOnRoute']);
+check_gmail_summary(!empty($heldResponse['ok'])&&count($GLOBALS['gmailSummaryDispatch'])===$calls+1,
+    'a request that holds the remaining allowance still dispatches once under unchanged compute and privacy scope');
+$calls=count($GLOBALS['gmailSummaryDispatch']);
+$GLOBALS['gmailSummaryOnRoute']=static fn():array=>['blocked'=>true,'route'=>'none','home'=>['cloud_allowed'=>false],
+    'cloud'=>['ready'=>false,'entitled'=>true,'reason'=>'cloud_balance_exhausted']];
+$scopeBlocked=$review(static fn():bool=>true);unset($GLOBALS['gmailSummaryOnRoute']);
+check_gmail_summary(empty($scopeBlocked['ok'])&&count($GLOBALS['gmailSummaryDispatch'])===$calls
+    &&(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,
+    'a held allowance cannot override a changed HomeServer privacy scope');
 foreach([[],['service'=>'conversation'],['service'=>'conversation','background'=>true],['service'=>'initiative','background'=>false]] as $wrong){
     $response=ai_v100_with_service_context($wrong,static fn()=>ai_generate_chat_response('{}',[],[],$owner,'main_ai',$control(static fn():bool=>true)));
     check_gmail_summary(empty($response['ok'])&&count($GLOBALS['gmailSummaryDispatch'])===$calls,'document review cannot run without explicit foreground Conversation accounting');
