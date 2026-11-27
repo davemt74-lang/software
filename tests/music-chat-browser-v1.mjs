@@ -163,6 +163,23 @@ async function layout(page, label, card) {
   await card.screenshot({path:path.join(artifactDir, `${label}.png`)});
   await page.screenshot({path:path.join(artifactDir, `${label}-page.png`), fullPage:false});
 }
+async function lowerPhoneLayout(page, label, control) {
+  // A tall card cannot fit in a phone viewport. Keep the top capture and show
+  // its lower controls after an ordinary scroll, with the real composer intact.
+  await control.evaluate(element => element.scrollIntoView({block:'center'}));
+  await control.click({trial:true});
+  const visibility = await control.evaluate(element => {
+    const rect = element.getBoundingClientRect();
+    const hit = document.elementFromPoint(rect.left + rect.width / 2, rect.top + rect.height / 2);
+    return {
+      withinViewport:rect.top >= 0 && rect.left >= 0 && rect.bottom <= innerHeight && rect.right <= innerWidth,
+      topmost:hit === element || element.contains(hit)
+    };
+  });
+  check(visibility.withinViewport, `${label}: lower control fits in the phone viewport after scrolling`);
+  check(visibility.topmost, `${label}: lower control is unobscured at its center`);
+  await page.screenshot({path:path.join(artifactDir, `${label}-lower-page.png`), fullPage:false});
+}
 
 try {
   const executablePath = engineName === 'chromium' ? process.env.MUSIC_CHAT_CHROMIUM_EXECUTABLE : '';
@@ -415,13 +432,18 @@ try {
   await playbackState(ytCard, 'playing');
   await page.evaluate(() => {
     const audio = document.createElement('audio'); audio.className = 'chat-audio-player'; audio.dataset.trackId = '42';
+    audio.id = 'fixtureNativeAudio';
     audio.src = '/media.php?track=42&type=audio'; document.body.append(audio);
     window.dispatchEvent(new CustomEvent('vp3:audio-players-added', {detail:document.body}));
     const button = document.createElement('button'); button.id = 'fixtureNativeOwner'; button.textContent = 'Start existing VP3 player';
-    button.onclick = () => audio.play(); document.body.append(button);
+    button.onclick = () => { window.__musicNativeTakeover = audio.play(); }; document.body.append(button);
   });
   await page.locator('#fixtureNativeOwner').click();
-  await page.waitForFunction(() => [...document.querySelectorAll('audio')].some(audio => !audio.paused));
+  await page.evaluate(async () => {
+    if (!window.__musicNativeTakeover) throw new Error('The native user Play request was not made.');
+    await window.__musicNativeTakeover;
+  });
+  check(await page.locator('#fixtureNativeAudio').evaluate(audio => !audio.paused && audio.readyState >= 3), 'The exact existing native player started playback');
   equal(await page.evaluate(() => window.__musicYouTube.players.filter(player => !player.destroyed && player.state === 1).length), 0, 'Existing native player takes audio ownership from YouTube');
 
   const failedNext = await fixture.seed({playlist:true,title:'Unavailable next',items:[
@@ -448,10 +470,12 @@ try {
   const phoneCard = await attach(phone, phonePlaylist, true);
   await phoneCard.getByRole('button', {name:'Edit playlist', exact:true}).click();
   await layout(phone, 'phone-playlist-edit', phoneCard);
+  await lowerPhoneLayout(phone, 'phone-playlist-edit', rows(phoneCard).last().getByRole('button', {name:'Remove First Light', exact:true}));
   await phoneCard.getByRole('button', {name:'Done editing', exact:true}).click();
   await rows(phoneCard).nth(1).getByRole('button', {name:'Play YouTube Song 1', exact:true}).click();
   await playbackState(phoneCard, 'playing');
   await layout(phone, 'phone-visible-youtube', phoneCard);
+  await lowerPhoneLayout(phone, 'phone-visible-youtube', phoneCard.getByRole('button', {name:'Close player', exact:true}));
   await phone.evaluate(() => window.VP3_MUSIC_CHAT_V1.runCommand('stop'));
   await phoneCard.getByRole('button', {name:'Edit playlist', exact:true}).click();
   await phoneCard.getByRole('button', {name:'Delete playlist', exact:true}).click();
