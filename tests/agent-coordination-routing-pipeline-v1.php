@@ -20,6 +20,9 @@ vp3_initiative_in_scope_v1($owner,$agentId,static fn()=>agent_brain_v122_upsert_
 coordination_fixture_rule($pdo,$owner,'curiosity','open_question','watch');
 if ($mysql) {
     $pdo->exec('ALTER TABLE agent_workflow_runs RENAME COLUMN paused_at TO fixture_paused_at');
+    // This fixture changes the installation shape inside one request. Earlier
+    // readiness checks may already have populated the positive metadata cache.
+    schema_metadata_state($pdo)->columns['agent_workflow_runs']=[];
     try {
         $partialSchemaHealth = vp3_initiative_worker_health_v1($pdo,$owner,$agentId,$chatId);
         canvas_pipeline_check($partialSchemaHealth['assessment_read']==='complete' && $partialSchemaHealth['enabled']
@@ -28,6 +31,7 @@ if ($mysql) {
             'native assessment health and Chat pump availability survive without optional workflow pause controls');
     } finally {
         $pdo->exec('ALTER TABLE agent_workflow_runs RENAME COLUMN fixture_paused_at TO paused_at');
+        schema_metadata_state($pdo)->columns['agent_workflow_runs']=[];
     }
 }
 coordination_fixture_gmail_setup($pdo,$owner,$mysql);
