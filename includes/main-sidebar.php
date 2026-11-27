@@ -318,7 +318,7 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
 </div>
 <script src="<?= e(url('/homeserver-vp3.js?v=homeserver-v1305-final-20260924')) ?>" defer></script>
 <script src="<?= e(url('/agent-ui-v034.js?v=compact-sidebar-20261110')) ?>" defer></script>
-<?php if ($mainSidebarCanChat && has_permission('account.access',$mainSidebarUser)):
+<?php if ($mainSidebarCanChat):
     require_once __DIR__.'/agent-catch-up-v1.php'; ?>
 <link rel="stylesheet" href="<?= e(url('/chat-sidebar-unread-v1.css?v='.substr(hash_file('sha256',__DIR__.'/../chat-sidebar-unread-v1.css'),0,12))) ?>">
 <script>window.VP3_CHAT_SIDEBAR_UNREAD_V1=<?= json_encode(['owner_id'=>(int)$mainSidebarUser['id'],'binding'=>vp3_catch_up_page_binding_v1($mainSidebarUser),'endpoint'=>url('/api/agent-chat-read-v1.php')],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR) ?>;</script>
