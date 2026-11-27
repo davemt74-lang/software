@@ -211,4 +211,31 @@ canvas_pipeline_check(!$stale['ok'],'A capture revision change during inference 
 $pdo->prepare('DELETE FROM agent_memory_items WHERE id=(SELECT memory_id FROM agent_screen_captures_v1 WHERE capture_id=?)')->execute([$screenCapture]);
 canvas_pipeline_check(vp3_curiosity_screen_briefs_v1($pdo,$owner,7)===[],
     'Withdrawing the retained Brain memory withdraws the visual input without creating a copied findings store');
+// Location Specialist contributes only explicit, opted-in repeat visits.
+// This analyst fixture has simplified conversation IDs. Install only its actual
+// location inputs; the complete Phone schema is covered by native phone tests.
+$locationOptions=$mysql?' ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci':'';
+$pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_devices_v1(
+    id CHAR(32) NOT NULL PRIMARY KEY,owner_user_id INT UNSIGNED NOT NULL,
+    token_hash CHAR(64) NOT NULL,device_name VARCHAR(48) NOT NULL,device_role VARCHAR(12) NOT NULL,
+    device_status VARCHAR(12) NOT NULL,allow_location SMALLINT NOT NULL,generation BIGINT NOT NULL,
+    location_state VARCHAR(12) NOT NULL,created_at BIGINT NOT NULL,expires_at BIGINT NOT NULL,last_seen_at BIGINT NOT NULL,
+    UNIQUE(owner_user_id,id)
+)".$locationOptions);
+vp3_phone_checkin_install_v1($pdo,$locationOptions);
+$locationDevice=str_repeat('9',32);$locationNow=time();
+$pdo->prepare("INSERT INTO vp3_phone_devices_v1(id,owner_user_id,token_hash,device_name,device_role,device_status,allow_location,generation,location_state,created_at,expires_at,last_seen_at) VALUES(?,1,?,'Private phone','owner','approved',1,1,'live',?,?,?)")
+    ->execute([$locationDevice,str_repeat('8',64),$locationNow,$locationNow+86400,$locationNow]);
+$beforeLocation=vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding);
+for($day=0;$day<3;$day++)$pdo->prepare("INSERT INTO vp3_phone_checkins_v1(owner_user_id,device_id,visit_id,generation,version,latitude,longitude,accuracy,started_epoch,ended_epoch,last_fix_epoch,outside_epoch,reason,learn,label) VALUES(1,?,?,1,1,33.45,-112.07,10,?,?,?,NULL,'manual',1,'')")
+    ->execute([$locationDevice,md5('curiosity-location-'.$day),$locationNow-$day*86400,$locationNow-$day*86400+3600,$locationNow-$day*86400]);
+$withLocation=vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding);
+canvas_pipeline_check(count($withLocation['location_checkins'])===1&&in_array('location',$withLocation['input_specialists'],true)
+    &&$withLocation['revision']!==$beforeLocation['revision'],'Opted-in repeat check-ins enter the current Curiosity analysis and its revision');
+canvas_pipeline_check($withLocation['location_checkins'][0]['label']===''&&!str_contains(json_encode($withLocation['location_checkins']),'latitude'),
+    'Curiosity sees a tentative repeat-place question without GPS coordinates or an invented work/school label');
+$pdo->prepare('UPDATE vp3_phone_checkins_v1 SET learn=0 WHERE device_id=?')->execute([$locationDevice]);
+$forgotten=vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding);
+canvas_pipeline_check($forgotten['location_checkins']===[]&&$forgotten['revision']!==$withLocation['revision'],
+    'Forgetting check-in learning withdraws its Curiosity input and invalidates the old report revision');
 echo 'CURIOSITY_ANALYSIS=PASS ('.($checks-$start).' cases, '.($mysql?'mysql':'sqlite').')'.PHP_EOL;

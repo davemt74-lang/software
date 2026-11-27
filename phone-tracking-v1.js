@@ -251,7 +251,7 @@
     render();
   }
   function renderList(approved) {
-    const signature = JSON.stringify([available, selectedId, approved.map(d => [d.id,d.name,d.role,connection(d),effectiveState(d)])]);
+    const signature = JSON.stringify([available, selectedId, approved.map(d => [d.id,d.name,d.role,connection(d),effectiveState(d),d.checkins])]);
     if (listSignature === signature) return;
     const focusedId = list.contains(document.activeElement) ? document.activeElement.closest('[data-device-id]')?.dataset.deviceId : '';
     listSignature = signature;
@@ -269,6 +269,9 @@
       const heading = element('span',undefined,'phone-device-heading');
       heading.append(element('strong',d.name),element('span',roleLabels[d.role] || 'Device','phone-role'));
       button.append(heading, element('small', connection(d)+' · '+stateLabels[effectiveState(d)]));
+      const visit=d.checkins?.active;
+      if(visit){const mins=Math.floor(visit.duration_seconds/60);button.append(element('small','Checked in'+(visit.label?' at '+visit.label:'')+' · '+Math.floor(mins/60)+'h '+mins%60+'m'));}
+      else if(d.checkins?.recent?.[0]?.reason==='left_area')button.append(element('small','Automatically checked out after leaving.'));
       button.addEventListener('click', () => selectDevice(d.id));
       wrapper.append(button);
       list.append(wrapper);

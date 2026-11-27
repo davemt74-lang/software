@@ -368,6 +368,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_phone_schema_ready_v1($schemaConnection)
         && vp3_phone_communication_ready_v1($schemaConnection)
         && vp3_phone_information_ready_v1($schemaConnection)
+        && vp3_phone_information_delete_ready_v1($schemaConnection)
+        && vp3_phone_checkin_ready_v1($schemaConnection)
         && vp3_phone_file_ready_v1($schemaConnection)
         && vp3_phone_dialer_ready_v1($schemaConnection)
         && vp3_phone_handoff_ready_v1($schemaConnection)

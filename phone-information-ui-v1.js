@@ -34,7 +34,7 @@
     const send=make('button','Send to phone');send.type='submit';send.className='phone-primary';form.append(kindLabel,messageLabel,attachment.box,send);
     root.append(title,notice,controls);if(!holder)root.append(form);root.append(list);
     const labels={pending:'Pending',accepted:'Accepted',declined:'Declined',completed:'Completed',acknowledged:'Acknowledged',canceled:'Canceled',expired:'Expired'};
-    let device=null,scopeKey='',epoch=0,writing=false,reading=false,nextRead=0,items=[],signature='',draftId='',draftHash='',filesReady=false,replies=new Map();
+    let device=null,scopeKey='',epoch=0,writing=false,reading=false,nextRead=0,items=[],signature='',draftId='',draftHash='',filesReady=false,deleteReady=false,replies=new Map();
     let notificationExchange=null;
     const hex=v=>typeof v==='string'&&/^[a-f0-9]{32}$/.test(v);
     const randomId=()=>Array.from(crypto.getRandomValues(new Uint8Array(16)),v=>v.toString(16).padStart(2,'0')).join('');
@@ -43,7 +43,7 @@
     const current=(version,expected)=>epoch===version&&scopeKey===expected&&!!device;
     function clear(){
       epoch++;device=null;scopeKey='';writing=reading=false;nextRead=0;items=[];signature='';draftId=draftHash='';replies.clear();
-      filesReady=false;message.value='';kind.value='update';attachment.input.value='';attachment.check.checked=false;notice.textContent='';list.replaceChildren();
+      filesReady=deleteReady=false;message.value='';kind.value='update';attachment.input.value='';attachment.check.checked=false;notice.textContent='';list.replaceChildren();
       notificationExchange=null;
     }
     function setStatus(s){notice.textContent=s;}
@@ -74,7 +74,7 @@
       return data.items;
     }
     function accept(result,d){
-      items=decode(result,d);filesReady=result.information.files_ready===true;
+      items=decode(result,d);filesReady=result.information.files_ready===true;deleteReady=result.information.delete_ready===true;
       for(const id of replies.keys())if(!items.some(i=>i.exchange_id===id&&i.state==='accepted'))replies.delete(id);
       renderItems();
     }
@@ -111,7 +111,7 @@
       finally{if(current(v,k)){writing=false;nextRead=0;setControls();}}
     }
     function renderItems(){
-      const next=JSON.stringify(items);
+      const next=JSON.stringify([items,deleteReady]);
       if(next===signature){setControls();return;}
       signature=next;list.replaceChildren();
       if(!items.length)list.append(make('p','No information exchanged yet.','phone-information-empty'));
@@ -159,6 +159,18 @@
           card.append(responseForm);actions.append(button('Decline','information_decline',i));
         }
         if(!holder&&['pending','accepted'].includes(i.state))actions.append(button('Cancel request','information_cancel',i));
+        if(!holder&&deleteReady){
+          const remove=make('button','Delete request');remove.type='button';
+          remove.addEventListener('click',event=>{
+            if(!event.isTrusted||writing)return;
+            const confirmation=make('div');confirmation.setAttribute('role','group');confirmation.setAttribute('aria-label','Confirm permanent deletion');
+            const yes=make('button','Permanently delete'),no=make('button','Keep request');yes.type=no.type='button';
+            confirmation.append(make('p','Permanently delete this request, its response and its shared file?'),yes,no);
+            yes.addEventListener('click',e=>{if(e.isTrusted)void mutate('information_delete',{exchange_id:i.exchange_id,version:i.version,confirmed:true});});
+            no.addEventListener('click',e=>{if(e.isTrusted){confirmation.remove();remove.hidden=false;remove.focus();}});
+            remove.hidden=true;actions.append(confirmation);yes.focus();
+          });actions.append(remove);
+        }
         card.append(actions);list.append(card);
       }
       setControls();
@@ -192,7 +204,7 @@
       try{
         const result=await request(action,{...bound(d),...fields});
         if(current(op,k)){
-          accept(result,d);setStatus('Saved.');
+          accept(result,d);setStatus(action==='information_delete'?'Request permanently deleted.':'Saved.');
           if(action==='information_create'||action==='information_create_file'){message.value='';attachment.input.value='';attachment.check.checked=false;draftId=draftHash='';}
           onChanged();
         }

@@ -239,6 +239,7 @@ async function bounds(native=false){
 async function wake(){await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));}
 try{
   await page.goto('https://phone-agent.test/phone-location.php');
+  await page.getByRole('tab',{name:'Phone',exact:true}).click();
   await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
   assert.equal(await page.locator('#phone-tab-agent').isVisible(),false,'A role=owner pairing does not grant private Agent access.');
   assert.ok(requests.every(input=>input.action==='status'),'An unauthenticated holder never requests feed or detail.');
@@ -302,7 +303,7 @@ try{
   await page.evaluate(channel=>window.dispatchEvent(new MessageEvent('message',{source:window,origin:location.origin,data:{channel,type:'close_result',id:1,allowed:true}})),new URL(forged).searchParams.get('channel'));
   assert.equal(await page.locator('.phone-agent-native-frame').count(),1,'A forged close result cannot discard edits.');
   await nativeFrame().getByRole('button',{name:'Keep editing',exact:true}).click();assert.equal(await nativeFrame().getByLabel('Message',{exact:true}).inputValue(),original+'\nUnsaved phone edits.');
-  await page.getByRole('tab',{name:'Connection',exact:true}).click();await nativeFrame().getByRole('button',{name:'Discard edits',exact:true}).click();
+  await page.getByRole('tab',{name:'Phone',exact:true}).click();await nativeFrame().getByRole('button',{name:'Discard edits',exact:true}).click();
   await page.waitForFunction(()=>document.getElementById('phone-tab-connection').getAttribute('aria-selected')==='true');assert.equal(draft.body,original);
   await page.locator('#phone-tab-agent').click();await card(id(1)).waitFor();assert.equal(await page.locator('.phone-agent-native-frame').count(),0,'Returning from a cleanly closed native view shows results, not a released blank composer.');
   await agent().getByRole('button',{name:'Review email for this call',exact:true}).click();await nativeFrame().getByLabel('Message',{exact:true}).waitFor();

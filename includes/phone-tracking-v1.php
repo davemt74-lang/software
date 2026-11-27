@@ -8,6 +8,7 @@ require_once __DIR__.'/schema-metadata.php';
 require_once __DIR__.'/phone-tracking-history-v1.php';
 require_once __DIR__.'/phone-tracking-places-v1.php';
 require_once __DIR__.'/phone-tracking-arrivals-v1.php';
+require_once __DIR__.'/phone-location-checkins-v1.php';
 require_once __DIR__.'/phone-camera-v1.php';
 require_once __DIR__.'/phone-communication-profile-v1.php';
 require_once __DIR__.'/phone-information-exchange-v1.php';
@@ -88,6 +89,7 @@ function vp3_phone_schema_v1(PDO $pdo): void
     vp3_phone_history_schema_v1($pdo,$options);
     vp3_phone_places_schema_v1($pdo);
     vp3_phone_arrival_schema_v1($pdo,$options);
+    vp3_phone_checkin_install_v1($pdo,$options);
     vp3_phone_camera_schema_v1($pdo,$options);
     vp3_phone_communication_install_v1($pdo,$options);
     vp3_phone_information_install_v1($pdo,$options);
@@ -193,6 +195,7 @@ function vp3_phone_public_v1(array $row, int $now): array
 function vp3_phone_holder_public_v1(PDO $pdo, array $row, int $now): array
 {
     $device=vp3_phone_public_v1($row,$now);
+    $device['checkins']=vp3_phone_checkin_view_v1($pdo,$row,$now);
     $rules=$device['allow_location'] && in_array($device['location_state'],['waiting','live','stale'],true)
         ? vp3_phone_arrival_device_rules_v1($pdo,$row) : [];
     $device['arrival_rules']=array_map('vp3_phone_arrival_brief_v1',$rules);
@@ -315,7 +318,7 @@ function vp3_phone_owner_v1(PDO $pdo, int $owner, string $action, array $input):
             WHERE u.is_active=1 AND d.owner_user_id=? AND d.device_status IN ('pending','approved')
             AND d.expires_at>? ORDER BY d.created_at DESC,d.id LIMIT 32",
             [$owner,$now])->fetchAll(PDO::FETCH_ASSOC);
-        return ['devices'=>array_map(static fn(array $row): array => vp3_phone_public_v1($row,$now), $rows),
+        return ['devices'=>array_map(static fn(array $row): array => vp3_phone_public_v1($row,$now)+['checkins'=>vp3_phone_checkin_view_v1($pdo,$row,$now)], $rows),
             'server_time'=>$now,'stale_seconds'=>VP3_PHONE_FRESH_SECONDS_V1];
     }
     if (!in_array($action,['invite','approve','deny','request_start','stop','revoke','set_preferences','set_holder_place_access','request_history','stop_history','delete_history'],true)) throw new RuntimeException('Unknown phone action.', 422);
@@ -361,9 +364,9 @@ function vp3_phone_owner_v1(PDO $pdo, int $owner, string $action, array $input):
             $row = vp3_phone_row_v1($pdo,$owner,$id);
             $generation=(int)$row['generation'];
             vp3_phone_owner_transition_v1($row,$action,$input,$now);
-            if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
+            if ($generation!==(int)$row['generation']) {vp3_phone_arrival_clear_v1($pdo,$row);vp3_phone_checkin_fence_v1($pdo,$row,$now);}
             if ($action === 'revoke') {vp3_phone_push_revoke_v1($pdo,$row,$now);vp3_phone_handoff_revoke_v1($pdo,$row);vp3_phone_camera_disconnect_v1($pdo,$row);vp3_phone_communication_delete_v1($pdo,$row);}
-            if ($action === 'delete_history' || $action === 'revoke') vp3_phone_history_delete_v1($pdo,$row);
+            if ($action === 'delete_history' || $action === 'revoke') {vp3_phone_history_delete_v1($pdo,$row);vp3_phone_checkin_fence_v1($pdo,$row,$now,true);}
             vp3_phone_save_row_v1($pdo,$row);
             $expiry = $row['expires_at'];
             $result = ['device'=>vp3_phone_public_v1($row,$now),'duplicate'=>false];
@@ -504,6 +507,7 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
                 vp3_phone_save_row_v1($pdo,$row);
             }
             vp3_phone_history_delete_v1($pdo,$row);
+            vp3_phone_checkin_fence_v1($pdo,$row,$now,true);
             vp3_phone_arrival_clear_v1($pdo,$row);
             vp3_phone_camera_disconnect_v1($pdo,$row);
             vp3_phone_communication_delete_v1($pdo,$row);
@@ -516,7 +520,9 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
         if ($action !== 'status') {
             $previousFix = $row['fix_at'];
             $generation=(int)$row['generation'];
-            if (in_array($action,['push_register','push_disable'],true)) {
+            if (in_array($action,['location_checkin','location_checkout','checkin_label','checkin_forget'],true)) {
+                vp3_phone_checkin_action_v1($pdo,$row,$action,$input,$now);
+            } elseif (in_array($action,['push_register','push_disable'],true)) {
                 $receipt=vp3_phone_push_holder_v1($pdo,$row,$action,$input,$now);
             } elseif (in_array($action,['push_test','push_resolve'],true)) {
                 $receipt=vp3_phone_push_delivery_holder_v1($pdo,$row,$action,$input,$now);
@@ -538,19 +544,25 @@ function vp3_phone_device_v1(PDO $pdo, string $token, string $action, array $inp
                 $receipt=vp3_managed_ui_holder_action_v1($pdo,$row,$input,$now);
             } elseif ($action === 'holder_save_place') {
                 $receipt = vp3_phone_holder_save_place_v1($pdo,$row,$input,$now);
+                if(vp3_phone_checkin_ready_v1($pdo))foreach(vp3_phone_checkin_rows_v1($pdo,$row,$now) as $visit){
+                    if($visit['ended_epoch']===null&&vp3_phone_checkin_distance_v1((float)$visit['latitude'],(float)$visit['longitude'],(float)$input['latitude'],(float)$input['longitude'])<=VP3_PHONE_CHECKIN_RADIUS_V1)
+                        vp3_phone_sql_v1($pdo,'UPDATE vp3_phone_checkins_v1 SET label=?,version=version+1 WHERE owner_user_id=? AND device_id=? AND visit_id=?',[mb_substr($receipt['saved_place']['name'],0,64),(int)$row['owner_user_id'],$row['id'],$visit['visit_id']]);
+                }
             } elseif (in_array($action,['accept_arrival','decline_arrival','stop_arrival'],true)) {
                 vp3_phone_arrival_holder_v1($pdo,$row,$action,$input,$now);
             } else {
                 vp3_phone_device_transition_v1($row,$action,$input,$now);
             }
-            if ($generation!==(int)$row['generation']) vp3_phone_arrival_clear_v1($pdo,$row);
+            if ($generation!==(int)$row['generation']) {vp3_phone_arrival_clear_v1($pdo,$row);vp3_phone_checkin_fence_v1($pdo,$row,$now);}
             if ($action === 'disconnect') {vp3_phone_push_revoke_v1($pdo,$row,$now);vp3_phone_handoff_revoke_v1($pdo,$row);vp3_phone_camera_disconnect_v1($pdo,$row);vp3_phone_communication_delete_v1($pdo,$row);}
             if ($action === 'fix' && ($previousFix === null || (int)$previousFix !== (int)$row['fix_at'])) {
                 vp3_phone_history_record_v1($pdo,$row,$input,$now);
                 vp3_phone_arrival_fix_v1($pdo,$row,$input,$now);
+                vp3_phone_checkin_fix_v1($pdo,$row,$now);
             } elseif ($action === 'accept_history') {
                 vp3_phone_history_cap_retention_v1($pdo,$row,$now);
             } elseif ($action === 'disconnect') {
+                vp3_phone_checkin_fence_v1($pdo,$row,$now,true);
                 vp3_phone_history_delete_v1($pdo,$row);
             }
         }

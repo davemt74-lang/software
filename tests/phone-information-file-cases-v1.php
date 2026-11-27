@@ -75,6 +75,9 @@ function vp3_test_phone_files_v1(PDO $db,int $owner,int $other,string $id,string
     $db->prepare('UPDATE vp3_phone_information_files_v1 SET expires_epoch=? WHERE owner_user_id=? AND device_id=? AND exchange_id=?')->execute([time()-1,$owner,$id,$ids[4]]);
     $reject(404,fn()=>$holderAct('information_download',['exchange_id'=>$ids[4],'version'=>1]),'expired attachment cannot download');
     $share(6,$txt);
+    $ownerAct('information_delete',['exchange_id'=>$ids[5],'version'=>1,'confirmed'=>true]);
+    $assert(vp3_phone_file_metadata_v1($db,[$owner,$id,$ids[5]])===null,'permanent deletion also erases shared attachment bytes');
+    $reject(404,fn()=>$holderAct('information_download',['exchange_id'=>$ids[5],'version'=>1]),'previous file references cannot download after deletion');
     $assert(vp3_phone_file_metadata_v1($db,[$owner,$id,$ids[4]])===null,'later upload prunes expired attachment bytes');
     $grant(false);
     $reject(403,fn()=>$ownerAct('information_download',['exchange_id'=>$ids[0],'version'=>3]),'consent withdrawal blocks previous downloads');

@@ -91,15 +91,15 @@ try {
   device.status = 'approved';
   device.allow_location = true;
   const wake = () => page.evaluate(() => window.dispatchEvent(new Event('online')));
-  const connection = page.getByRole('tab',{name:'Connection',exact:true});
+  const connection = page.getByRole('tab',{name:'Phone',exact:true});
   const chat = page.getByRole('tab',{name:'Chat',exact:true});
   const invitation = page.locator('#phone-camera');
   await wake();
   await connection.waitFor();
-  assert.equal(await connection.getAttribute('aria-selected'),'true');
-  assert.equal(await page.locator('#phone-chat-form').isVisible(),true);
+  assert.equal(await page.getByRole('tab',{name:'Home',exact:true}).getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#phone-chat-form').isVisible(),false);
   assert.equal(chatReads,0,'the Connection tab does not request the private transcript');
-  await page.locator('#phone-footer-guide').click();
+  await page.locator('#phone-user-menu summary').click();await page.locator('#phone-tab-info').click();
   await page.locator('#phone-info-title').waitFor();
   assert.equal(await page.locator('#phone-chat-form').isVisible(),false,'Info does not need the composer');
   assert.equal(chatReads,0,'Info guide never requests private Chat');
@@ -108,7 +108,7 @@ try {
   await page.evaluate(({publicKey,pushSub})=>{
     let permission='default',sub=null,calls=0,unsubscribed=0;
     Object.defineProperty(navigator,'standalone',{configurable:true,value:true});
-    Object.defineProperty(window,'Notification',{configurable:true,value:{get permission(){return permission;}}});
+    Object.defineProperty(window,'Notification',{configurable:true,value:{get permission(){return permission;},requestPermission(){permission='granted';return Promise.resolve('granted');}}});
     if(!('PushManager' in window))window.PushManager=function(){};
     const registration={scope:location.origin+'/phone-location.php',active:{scriptURL:location.origin+'/phone-service-worker-v1.js'},pushManager:{
       getSubscription:async()=>sub,
@@ -124,15 +124,15 @@ try {
   },{publicKey,pushSub});
   device.push={state:'off',revision:0,enrollment_enabled:true,delivery_ready:false,key_id:keyId,application_server_key:publicKey};
   await wake();
-  const enable=page.locator('#phone-push-enable');await enable.waitFor();
+  await connection.click();const enable=page.locator('#phone-push-enable');await enable.waitFor();
   await page.waitForFunction(()=>!document.getElementById('phone-push-enable').disabled);
   assert.equal(await page.evaluate(()=>window.phonePushFixture.calls),0,'opening Info never subscribes');
-  await enable.click();
+  await enable.click();assert.equal(await page.evaluate(()=>window.phonePushFixture.calls),0);await enable.click();
   await page.getByText('Notifications allowed · subscription saved.',{exact:true}).waitFor();
   assert.equal(await page.evaluate(()=>window.phonePushFixture.calls),1);
   assert.deepEqual(pushActions,['push_register']);
   assert.ok((await page.locator('#phone-push-feedback').textContent()).includes('Background delivery is not active yet.'));
-  assert.equal(await page.locator('#phone-push-test').isVisible(),false,'subscription enrollment alone does not enable delivery testing');
+  assert.equal(await page.locator('#phone-push-test').isDisabled(),true,'subscription enrollment alone does not enable delivery testing');
   device.push.delivery_ready=true;
   device.push.delivery={enabled:true,ready:true,worker:{state:'observed',last_observed_epoch:Math.floor(Date.now()/1000),transport_ready:true},last_test:null};
   await wake();
@@ -154,9 +154,8 @@ try {
   assert.deepEqual(pushActions,['push_register','push_test','push_disable']);
   assert.equal(await page.evaluate(()=>window.phonePushFixture.unsubscribed),1);
   assert.equal(await page.evaluate(()=>Object.values(localStorage).some(s=>s.includes('Qsynthetic-notification-fixture'))||Object.values(sessionStorage).some(s=>s.includes('Qsynthetic-notification-fixture'))),false);
-  await page.locator('#phone-info-back').click();
   assert.equal(await connection.getAttribute('aria-selected'),'true');
-  assert.equal(await page.locator('#phone-chat-form').isVisible(),true);
+  assert.equal(await page.locator('#phone-chat-form').isVisible(),false);
   // Safari pans its visual viewport independently while focusing and closing the keyboard.
   // Offsetting the page by this value used to leave the top of the phone screen blank.
   await page.evaluate(() => {
@@ -172,18 +171,19 @@ try {
   await page.getByRole('button',{name:'Dismiss camera message'}).click();
   await invitation.waitFor({state:'hidden'});
   assert.equal(await connection.getAttribute('aria-selected'),'true','incoming requests work on Connection');
+  await chat.click();
   const apps = page.getByRole('button',{name:'Phone apps'});
   await apps.click();
   assert.equal(await page.locator('#phone-app-save-place').isVisible(),false);
   await page.locator('#phone-app-camera').click();
   await page.locator('#phone-camera-close').click();
   assert.equal(await apps.getAttribute('aria-expanded'),'false');
-  const input = page.getByRole('textbox',{name:'Message the account owner'});
-  await page.locator('#phone-disconnect').scrollIntoViewIfNeeded();
+  const input = page.locator('#phone-chat-input');
+  await connection.click();await page.locator('#phone-disconnect').scrollIntoViewIfNeeded();
   assert.ok(await page.locator('#phone-disconnect').evaluate(button=>
-    button.getBoundingClientRect().bottom <= document.querySelector('#phone-dock').getBoundingClientRect().top),
+    button.getBoundingClientRect().bottom <= innerHeight),
     'the last Connection action can be scrolled fully above the composer');
-  await input.fill('Where is the <camera>?');
+  await chat.click();await input.fill('Where is the <camera>?');
   await page.setViewportSize({width:375,height:335});
   await page.waitForFunction(() => Math.abs(document.querySelector('#phone-dock').getBoundingClientRect().bottom - 335) <= 2);
   await page.setViewportSize({width:375,height:550});
@@ -193,7 +193,7 @@ try {
   await page.getByRole('button',{name:'Retry delivery'}).click();
   await page.getByText('Chat needs a VP3 database upgrade. Ask the account owner to run upgrade.php, then retry.').waitFor();
   assert.equal(await page.getByText('Do not expose arbitrary server text').count(),0);
-  await connection.click();
+  await chat.click();
   await apps.click();
   assert.equal(await page.locator('#phone-app-camera').isEnabled(),true,'a chat failure does not disable Camera');
   await apps.click();
@@ -207,7 +207,7 @@ try {
   turns.push({request_id:'old-auto-turn',message:'What about earlier?',state:'replied',
     reply:'Previous agent message.',owner_reply:'A personal follow-up.'});
   await connection.click();
-  await connection.press('ArrowRight');
+  await page.getByRole('tab',{name:'Home',exact:true}).focus();await page.getByRole('tab',{name:'Home',exact:true}).press('ArrowRight');
   await page.getByText('A personal follow-up.').waitFor();
   const historic = page.locator('[data-request="old-auto-turn"]');
   assert.deepEqual(await historic.locator('small').allTextContents(),['You','Agent','Owner']);
@@ -229,14 +229,14 @@ try {
   await page.setViewportSize({width:375,height:550});
   await chat.focus();
   await chat.press('Home');
-  assert.equal(await connection.getAttribute('aria-selected'),'true');
-  assert.equal(await input.isVisible(),true);
+  assert.equal(await page.getByRole('tab',{name:'Home',exact:true}).getAttribute('aria-selected'),'true');
+  assert.equal(await input.isVisible(),false);
   assert.equal(await input.inputValue(),'Unsent chat draft');
   await connection.press('End');
-  const info = page.getByRole('tab',{name:'Info',exact:true});
-  assert.equal(await info.getAttribute('aria-selected'),'true');
+  assert.equal(await connection.getAttribute('aria-selected'),'true');
+  await page.locator('#phone-user-menu summary').click();const info=page.locator('#phone-tab-info');await info.click();
   assert.equal(await page.locator('#phone-info').isVisible(),true);
-  await info.press('ArrowLeft');
+  await chat.click();
   assert.equal(await chat.getAttribute('aria-selected'),'true');
   assert.equal(await input.inputValue(),'Unsent chat draft');
   await input.focus();
@@ -272,17 +272,17 @@ try {
   await page.goto('https://phone.test/phone-location.php?push_event='+pushRefs.requests);
   const notifiedCard=page.locator('.phone-information-item[data-exchange-id="'+focusedExchange+'"]');
   await notifiedCard.getByText('The exact notified information request.',{exact:true}).waitFor();
-  assert.equal(await connection.getAttribute('aria-selected'),'true');
+  assert.equal(await page.getByRole('tab',{name:'Requests',exact:true}).getAttribute('aria-selected'),'true');
   assert.equal(await page.locator('#phone-information').evaluate(section=>section.open),true);
   await page.waitForFunction(id=>document.activeElement?.dataset.exchangeId===id,focusedExchange);
   assert.equal(await page.locator('.phone-information-item').count(),2,'only the notified card receives focus within the current inbox');
   await page.goto('https://phone.test/phone-location.php?push_event='+pushRefs.test);
   await page.getByText('Notification opened in VP3 Phone.',{exact:true}).waitFor();
-  assert.equal(await info.getAttribute('aria-selected'),'true');
+  assert.equal(await connection.getAttribute('aria-selected'),'true');
   const readsBeforeUnavailable=chatReads;
   await page.goto('https://phone.test/phone-location.php?push_event='+pushRefs.stale);
   await page.getByText('This notification is no longer available. Review the current connection in VP3 Phone.',{exact:true}).waitFor();
-  assert.equal(await info.getAttribute('aria-selected'),'true','an unavailable notification opens the visible Info explanation');
+  assert.equal(await connection.getAttribute('aria-selected'),'true','an unavailable notification opens Phone settings');
   assert.equal(await page.locator('#phone-chat-form').isVisible(),false);
   assert.equal(await page.locator('.phone-bubble').count(),0);
   assert.equal(chatReads,readsBeforeUnavailable,'a stale tap never requests private Chat');

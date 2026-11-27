@@ -163,8 +163,12 @@
     camera: () => camera?.open(),
     savePlace: () => savedPlace?.open(),
     leaveAgent: () => agentWorkspace?.leave() ?? true,
-    onTabChange: view => agentWorkspace?.setVisible(view === 'agent')
+    onTabChange: view => {
+      agentWorkspace?.setVisible(view === 'agent');
+      queueMicrotask(()=>{if(view==='requests'&&el('information'))el('information').open=true;renderInformation();});
+    }
   });
+  const shell=window.VP3PhoneShellV1?.({chat});
   agentWorkspace = window.VP3PhoneAgentWorkspaceV1?.({shell:chat});
   const handoff=window.VP3PhoneHandoffV1?.({request:(action,body)=>new Promise((resolve,reject)=>queue(async()=>{
     try{
@@ -178,17 +182,22 @@
     try{if(dead||document.hidden||!device||device.id!==body.device_id)throw Error('Phone connection changed');
       const result=await request(action,body);if(!dead&&result.device?.id===device?.id){accept(result);render();}resolve(result);
     }catch(error){reject(error);}
-  })),onUnavailable:()=>chat?.openInfo(),onResolved:async notification=>{
+  })),onUnavailable:()=>chat?.openConnection(),onResolved:async notification=>{
     if(dead||pending||notification.device_id!==device?.id)return;
     const target=notification.target;
-    if(target.tab==='info')chat?.openInfo();
+    if(target.tab==='info'||target.tab==='phone')chat?.openConnection();
     else if(target.tab==='chat')chat?.openNotification(target.request_id);
     else if(target.tab==='agent')await agentWorkspace?.openNotification(target.item_ref);
     else if(target.tab==='requests'&&device?.communication?.request_permission_saved===true){
-      if(await chat?.openConnection()===false||dead||pending||notification.device_id!==device?.id)return;
+      if(await (chat?.openRequests?.()??chat?.openConnection())===false||dead||pending||notification.device_id!==device?.id)return;
       infoDetails.open=true;renderInformation();exchange?.openNotification(target.exchange_id);
     }
   }});
+  const checkins=window.VP3PhoneLocationCheckinsV1?.({request:(action,body)=>new Promise((resolve,reject)=>queue(async()=>{
+    try{if(dead||document.hidden||!device||device.id!==body.device_id||device.generation!==body.generation||pending)throw Error('Phone changed');
+      const result=await request(action,body);if(!dead&&result.device?.id===device?.id){accept(result);render();}resolve(result);
+    }catch(error){reject(error);}
+  }))});
   function discardDeferred(session) {
     clearTimeout(session.timer);
     session.timer = null;
@@ -321,8 +330,10 @@
     const permitted=device?.status==='approved'&&available&&!pending&&!dead&&secure&&navigator.onLine!==false&&device.communication?.request_permission_saved===true;
     infoDetails.hidden=!permitted;
     if(!permitted)infoDetails.open=false;
+    const state=el('requests-status');
+    if(state){state.hidden=Boolean(permitted);state.textContent=device?.status!=='approved'?'Connect and approve this phone to review requests.':device.communication?.request_permission_saved!==true?'Information exchange is paused. Review its permissions in Phone settings.':'Reconnect to review information requests.';}
     el('information-summary').textContent='Information exchange'+(Number.isSafeInteger(device?.communication?.information_pending)?' ('+device.communication.information_pending+' open)':'');
-    exchange.bind(device,permitted,permitted&&infoDetails.open&&!el('connection').hidden);
+    exchange.bind(device,permitted,permitted&&infoDetails.open&&!(el('requests')||el('connection')).hidden);
   }
   infoDetails?.addEventListener('toggle',renderInformation);
   el('tab-connection')?.addEventListener('click',()=>queueMicrotask(renderInformation));
@@ -358,6 +369,8 @@
     renderInformation();
     renderCommunication();
     const connected = device?.status === 'approved';
+    shell?.bind(device,owner,secure&&available&&!dead&&!pending&&navigator.onLine!==false);
+    checkins?.bind(device,secure&&available&&!initial&&!dead&&!pending&&!actionBusy&&navigator.onLine!==false);
     handoff?.bind(device,secure&&available&&!initial&&!dead&&navigator.onLine!==false&&!pending&&!claim&&!actionBusy);
     push?.bind(device,secure&&available&&!initial&&!dead&&navigator.onLine!==false&&!pending&&!claim&&!actionBusy);
     const queued = Boolean(pending && pending.id === device?.id);

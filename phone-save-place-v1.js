@@ -2,6 +2,7 @@ window.VP3PhoneSavedPlace = function (request) {
   'use strict';
   const el = id => document.getElementById(id);
   const entry = el('phone-app-save-place');
+  const phoneEntry = el('phone-save-current-place');
   const dialog = el('phone-save-place-dialog');
   const form = el('phone-save-place-form');
   const name = el('phone-save-place-name');
@@ -32,6 +33,7 @@ window.VP3PhoneSavedPlace = function (request) {
     online = reachable && navigator.onLine !== false;
     entry.hidden = !device;
     entry.disabled = !online;
+    if(phoneEntry){phoneEntry.hidden=!device;phoneEntry.disabled=!online;}
     if (dialog.open && (!device || changed || !online)) dialog.close();
   }
   function open() {
@@ -41,6 +43,7 @@ window.VP3PhoneSavedPlace = function (request) {
     dialog.showModal();
     name.focus();
   }
+  phoneEntry?.addEventListener('click',event=>{if(event.isTrusted)open();});
   close.addEventListener('click',() => dialog.close());
   dialog.addEventListener('close',reset);
   dialog.addEventListener('cancel',event => { if (close.disabled) event.preventDefault(); });

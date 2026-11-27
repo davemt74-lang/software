@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
 require_once __DIR__.'/agent-curiosity-email-activity-v1.php';
 require_once __DIR__.'/agent-curiosity-screen-v1.php';
+require_once __DIR__.'/phone-tracking-v1.php';
 require_once __DIR__.'/agent-curiosity-analysis-threads-v1.php';
 
 function vp3_curiosity_analysis_ref_v1(array $user,array $binding): string
@@ -19,6 +20,7 @@ function vp3_curiosity_analysis_snapshot_v1(PDO $pdo,array $user,array $binding)
     $mail=vp3_curiosity_email_candidates_v1($pdo,$user,$binding);
     $screens=vp3_curiosity_screen_briefs_v1($pdo,$user,vp3_initiative_binding_agent_v1($binding));
     $liveScreen=vp3_curiosity_live_screen_v1($pdo,$user,$binding);
+    $locations=vp3_location_specialist_checkin_context_v1($pdo,$user);
     $documents=vp3_curiosity_document_reports_v1($pdo,$user,$binding);
     $answers=vp3_curiosity_analysis_answers_v1($pdo,$user,$binding,$documents);
     // Proposed questions and our own reports are output, not a reason to pay for another pass.
@@ -31,16 +33,17 @@ function vp3_curiosity_analysis_snapshot_v1(PDO $pdo,array $user,array $binding)
     $inputs=array_keys(array_filter($base['briefs'],static fn(array $brief):bool=>$brief['state']==='current_context'));
     if(($activity||$mail||$documents)&&!in_array('gmail',$inputs,true))$inputs[]='gmail';
     if(($screens||$liveScreen)&&!in_array('eyes',$inputs,true))$inputs[]='eyes';
+    if($locations&&!in_array('location',$inputs,true))$inputs[]='location';
     sort($inputs);
     return ['revision'=>vp3_initiative_brainstorm_semantic_v1(['binding'=>$binding,
         'sources'=>array_column($base['evidence'],'revision','ref'),
         'reports'=>vp3_initiative_brainstorm_report_keys_v1($base['reports']),'email_activity'=>$activity,'email_candidates'=>$mail,'screens'=>$screens,'live_screen'=>$liveScreen,
-        'attachment_reviews'=>$documents,'owner_answers'=>$answers,'feedback'=>$base['feedback']]),
-        'ready'=>(bool)($meaningful||$mail||$activity||$screens||$liveScreen||$documents),
+        'attachment_reviews'=>$documents,'owner_answers'=>$answers,'location_checkins'=>$locations,'feedback'=>$base['feedback']]),
+        'ready'=>(bool)($meaningful||$mail||$activity||$screens||$liveScreen||$documents||$locations),
         'evidence'=>$base['evidence'],'briefs'=>$base['briefs'],'reports'=>$base['reports'],
         'email_activity'=>$activity,'email_candidates'=>$mail,'screen_findings'=>$screens,'live_screen'=>$liveScreen,
         'attachment_reviews'=>$documents,'owner_answers'=>$answers,
-        'input_specialists'=>$inputs,'feedback'=>$base['feedback']];
+        'location_checkins'=>$locations,'input_specialists'=>$inputs,'feedback'=>$base['feedback']];
 }
 
 function vp3_curiosity_analysis_evidence_v1(PDO $pdo,array $user,array $binding,?array $refs): array
@@ -123,6 +126,7 @@ function vp3_curiosity_analysis_prepare_v1(PDO $pdo,array $user,array $binding,a
         .'Do not copy raw email bodies, private addresses, secrets or URLs into your report. Do not claim an action or real-world objective was completed. '
         .'Current shared-screen descriptions are provisional visual observations. Retained screen findings are historical at captured_at. '
         .'Neither establishes a preference, a verified business fact, hidden-page access or permission to act. '
+        .'Location check-in counts are opt-in observations from the owner’s paired phone. Work, school and other place purposes remain tentative until explicitly labeled. Never infer sensitive traits or turn a guess into a confirmed place. Suggest one useful clarification for a repeat pattern. '
         .'Saved attachment reviews are historical model interpretations, not freshly rechecked files; preserve partial coverage and uncertainty. '
         .'Owner answers, skips and deferrals close their exact gap. Do not repeat it or infer a preference from a factual answer. '
         .'Return a concise private analysis in draft, at most 2000 characters. Optionally return questions as at most two selections '
@@ -131,6 +135,7 @@ function vp3_curiosity_analysis_prepare_v1(PDO $pdo,array $user,array $binding,a
         'specialists'=>$snapshot['briefs'],'specialist_reports'=>$snapshot['reports'],'creative_feedback'=>$snapshot['feedback'],
         'screen_findings'=>$snapshot['screen_findings'],
         'current_shared_screen'=>$snapshot['live_screen'],
+        'location_checkins'=>$snapshot['location_checkins']??[],
         'evidence'=>array_map(static fn(array $row):array=>array_diff_key($row,array_flip(['url','revision','canonical_source_revision'])),array_values($snapshot['evidence'])),
         'email_activity'=>array_map(static fn(array $row):array=>array_diff_key($row,['item_ref'=>true]),$snapshot['email_activity']),
         'email_samples'=>$mail,'budget'=>['max_jobs'=>0,'max_emails'=>3]];

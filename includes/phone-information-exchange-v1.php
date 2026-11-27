@@ -19,7 +19,42 @@ function vp3_phone_information_install_v1(PDO $pdo,string $options):void
         PRIMARY KEY(owner_user_id,device_id,exchange_id),
         FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_communication_profiles_v1(owner_user_id,device_id) ON DELETE CASCADE
     )".$options);
+    // Content-free deletion receipts fence delayed retries and preserve send budgets.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_information_deleted_v1(
+        owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,exchange_id CHAR(32) NOT NULL,
+        created_epoch BIGINT NOT NULL,deleted_epoch BIGINT NOT NULL,
+        PRIMARY KEY(owner_user_id,device_id,exchange_id),
+        FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_communication_profiles_v1(owner_user_id,device_id) ON DELETE CASCADE
+    )".$options);
     if(!vp3_phone_information_ready_v1($pdo))throw new RuntimeException('Information exchange upgrade incomplete.');
+}
+function vp3_phone_information_delete_ready_v1(PDO $pdo):bool
+{
+    try{$pdo->query('SELECT owner_user_id,device_id,exchange_id,created_epoch,deleted_epoch FROM vp3_phone_information_deleted_v1 WHERE 1=0');return true;}
+    catch(PDOException){return false;}
+}
+function vp3_phone_information_delete_v1(PDO $pdo,array $d,array $input,int $now):array
+{
+    vp3_phone_information_need_v1(vp3_phone_information_delete_ready_v1($pdo),503);
+    vp3_phone_information_need_v1(($input['device_id']??null)===$d['id'],403);
+    vp3_phone_generation_v1($d,$input);
+    vp3_phone_information_need_v1(($input['confirmed']??null)===true&&is_int($input['version']??null)&&$input['version']>0);
+    $id=vp3_phone_information_id_v1($input['exchange_id']??null);$scope=[(int)$d['owner_user_id'],$d['id'],$id];
+    $r=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_information_v1 WHERE owner_user_id=? AND device_id=? AND exchange_id=?'.vp3_phone_lock_v1($pdo),$scope)->fetch(PDO::FETCH_ASSOC);
+    $deleted=vp3_phone_sql_v1($pdo,'SELECT 1 FROM vp3_phone_information_deleted_v1 WHERE owner_user_id=? AND device_id=? AND exchange_id=?',$scope)->fetchColumn();
+    vp3_phone_information_need_v1($r!==false||$deleted,404);
+    if($r){
+        vp3_phone_information_need_v1((int)$r['version']===$input['version'],409);
+        vp3_phone_sql_v1($pdo,'INSERT INTO vp3_phone_information_deleted_v1(owner_user_id,device_id,exchange_id,created_epoch,deleted_epoch) VALUES(?,?,?,?,?)',[...$scope,(int)$r['created_epoch'],$now]);
+        vp3_phone_file_drop_v1($pdo,$scope);
+        vp3_phone_sql_v1($pdo,'DELETE FROM vp3_phone_information_v1 WHERE owner_user_id=? AND device_id=? AND exchange_id=?',$scope);
+        if(vp3_phone_push_delivery_ready_v1($pdo))vp3_phone_sql_v1($pdo,"DELETE FROM vp3_phone_push_outbox_v1 WHERE owner_user_id=? AND device_id=? AND source_type='agent_request' AND source_id=?",$scope);
+    }
+    $p=vp3_phone_communication_row_v1($pdo,$d,true);
+    $list=vp3_phone_information_allowed_v1($p)&&vp3_phone_communication_active_v1($d,$now)
+        ?vp3_phone_information_list_v1($pdo,$d,$p,$now)
+        :['profile_id'=>$p['profile_id'],'profile_revision'=>(int)$p['revision'],'files_ready'=>false,'delete_ready'=>true,'items'=>[]];
+    return $list+['deleted'=>$id];
 }
 function vp3_phone_information_ready_v1(PDO $pdo):bool
 {
@@ -109,7 +144,7 @@ function vp3_phone_information_list_v1(PDO $pdo,array $d,array $p,int $now):arra
         $view['attachment']=vp3_phone_file_view_v1($r,$p,$now,$meta);
         $items[]=$view;
     }
-    return ['profile_id'=>$p['profile_id'],'profile_revision'=>(int)$p['revision'],'files_ready'=>$available,'items'=>$items];
+    return ['profile_id'=>$p['profile_id'],'profile_revision'=>(int)$p['revision'],'files_ready'=>$available,'delete_ready'=>vp3_phone_information_delete_ready_v1($pdo),'items'=>$items];
 }
 /** Exact current authenticated pairing and both request/update permissions.
  * Generation guards the foreground UI only, not the lifetime of an exchange.
@@ -134,8 +169,9 @@ function vp3_phone_information_action_v1(PDO $pdo,array $d,string $action,array 
 {
     $list=$action==='information_list';
     // Never trust an unlisted action even if a direct internal caller bypasses HTTP.
-    $allowed=$holder?['information_list','information_accept','information_decline','information_ack','information_reply','information_attach_file','information_download']:['information_list','information_create','information_cancel','information_create_file','information_download'];
+    $allowed=$holder?['information_list','information_accept','information_decline','information_ack','information_reply','information_attach_file','information_download']:['information_list','information_create','information_cancel','information_create_file','information_download','information_delete'];
     vp3_phone_information_need_v1(in_array($action,$allowed,true),403);
+    if($action==='information_delete')return vp3_phone_information_delete_v1($pdo,$d,$input,$now);
     $p=vp3_phone_information_scope_v1($pdo,$d,$input,$now,$list);
     if($list)return vp3_phone_information_list_v1($pdo,$d,$p,$now);
     $id=vp3_phone_information_id_v1($input['exchange_id']??null);
@@ -143,6 +179,8 @@ function vp3_phone_information_action_v1(PDO $pdo,array $d,string $action,array 
     $r=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_information_v1 WHERE owner_user_id=? AND device_id=? AND exchange_id=?'.vp3_phone_lock_v1($pdo),$scope)->fetch(PDO::FETCH_ASSOC);
     if(in_array($action,['information_create','information_create_file'],true)){
         vp3_phone_information_need_v1(!$holder,403);
+        $deleteReady=vp3_phone_information_delete_ready_v1($pdo);
+        if($deleteReady)vp3_phone_information_need_v1(!vp3_phone_sql_v1($pdo,'SELECT 1 FROM vp3_phone_information_deleted_v1 WHERE owner_user_id=? AND device_id=? AND exchange_id=?',$scope)->fetchColumn(),409);
         $file=null;
         $kind=$input['kind']??null;
         if($action==='information_create_file'){
@@ -165,10 +203,16 @@ function vp3_phone_information_action_v1(PDO $pdo,array $d,string $action,array 
         }
         // Account-serialized budget survives number/consent changes.
         vp3_phone_sql_v1($pdo,'DELETE FROM vp3_phone_information_v1 WHERE owner_user_id=? AND created_epoch<=?',[$scope[0],$now-VP3_PHONE_INFO_RETENTION_V1]);
+        $deletedOwner=$deletedDevice=0;
+        if($deleteReady){
+            vp3_phone_sql_v1($pdo,'DELETE FROM vp3_phone_information_deleted_v1 WHERE owner_user_id=? AND created_epoch<=?',[$scope[0],$now-VP3_PHONE_INFO_RETENTION_V1]);
+            $deletedOwner=(int)vp3_phone_sql_v1($pdo,'SELECT COUNT(*) FROM vp3_phone_information_deleted_v1 WHERE owner_user_id=? AND created_epoch>?',[$scope[0],$now-86400])->fetchColumn();
+            $deletedDevice=(int)vp3_phone_sql_v1($pdo,'SELECT COUNT(*) FROM vp3_phone_information_deleted_v1 WHERE owner_user_id=? AND device_id=? AND created_epoch>?',[$scope[0],$d['id'],$now-86400])->fetchColumn();
+        }
         $q=vp3_phone_sql_v1($pdo,'SELECT COUNT(*) FROM vp3_phone_information_v1 WHERE owner_user_id=? AND created_epoch>?',[$scope[0],$now-86400]);
-        vp3_phone_information_need_v1((int)$q->fetchColumn()<32,429);
+        vp3_phone_information_need_v1((int)$q->fetchColumn()+$deletedOwner<32,429);
         $q=vp3_phone_sql_v1($pdo,'SELECT COUNT(*) FROM vp3_phone_information_v1 WHERE owner_user_id=? AND device_id=? AND created_epoch>?',[$scope[0],$d['id'],$now-86400]);
-        vp3_phone_information_need_v1((int)$q->fetchColumn()<8,429);
+        vp3_phone_information_need_v1((int)$q->fetchColumn()+$deletedDevice<8,429);
         vp3_phone_information_need_v1(vp3_phone_information_pending_count_v1($pdo,$d,$p,$now)<4,429);
         vp3_phone_sql_v1($pdo,"INSERT INTO vp3_phone_information_v1(owner_user_id,device_id,exchange_id,profile_id,profile_revision,version,kind,state,message,response,created_epoch,updated_epoch,expires_epoch,announced)
             VALUES(?,?,?,?,?,1,?,'pending',?,'',?,?,?,0)",[...$scope,$p['profile_id'],(int)$p['revision'],$kind,$text,$now,$now,$now+VP3_PHONE_INFO_TTL_V1]);
@@ -222,7 +266,7 @@ function vp3_phone_information_action_v1(PDO $pdo,array $d,string $action,array 
 function vp3_phone_information_owner_v1(PDO $pdo,int $owner,string $action,array $input):array
 {
     vp3_phone_information_need_v1($owner>0&&(!function_exists('vp3_participant_scope_v1')||vp3_participant_scope_v1()===null),403);
-    vp3_phone_information_need_v1(in_array($action,['information_list','information_create','information_cancel','information_create_file','information_download'],true),422);
+    vp3_phone_information_need_v1(in_array($action,['information_list','information_create','information_cancel','information_create_file','information_download','information_delete'],true),422);
     $device=vp3_phone_information_id_v1($input['device_id']??null);
     return vp3_phone_transaction_v1($pdo,static function()use($pdo,$owner,$action,$input,$device){
         vp3_phone_account_v1($pdo,$owner,true);$d=vp3_phone_row_v1($pdo,$owner,$device);

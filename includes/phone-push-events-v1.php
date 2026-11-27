@@ -32,6 +32,12 @@ function vp3_phone_push_source_target_v1(PDO $pdo,array $d,array $source,int $no
         if(!$row||!vp3_phone_camera_scope_v1($pdo,(int)$d['owner_user_id'],(int)$row['agent_id'],(int)$row['conversation_id']))return null;
         return ['tab'=>'chat','request_id'=>$row['request_id']];
     }
+    if($type==='location_visit'){
+        if(!$d['allow_location'])return null;
+        if(!is_string($id)||preg_match('/^[a-f0-9]{32}$/D',$id)!==1||!is_int($revision)||!vp3_phone_checkin_ready_v1($pdo))return null;
+        $found=vp3_phone_sql_v1($pdo,"SELECT 1 FROM vp3_phone_checkins_v1 WHERE owner_user_id=? AND device_id=? AND visit_id=? AND version=? AND generation=? AND ended_epoch IS NOT NULL AND reason='left_area'",[(int)$d['owner_user_id'],$d['id'],$id,$revision,(int)$d['generation']])->fetchColumn();
+        return $found?['tab'=>'phone']:null;
+    }
     if($type==='agent_request'){
         if(!is_string($id)||preg_match('/^[a-f0-9]{32}$/D',$id)!==1||!is_int($revision)||$revision<1
             ||!vp3_phone_communication_ready_v1($pdo)||!vp3_phone_information_ready_v1($pdo))return null;
