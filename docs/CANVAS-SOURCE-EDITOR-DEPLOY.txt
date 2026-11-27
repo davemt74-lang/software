@@ -1,0 +1,84 @@
+VP3 Canvas Source Editor — owner-draft-v1
+
+Deploy the complete Cloud archive and run the authenticated Database Upgrade
+(upgrade.php). The existing Canvas version table gains nullable manual-edit
+base/origin revision and request ID/hash columns, plus a unique request index.
+This upgrade preserves existing code, working revisions, app records, publication,
+data permissions and phone connections. Live requests never install the schema.
+Existing apps and source inspection remain available before the editor upgrade.
+
+USING THE EDITOR
+
+Open a saved Canvas, choose Edit app, then Source. HTML, CSS and JavaScript are
+editable with syntax colors, cursor line/column information and JavaScript error
+locations. Go to error focuses the corresponding source location. Syntax checks
+inspect strict-script JavaScript without executing it; preview remains isolated
+in the existing Canvas worker. HTML/CSS retain the existing preview contract.
+
+Preview edits runs an unsaved copy with disposable app data. It cannot save app
+records, record a native test, activate code, publish or use live email targets.
+Changes compares unsaved edits with their saved base while those edits exist.
+Save source draft creates a new private version. Test preview checks that saved
+version through the existing path. Use this version remains explicit.
+
+For a Coding Agent change, select saved code and choose Use selection in Agent
+request. The original instruction is preserved. Describe the change in plain
+English and choose Make requested change. Ordinary Repair works without a
+selection. Selection is optional context: the Agent may need coordinated edits
+in other source sections. Review the whole Changes result before using a draft.
+There is no automatic assertion that arbitrary generated behavior is correct.
+
+SAVE AND RECOVERY
+
+Manual saving uses no model and needs no AI inference allowance. It requires
+owner Chat and personal Knowledge management access. Commands and grants remain
+native; editing code cannot declare or grant another data source.
+
+The server binds each manual request to the exact base source hash, expected
+active/draft pointers, current owner/Agent/Chat, code and inherited commands.
+Replaying an uncertain save recovers its exact immutable revision. Changed work
+cannot reuse that request ID. A newer draft or active pointer rejects a stale
+save without replacing either code or records.
+
+Typing during a save is preserved. Confirming the earlier save carries newer
+typing onto its saved draft; a further save stays explicit. A lost response is
+recovered with the original request before newer work is submitted.
+
+Unsaved buffers live only in this page's memory, with at most eight outstanding
+buffers. They are scoped by owner, Agent, Chat, Canvas and immutable base version.
+Switching to another scope clears visible private source. Return to the original
+scope/version to recover it. Older recovered edits retain their original conflict
+fence. Save before closing/reloading the browser; this release does not persist
+unsaved private code in browser storage or auto-merge it into a newer revision.
+
+EMAIL AND PRIVATE SOURCES
+
+Manual versions retain their exact native ancestry, including a flattened origin
+for repeated manual edits. Email-connected apps keep their read-only live source,
+original Chat restriction and required sample-email check. Malformed provenance
+fails closed. Existing command declarations, data grants and separate app records
+are preserved. Paired-phone private viewers cannot invoke source editing.
+
+LIMITS AND DEPENDENCIES
+
+Source limits remain HTML 24,000 bytes, CSS 16,000 bytes, JavaScript 32,000 bytes,
+and 60,000 bytes combined. Selected source is limited to 8,000 UTF-8 bytes.
+Selections are checked against immutable native source; clients do not supply
+the excerpt sent to the model. Save request bodies allow bounded JSON escaping
+overhead while other Canvas requests retain their existing limit.
+
+Acorn 8.19.0 is bundled locally for syntax inspection; there is no CDN dependency.
+The unmodified distribution, MIT license, source URL and integrity are retained
+under assets/vendor/acorn-*. Syntax colors use text nodes and cap highlighted
+ranges; source markup is never inserted as executable HTML.
+
+VALIDATION
+
+The native source tests cover upgrade replay, original-code and record preservation,
+idempotency, stale pointers, roles and source ranges on SQLite and MySQL. The real
+HTTP controller is exercised with isolated fixture accounts. The browser fixture
+uses the shipped editor, runtime, parser and CSS for lost bodies, typing during
+saves, scoped recovery, stale conflicts, disposable previews, selected-code requests
+and desktop/390px/320px layouts. The email pipeline additionally verifies repeated
+manual ancestry, original-Chat restrictions and malformed-provenance rejection.
+Provider/model output quality and an installed-device smoke test remain separate.

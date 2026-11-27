@@ -6,6 +6,12 @@ function vp3_coding_canvas_email_binding_v1(PDO $pdo, array $user, int $agentId,
 {
     if (!agent_job_engine_schema_ready_v1900($pdo)) return null;
     $owner = (int)$user['id'];
+    $manual = null;
+    if (schema_metadata_column_exists($pdo,'vp3_coding_canvas_versions_v1','edit_origin_revision')) {
+        $manual = $pdo->prepare('SELECT v.run_id,v.edit_origin_revision,v.edit_base_revision,v.edit_request_id,v.edit_request_hash
+            FROM vp3_coding_canvas_versions_v1 v JOIN vp3_coding_canvases_v1 c ON c.id=v.canvas_id
+            WHERE c.id=? AND c.owner_user_id=? AND c.agent_id=? AND v.revision=?');
+    }
     $q = $pdo->prepare("SELECT c.conversation_id,r.id,r.goal,r.capability_key,r.source_key
         FROM vp3_coding_canvases_v1 c JOIN vp3_coding_canvas_versions_v1 v ON v.canvas_id=c.id
         JOIN agent_workflow_runs r ON r.id=v.run_id AND r.owner_user_id=c.owner_user_id
@@ -17,7 +23,19 @@ function vp3_coding_canvas_email_binding_v1(PDO $pdo, array $user, int $agentId,
             AND r.executor='cloud' AND r.status='completed' AND r.attempt_no=a.attempt_count
         WHERE a.run_id=? AND a.owner_user_id=? AND a.capability_key=? AND a.sequence_no=1 AND a.status='completed'
         ORDER BY r.id DESC LIMIT 1");
-    for ($depth = 0; $depth < 16; $depth++) {
+    for ($depth = 0; $depth < 64; $depth++) {
+        if ($manual) {
+            $manual->execute([$canvasId,$owner,$agentId,$revision]);$edit=$manual->fetch(PDO::FETCH_ASSOC);
+            if ($edit && $edit['run_id']===null && ($edit['edit_origin_revision']!==null||$edit['edit_base_revision']!==null||$edit['edit_request_id']!==null||$edit['edit_request_hash']!==null)) {
+                $origin=(int)$edit['edit_origin_revision'];$base=(int)$edit['edit_base_revision'];
+                if ($origin<1||$origin>$base||$base>=$revision
+                    || !preg_match('/\A[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}\z/D',(string)$edit['edit_request_id'])
+                    || !preg_match('/\A[a-f0-9]{64}\z/D',(string)$edit['edit_request_hash'])) {
+                    throw new RuntimeException('This Canvas source history could not be verified.',409);
+                }
+                $revision=$origin;continue;
+            }
+        }
         $q->execute([$canvasId,$owner,$agentId,$revision]);
         $run = $q->fetch(PDO::FETCH_ASSOC);
         if (!$run || !in_array($run['capability_key'], ['coding.build','coding.repair'], true)) return null;
@@ -37,6 +55,7 @@ function vp3_coding_canvas_email_binding_v1(PDO $pdo, array $user, int $agentId,
         if (!is_int($source) || $source < 1 || $source >= $revision) return null;
         $revision = $source;
     }
+    if ($depth===64) throw new RuntimeException('This Canvas source history is too deep to verify. Open an earlier verified version.',409);
     if (($run['capability_key'] ?? null) !== 'coding.build') return null;
     $origin = $goal['initiative_origin'];
     $parentId = $origin['initiative_run_id'] ?? null;
