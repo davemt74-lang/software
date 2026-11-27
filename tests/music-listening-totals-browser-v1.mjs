@@ -270,9 +270,15 @@ try {
   await refresh(page);
   equal(await metrics(page), ['2','2','30 s'], 'Available native lifetime evidence remains visible when provider measurement is missing');
   check((await page.locator('#musicListeningTotalsStatus').textContent()).includes('Partial total'), 'A missing measurement source is explicitly marked as partial');
-  await page.locator('#musicListeningTotalsChannel').selectOption('provider'); await apply(page);
-  equal(await metrics(page), ['Unavailable','Unavailable','Unavailable'], 'Unavailable provider measurement never becomes a zero listen count');
-  check((await page.locator('#musicListeningTotalsTable').textContent()).includes('Unavailable'), 'Per-song measurements also disclose unavailable source data');
+  await page.locator('#musicListeningTotalsChannel').selectOption('provider');
+  await page.locator('#musicListeningTotalsApply').click();
+  await page.waitForFunction(() => document.getElementById('musicListeningTotals').dataset.reportState === 'error');
+  check(!await page.locator('#musicListeningTotalsData').isVisible(), 'Explicit unavailable source hides the previous report');
+  check(!await page.locator('#musicListeningTotalsMetrics').isVisible(), 'Unavailable provider measurement never presents stale or zero listen counts');
+  check(!await page.locator('#musicListeningTotalsTable').isVisible(), 'Explicit unavailable source hides per-song measurements');
+  check(await page.locator('#musicListeningTotalsStatus').isVisible()
+    && (await page.locator('#musicListeningTotalsStatus').textContent()).includes('temporarily unavailable'), 'Explicit unavailable source displays safe unavailability guidance');
+  check(await page.locator('#musicListeningTotalsRetry').isVisible(), 'Explicit unavailable source offers a fresh-report retry');
   fixture.execute('ALTER TABLE music_provider_sessions_unavailable RENAME TO music_provider_sessions_v1');
   await page.locator('#musicListeningTotalsReset').click(); await ready(page);
   fixture.execute("UPDATE music_listening_sessions_v1 SET listen_class='owner_or_manager_preview' WHERE listen_class='audience'");
