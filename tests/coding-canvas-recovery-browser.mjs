@@ -116,6 +116,13 @@ try{
   await panel.getByRole('button',{name:'Edit saved request',exact:true}).click();
   assert.equal(records('saved_request').length,0,'Loading a saved brief cannot overwrite personal text');
   await prompt.fill('');
+  await page.evaluate(()=>{window.holdActions=['saved_request'];window.heldAction=null;});
+  await panel.getByRole('button',{name:'Edit saved request',exact:true}).click();
+  await page.waitForFunction(()=>window.heldAction==='saved_request');
+  await page.evaluate(async id=>{await window.VP3CodingCanvasV1.open(id,2);},id);
+  await page.evaluate(()=>{window.holdActions=[];window.releaseBodies.splice(0).forEach(resolve=>resolve());});
+  await panel.getByRole('button',{name:'Edit app',exact:true}).click();
+  assert.equal(await prompt.inputValue(),'','A late saved brief cannot change an app the owner navigated away from');
   await panel.getByRole('button',{name:'Edit saved request',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('#chatCodingCanvasV1 textarea').value==='Build a saved checklist');
   assert.equal(records('build').length,1,'Editing a saved brief cannot start generation');

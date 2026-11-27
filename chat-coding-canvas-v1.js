@@ -1915,19 +1915,20 @@
   }
 
   async function editSavedRequest() {
-    const previous = job,version = epoch,conversation = scope();
-    if (!previous || locked || checkingBuild || activeJob(previous) || !matches()) return;
+    const previous = job,version = epoch,conversation = scope(),selected = current,selection = load;
+    if (!previous || locked || checkingBuild || activeJob(previous) || !matches() || !editing()) return;
     if (prompt.value.trim()) { report('Your unsent instruction was kept. Clear it before loading the saved request.'); return; }
     locked = true;
     updateControls();
     try {
       const data = await api('saved_request',{run_id:previous.run_id},conversation);
-      if (version !== epoch || conversation !== scope() || !matches() || job?.run_id !== previous.run_id) return;
+      if (version !== epoch || conversation !== scope() || !matches() || !editing()
+        || current !== selected || load !== selection || job?.run_id !== previous.run_id) return;
       const request = data.request;
       if (!request || typeof request.prompt !== 'string' || request.prompt.length > 8000 || !['build','repair'].includes(request.operation)) throw new Error('The saved instruction could not be verified.');
       if (request.operation === 'repair' && current?.canvas.id !== request.canvas_id
           && !await openSaved(request.canvas_id,undefined,false)) return;
-      if (version !== epoch || conversation !== scope() || !matches() || prompt.value.trim()) return;
+      if (version !== epoch || conversation !== scope() || !matches() || !editing() || prompt.value.trim()) return;
       prompt.value = request.prompt;
       prompt.focus();
       report('Saved request loaded. Edit it, then choose '+(request.operation === 'repair' ? 'Repair for the selected version.' : 'Build new.'));
