@@ -7,8 +7,10 @@ require_once __DIR__.'/fixtures/phone-call-window-v1.php';
 function knowledge_retrieval_v162_owner_session($user,$principal):bool{return ($principal['kind']??'')==='system'||(($principal['owner_user_id']??0)===$user['id']);}
 $preparationWindow=vp3_phone_fixture_call_window_v1(time());
 
-function preparation_grant(array $ctx,array $window):string
+function preparation_grant(array $ctx,?array $window=null):string
 {
+    // Downstream follow-through fixtures retain the original one-argument call.
+    $window??=$GLOBALS['preparationWindow'];
     $pdo=db();$device=bin2hex(random_bytes(16));
     $pdo->prepare("INSERT INTO vp3_phone_devices_v1(id,owner_user_id,device_status,expires_at) VALUES(?,1,'approved',?)")->execute([$device,time()+86400]);
     $pdo->prepare("INSERT INTO vp3_phone_communication_profiles_v1(owner_user_id,device_id,profile_id,revision,phone_revision,phone_e164,owner_calls,holder_calls,holder_proactive,agent_call_consent,holder_memory,timezone,window_start,window_end,max_calls_per_day,min_gap_minutes,updated_epoch)
