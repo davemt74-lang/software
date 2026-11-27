@@ -49,6 +49,10 @@ $pdo->prepare('UPDATE ai_execution_ledger SET user_id=2 WHERE run_id=?')->execut
 check(vp3_coding_canvas_provider_attempt_v1($pdo,$run)===null,'Foreign ledger rows do not become run diagnostics');
 $pdo->prepare('UPDATE ai_execution_ledger SET user_id=1,usage_known=1,total_tokens=340,service_status=\'completed\' WHERE run_id=?')->execute([$job['run_id']]);
 check(vp3_coding_canvas_provider_attempt_v1($pdo,$run)['tokens']===340,'Confirmed usage remains available even when later source validation failed');
+$pdo->prepare('UPDATE ai_execution_ledger SET agent_id=NULL WHERE run_id=?')->execute([$job['run_id']]);
+check(vp3_coding_canvas_provider_attempt_v1($pdo,array_replace($run,['agent_id'=>null]))['tokens']===340,
+    'The System Agent zero context matches the native meter’s NULL Agent attribution');
+$pdo->prepare('UPDATE ai_execution_ledger SET agent_id=7 WHERE run_id=?')->execute([$job['run_id']]);
 
 $stale=vp3_coding_canvas_queue_v1($pdo,$owner,7,11,agent_event_uuid_v1920(),'Another rebuild',$canvasId,$saved['revision']['id']);
 $staleLease=$claim($stale['run_id']);$staleRow=vp3_coding_canvas_job_row_v1($pdo,$owner,$stale['run_id']);

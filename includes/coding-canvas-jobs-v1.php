@@ -18,10 +18,12 @@ function vp3_coding_canvas_provider_attempt_v1(PDO $pdo,array $run): ?array
     if(!vp3_ai_service_usage_ready_v1($pdo))return null;
     $goal=json_decode($run['goal'],true,16,JSON_THROW_ON_ERROR);
     try{$q=$pdo->prepare("SELECT service_status,usage_known,total_tokens,latency_ms FROM ai_execution_ledger
-        WHERE user_id=? AND run_id=? AND service_job_key=? AND agent_id=? AND conversation_id=?
+        WHERE user_id=? AND run_id=? AND service_job_key=? AND COALESCE(agent_id,0)=? AND conversation_id=?
         AND service_key=? ORDER BY id DESC LIMIT 1");
-    $q->execute([(int)$run['owner_user_id'],(int)$run['id'],hash('sha256','run:'.$run['id']),(int)$run['agent_id'],
-        (int)$goal['conversation_id'],$run['capability_key']==='coding.repair'?'code_repair':'code_build']);
+    $params=[(int)$run['owner_user_id'],(int)$run['id'],hash('sha256','run:'.$run['id']),(int)$run['agent_id'],
+        (int)$goal['conversation_id'],$run['capability_key']==='coding.repair'?'code_repair':'code_build'];
+    foreach($params as $index=>$value)$q->bindValue($index+1,$value,is_int($value)?PDO::PARAM_INT:PDO::PARAM_STR);
+    $q->execute();
     $row=$q->fetch(PDO::FETCH_ASSOC);}catch(PDOException){return null;}
     if(!$row)return null;
     $known=(int)$row['usage_known']===1;
