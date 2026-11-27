@@ -5,6 +5,7 @@ require_once __DIR__.'/agent-gmail-documents-schema-v1.php';
 require_once __DIR__.'/agent-email-sent-v1.php';
 
 require_once __DIR__.'/agent-gmail-document-input-v1.php';
+require_once __DIR__.'/gmail-email-capture-source-v1.php';
 const AGENT_GMAIL_DOCUMENT_PROTOCOL_V1='vp3.gmail-document-review.v1';
 
 function agent_gmail_document_hash_v1(mixed $value): string
@@ -38,16 +39,19 @@ function agent_gmail_document_parts_v1(array $raw): array
 /** Only called by existing exact private message readers, never by background scans. */
 function agent_gmail_document_source_v1(PDO $pdo,array $user,int $connection,string $grant,array $raw): array
 {
+    $capture=agent_connection_gmail_id_v1($raw['id']??'')!==''&&agent_connection_gmail_id_v1($raw['threadId']??'')!==''
+        ?gmail_email_capture_source_v1($pdo,$user,$connection,$grant,agent_connection_gmail_read_message_v1($raw)):null;
+    $capture=$capture===null?[]:['capture_source'=>$capture];
     try {$parts=agent_gmail_document_parts_v1($raw);}
-    catch (DomainException $error) {return ['documents'=>['unavailable'=>$error->getMessage()]];}
-    if (!$parts) return [];
+    catch (DomainException $error) {return $capture+['documents'=>['unavailable'=>$error->getMessage()]];}
+    if (!$parts) return $capture;
     $record=agent_connections_require_grant_v1($pdo,(int)$user['id'],$connection,'read',$grant);
     $id=agent_connection_gmail_id_v1($raw['id']??'');$thread=agent_connection_gmail_id_v1($raw['threadId']??'');
-    if ($id===''||$thread===''||array_intersect(['SPAM','TRASH','DRAFT'],(array)($raw['labelIds']??[]))) return [];
+    if ($id===''||$thread===''||array_intersect(['SPAM','TRASH','DRAFT'],(array)($raw['labelIds']??[]))) return $capture;
     $source=['contract'=>'gmail-document-source-v1','owner'=>(int)$user['id'],'connection'=>$connection,'grant'=>$grant,
         'fingerprint'=>$record['client_fingerprint'],'account'=>$record['account_email'],'message'=>$id,'thread'=>$thread,
         'revision'=>agent_gmail_document_hash_v1($raw['payload']??[]),'expires'=>time()+900];
-    return ['documents'=>['source_ref'=>bin2hex(ai_encrypt_secret(json_encode($source,JSON_THROW_ON_ERROR))),
+    return $capture+['documents'=>['source_ref'=>bin2hex(ai_encrypt_secret(json_encode($source,JSON_THROW_ON_ERROR))),
         'count'=>count($parts),'max_bytes'=>AGENT_GMAIL_DOCUMENT_MAX_BYTES_V1]];
 }
 

@@ -108,19 +108,36 @@ canvas_pipeline_check(!str_contains(json_encode(agent_job_public_run_v1900($pdo,
     'ordinary workflow details do not expose private opportunity explanations');
 $beforePlans=count(canvas_pipeline_runs('initiative.plan'));
 $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
+$slotBefore=vp3_initiative_brainstorm_slot_v1();
 vp3_initiative_schedule_v1($pdo,$owner,7);$plans=canvas_pipeline_runs('initiative.plan');$newRun=(int)end($plans)['id'];
+$slotAfter=vp3_initiative_brainstorm_slot_v1();
 canvas_pipeline_check(count($plans)===$beforePlans+1,'the next real five-minute slot reassesses stable sources rather than deduping forever');
 $newGoal=json_decode(end($plans)['goal'],true,32,JSON_THROW_ON_ERROR);
 canvas_pipeline_check($newGoal['sources']===$older['sources']&&$newGoal['binding']===$older['binding']
-    &&$newGoal['reassessment_slot']===$older['reassessment_slot']+1,'only the bounded plan slot advances while source authority and Agent binding stay exact');
+    &&$newGoal['reassessment_slot']>$older['reassessment_slot']
+    &&$newGoal['reassessment_slot']>=$slotBefore&&$newGoal['reassessment_slot']<=$slotAfter,
+    'only the actual bounded clock slot advances while source authority and Agent binding stay exact');
 canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($newRun))['ok'],'the due real reassessment completes through its existing governed workflow');
 $second=canvas_pipeline_result($newRun)['initiative_tool_result']['output'];
 canvas_pipeline_check(array_column($second['opportunities'],'id')===array_column($firstOutput['opportunities'],'id')
     &&array_column($second['opportunities'],'status')===['existing','considered']&&count(canvas_pipeline_runs('initiative.prepare'))===$beforeJobs+1,
     'time does not manufacture new ideas or repeat the same prepared work');
 $pdo->exec("UPDATE agent_memory_items SET last_seen_at='2000-01-01 00:00:00' WHERE memory_type='initiative_sweep'");
+$pollSlotBefore=vp3_initiative_brainstorm_slot_v1();
 vp3_initiative_schedule_v1($pdo,$owner,7);
-canvas_pipeline_check(count(canvas_pipeline_runs('initiative.plan'))===count($plans),'repeated due polling in one slot does not spend another assessment');
+$pollSlotAfter=vp3_initiative_brainstorm_slot_v1();
+$polledPlans=canvas_pipeline_runs('initiative.plan');
+// A slow CI host may cross a five-minute boundary during the real worker call.
+// New slots may reassess; identical semantic plans in one slot must still dedupe.
+$matching=0;$semantic=vp3_initiative_brainstorm_semantic_v1($newGoal);
+foreach($polledPlans as $planRow){
+    $goal=json_decode($planRow['goal'],true,32,JSON_THROW_ON_ERROR);
+    if(($goal['reassessment_slot']??null)===$newGoal['reassessment_slot']
+        &&vp3_initiative_brainstorm_semantic_v1($goal)===$semantic)$matching++;
+}
+canvas_pipeline_check($matching===1
+    &&(($pollSlotBefore===$newGoal['reassessment_slot']&&$pollSlotAfter===$newGoal['reassessment_slot'])?count($polledPlans)===count($plans):true),
+    'repeated due polling cannot duplicate an assessment while the actual clock remains in the same slot');
 
 $single=['task:20001'=>brainstorm_pipeline_evidence()['task:20001']];
 $payload=brainstorm_pipeline_payload($single);$payload['attention_revision']=bin2hex(random_bytes(16));

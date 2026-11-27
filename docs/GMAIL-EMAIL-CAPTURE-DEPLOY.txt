@@ -1,0 +1,66 @@
+VP3 Gmail — selected email areas
+
+Install the complete Cloud ZIP and run Database Upgrade once. Fresh installation
+also creates agent_gmail_captures_v1 through the existing Connections installer.
+No provider analysis is dispatched before that storage is ready.
+
+Open an exact email from private owner Chat, Inbox Review, or the reply editor's
+Original Email section. Formatted and plain-text readers provide Capture area
+and Email actions. Drag over an area, or highlight text and right-click it.
+Email actions is the visible keyboard/touch alternative. Mailbox summaries do not
+get capture controls; participant and paired Phone sessions do not acquire them.
+
+Actions
+- Analyze text: analyze the selected excerpt through the selected Agent's native
+  foreground Conversation service. Only that excerpt and source headers are sent.
+- Snap photo: explicitly choose this VP3 tab in the browser picker. Native Region
+  Capture crops the track to the marked area before a video sink or JPEG exists.
+  Sharing stops after one bounded JPEG. No microphone or audio is requested.
+- Analyze photo: explicitly send the captured JPEG for analysis. The snapshot is
+  not analyzed automatically. Other source images and email links are not fetched.
+- Add to calendar / Set reminder: review/edit title, date, time and time zone,
+  then Save. These use the existing calendar/reminder kernels without inference.
+  Identical save retries create one native record. Source email and excerpt stay
+  in the event notes or canonical reminder request receipt.
+- Research product in Chat: review the phrase and prepare it in the original Chat.
+  Existing typed drafts are preserved; the user sends the research request.
+- Search Amazon: review the phrase and explicitly open an Amazon search.
+
+Browser and model requirements
+Text selection and action forms work in the existing responsive owner reader.
+Photo capture requires getDisplayMedia plus native CropTarget/track.cropTo support
+(currently supported desktop Chromium browsers). Unsupported browsers keep text
+actions. The whole marked photo area must fit in the viewport. Email layout,
+owner, Agent, Chat or source changes clear the pending capture. Browser sharing
+permission is requested only on Snap. There is no full-screen snapshot fallback.
+
+Analysis honors the Agent's compute/privacy route. Its current Cloud model must
+be available; HomeServer-only preferences are not overridden. Metering retains
+the exact owner/Agent/Chat and disables provider fallback/retry for this request.
+OpenAI Responses storage is disabled. Provider/model errors do not start another
+paid attempt. Saved attempt status is checked using the same request identity.
+Received answers are encrypted and retained before format/source verification.
+Malformed received output can be inspected as plain text after source access is
+reverified. Unknown/interrupted attempts require an explicit new analysis choice.
+
+Source authority
+Opaque short-lived source references are issued only by exact private readers.
+Every analysis/result/action rechecks the live owner, Agent, Chat, Gmail read
+grant, connected account, exact message/thread and content snapshot. Only the
+native Gmail message endpoint is read for these checks. No action link, tracking
+URL or remote image URL is fetched by this feature. Raw screenshot pixels are not
+stored in the capture ledger or copied into ordinary Chat history. Source tokens
+are not saved as durable permission grants in calendar/reminder records.
+
+Validation
+Native MySQL acceptance covers encrypted results, single-use dispatch, replay,
+source/owner/Agent/Chat fences, revocation and real calendar/reminder kernels.
+Provider tests retain actual metering/request builders and replace physical HTTP.
+HTTP tests exercise the shipped controller's authentication and request contract.
+Chromium tests use real iframe selection, pointer/keyboard input and video/canvas
+processing, with deterministic sharing/provider doubles. They do not certify live
+OCR quality or a real operating-system sharing picker on every device.
+
+Browser API reference:
+https://developer.chrome.com/docs/web-platform/region-capture
+https://w3c.github.io/mediacapture-region/

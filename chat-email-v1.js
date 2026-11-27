@@ -461,7 +461,7 @@
       details.append(headers);
       const body = message.body || 'This message has no readable text.';
       const renderBody = window.VP3GmailInboxInitialV1?.renderMessageBody;
-      if (renderBody) renderBody(details,body,message.links,'vp3-chat-email-message-body',message.display,message.subject,message.documents);
+      if (renderBody) renderBody(details,body,message.links,'vp3-chat-email-message-body',message.display,message.subject,message.documents,message.capture_source,message.from);
       else if (window.VP3GmailEmailDisplayV1?.mount(details,message)) { /* Formatted private reader. */ }
       else {
         const text = element('p',body);
@@ -773,6 +773,7 @@
     link.href = cfg.connectionsUrl;
     help.append(element('summary','Gmail'),
       element('p','Try “Any urgent emails today?” or “Write a new email to buyer@example.com about our launch.”'),
+      element('p','Open an email and choose Capture area to select text or a photo. Email actions offers analysis, calendar dates, reminders and product searches.'),
       element('p','To get one notification in this Chat, ask “Notify me when I get an email from buyer@example.com.” To end the watch, ask “Stop watching for emails from buyer@example.com.”'));
     tools.append(help);
     installGithubWorkflowReview(help);
