@@ -1,0 +1,78 @@
+VP3 ALL-TIME LISTENING TOTALS — ML3A
+
+This update adds combined native VP3 and connected-site listening totals to
+/music-workspace.php and /admin/listening.php. It uses existing retained listening
+records. The Stoneward streaming protocol and the 10-second listen rule remain
+compatible with the already verified Stoneward v1.3.333 release.
+
+INSTALL
+
+1. Back up matching code, database, config.php, private/ and uploads/. Verify the
+   full Cloud ZIP checksum and its VP3_RELEASE.json commit against the release
+   handoff. Preserve configuration, private keys, uploaded media and database.
+
+2. This reporting update adds no schema or mutable counter and performs no
+   read-path migration. Existing ML1 catalog, ML2A native listening and ML2B
+   provider prerequisites still apply. If those are absent, follow the matching
+   MUSIC-CATALOG-LISTENING-DEPLOY.txt and MUSIC-PROVIDER-DEPLOY.txt notes.
+
+3. Open the authorized Music Workspace. All-time listening shows retained 10s+
+   listens for the workspace and each canonical song. Its source/traffic filters
+   are independent of the dated report below it. Page through songs and confirm
+   the headline total stays the same. Zero-listen catalog songs remain visible.
+
+4. With current listening.view permission, open Admin > Listening Analytics.
+   The combined platform total includes native and connected-site measurements.
+   Open an artist workspace to inspect song totals within platform scope.
+   The older native/legacy report and its date controls remain separately labeled.
+   Do not add those older figures to the combined total.
+
+5. No Stoneward update is required for this reporting follow-up. Existing sites
+   continue sending measured sessions through the existing VP3 provider API.
+
+WHAT THE TOTAL MEANS
+
+All-time means all retained measured history through the displayed snapshot.
+There is no lower date boundary and no dated-report 25,000-session limit. The
+database aggregates the full retained history; song/artist lists are paged without
+changing totals. This has not been benchmarked against an actual production
+database's unmeasured size or host resources.
+
+One listen requires at least 10,000 accepted playing milliseconds in one logical
+session. Retry receipts do not allocate another session. A stream request alone
+does not prove a start. Completion uses accepted time against 80% of known usable
+duration. Unknown duration is not a known completion result.
+
+Audience excludes known artist/manager previews, private previews and staging
+tests. Anonymous production visitors are not verified independent people. The
+All traffic view includes measured test classes and separately labeled legacy-only
+session/time figures. Native compatibility rows are excluded from legacy totals.
+Legacy records do not become newly measured listens, unique people or earnings.
+
+Removed history cannot be recovered by this report. Older native track/history
+deletion can cascade into native session deletion, and listening before tracking
+was installed may never have been recorded. Canonical archives and site revocation
+retain historical counts when their song/workspace/site associations remain intact.
+Still-retained unassociated or ambiguous evidence is disclosed in coverage.
+
+Missing-source warnings mean the total covers only available selected sources.
+An unavailable source is not a measured zero. An explicit unavailable-source
+request, unsupported metric version or out-of-range aggregate fails visibly.
+Ordinary reports disclose no individual listeners or their private history.
+
+Artist authority and platform listening.view authority remain separate. Removing
+membership, permission or account access invalidates further reports. No report
+activates an earning rate, financial eligibility, statement, balance or payment.
+Earnings and Payments remain Not configured.
+
+VERIFY AND RECOVER
+
+After applying the package, compare a known native listen and a known connected
+site listen against the appropriate source filters, then verify the combined
+song/workspace total and platform drilldown. This is a host-side verification
+step; the release's automated fixtures do not claim your host was deployed.
+
+The actual-host and physical iPhone/Android streaming pilot remains ML2D. Preserve
+production provider installation identity and signing keys with the database.
+Rollback uses the matching code/configuration/database/private/uploads backup.
+The new report never writes schema, counters or listening events.

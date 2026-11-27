@@ -96,10 +96,22 @@ function sf_pct(mixed $value): string {
 
 $adminTitle = 'Listening Analytics';
 $adminActive = 'listening';
+$totalsScriptVersion = substr(hash_file('sha256',dirname(__DIR__).'/assets/js/music-listening-totals-v1.js'),0,12);
+$totalsStyleVersion = substr(hash_file('sha256',dirname(__DIR__).'/assets/css/music-listening-totals-v1.css'),0,12);
 require __DIR__ . '/_header.php';
 ?>
+<link rel="stylesheet" href="<?= e(url('/assets/css/music-listening-totals-v1.css?v='.$totalsStyleVersion)) ?>">
+<section id="musicListeningTotals" class="mlt-panel" aria-labelledby="musicListeningTotalsTitle" data-listening-totals data-scope="platform" data-endpoint="<?= e(url('/api/music-listening-totals-v1.php')) ?>" data-csrf="<?= e(csrf_token()) ?>">
+  <header class="mlt-heading"><div><p class="mlt-kicker">Across VP3 &amp; connected artist sites</p><h2 id="musicListeningTotalsTitle">Platform all-time listening</h2></div></header>
+  <p class="mlt-intro">Combined measured listening across artist workspaces, including VP3 and connected sites. All retained measured history is included, independently of the native history range below. History before tracking began or records that were removed is unknown.</p>
+  <noscript><p class="mlt-status">Enable JavaScript to load combined all-time listening totals. The native and legacy history report remains available below.</p></noscript>
+</section>
+
+<section class="music-listening-history" aria-labelledby="musicListeningHistoryTitle">
+<h2 id="musicListeningHistoryTitle">Native VP3 &amp; legacy history</h2>
+<p class="muted">This separate historical report includes native player and legacy records only. Connected-site provider listening is included in the combined all-time report above. The range below applies only to this historical report.</p>
 <div class="analytics-range">
-  <span>Range</span>
+  <span>Native history range</span>
   <?php foreach (['7'=>'7 Days','30'=>'30 Days','90'=>'90 Days','all'=>'All Time'] as $value=>$label): ?>
     <a class="<?= $range===$value ? 'active' : '' ?>" href="<?= e(url('/admin/listening.php?range='.$value)) ?>"><?= e($label) ?></a>
   <?php endforeach; ?>
@@ -162,7 +174,7 @@ require __DIR__ . '/_header.php';
 
   <div class="panel">
     <h2>How a “Play” is Counted</h2>
-    <p class="muted">This platform report includes native and legacy playback records. A qualified play has at least 10 accepted listening seconds. Versioned listening marks completion only after accepted listening reaches 80% of a usable duration; natural ending alone does not establish completion. Historical legacy flags retain their original meaning. Connected-site provider listening is available in the authorized Music Workspace report.</p>
+    <p class="muted">This historical report includes native and legacy playback records. A qualified play has at least 10 accepted listening seconds. Versioned listening marks completion only after accepted listening reaches 80% of a usable duration; natural ending alone does not establish completion. Historical legacy flags retain their original meaning. Connected-site provider listening is included in the combined all-time report above and the authorized Music Workspace report.</p>
   </div>
 </div>
 
@@ -195,4 +207,6 @@ require __DIR__ . '/_header.php';
     </table>
   </div>
 </div>
+</section>
+<script src="<?= e(url('/assets/js/music-listening-totals-v1.js?v='.$totalsScriptVersion)) ?>" defer></script>
 <?php require __DIR__ . '/_footer.php'; ?>

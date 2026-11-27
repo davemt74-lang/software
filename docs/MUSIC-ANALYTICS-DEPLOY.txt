@@ -58,6 +58,11 @@ report to 25,000 source sessions. If the limit is exceeded, narrow the filters o
 period. No incomplete total is presented as a complete report. Breakdown paging
 does not change the total.
 
+ML3A adds a separate All-time listening panel with SQL aggregates over all retained
+measured history. It has no lower date boundary or 25,000-session materialization
+limit. Its source/traffic filters are independent of this dated report. Read
+MUSIC-LISTENING-TOTALS-DEPLOY.txt for retained-history and platform-total semantics.
+
 Earnings and Payments show Not configured until the later financial phases
 establish funding, rates/agreements, eligibility, statements and settlement.
 
