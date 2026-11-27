@@ -12,6 +12,26 @@ require_once __DIR__.'/coding-canvas-source-v1.php';
 require_once __DIR__.'/coding-canvas-provider-v1.php';
 require_once __DIR__.'/coding-canvas-chat-v1.php';
 
+/** Exact native meter evidence; unknown usage is never presented as zero tokens. */
+function vp3_coding_canvas_provider_attempt_v1(PDO $pdo,array $run): ?array
+{
+    if(!vp3_ai_service_usage_ready_v1($pdo))return null;
+    $goal=json_decode($run['goal'],true,16,JSON_THROW_ON_ERROR);
+    try{$q=$pdo->prepare("SELECT service_status,usage_known,total_tokens,latency_ms FROM ai_execution_ledger
+        WHERE user_id=? AND run_id=? AND service_job_key=? AND COALESCE(agent_id,0)=? AND conversation_id=?
+        AND service_key=? ORDER BY id DESC LIMIT 1");
+    $params=[(int)$run['owner_user_id'],(int)$run['id'],hash('sha256','run:'.$run['id']),(int)$run['agent_id'],
+        (int)$goal['conversation_id'],$run['capability_key']==='coding.repair'?'code_repair':'code_build'];
+    foreach($params as $index=>$value)$q->bindValue($index+1,$value,is_int($value)?PDO::PARAM_INT:PDO::PARAM_STR);
+    $q->execute();
+    $row=$q->fetch(PDO::FETCH_ASSOC);}catch(PDOException){return null;}
+    if(!$row)return null;
+    $known=(int)$row['usage_known']===1;
+    return ['status'=>in_array($row['service_status'],['pending','completed','failed','unknown','rejected','aborted'],true)?$row['service_status']:'unknown',
+        'usage_known'=>$known,'tokens'=>$known?max(0,(int)$row['total_tokens']):null,
+        'duration_ms'=>max(0,(int)$row['latency_ms'])];
+}
+
 function vp3_coding_canvas_scope_v1(PDO $pdo, array $user, int $agentId, int $conversationId): array
 {
     if (vp3_participant_scope_v1() !== null || !has_permission('chat.access', $user)) {
@@ -82,7 +102,12 @@ function vp3_coding_canvas_job_view_v1(PDO $pdo, array $row): array
         'lease_expired' => 'The Coding Agent run expired. You can start a new request.',
         'coding_output_incomplete' => 'The model stopped before finishing the app. Edit the request into a smaller change or retry the saved request.',
         'coding_invalid_source' => 'The model returned code that Canvas could not use. Edit the request or retry the saved request.',
-        'coding_provider_unconfirmed' => 'The provider attempt could not be confirmed. Check AI usage before starting another run.',
+        'coding_provider_unconfirmed' => 'The provider attempt could not be confirmed. It may have used API tokens. Review received code and usage before starting another run.',
+        'coding_provider_timeout' => 'The provider response timed out. It may have used API tokens. Received code was kept when available.',
+        'coding_provider_connection' => 'The provider connection ended without a complete response. It may have used API tokens. Received code was kept when available.',
+        'coding_provider_server' => 'The provider returned a service error before confirming a complete response. It may have used API tokens.',
+        'coding_provider_response' => 'The provider response was interrupted or incomplete. It may have used API tokens. Review received code before retrying.',
+        'coding_provider_rejected' => 'The provider rejected this request. Check the selected model and API account before starting another run.',
         'coding_provider_unavailable' => 'The model provider could not complete the request. Check the selected model and retry when available.',
         'coding_provider_rate_limited' => 'The model provider rate-limited this request. Wait briefly before retrying the saved request.',
         'coding_provider_credits' => 'The selected provider reported insufficient API credits. Add credits or choose another model before retrying.',
@@ -100,6 +125,8 @@ function vp3_coding_canvas_job_view_v1(PDO $pdo, array $row): array
         'operation' => $row['capability_key'] === 'coding.repair' ? 'repair' : 'build',
         'can_retry' => in_array($row['status'], ['failed', 'cancelled'], true),
         'model' => $goal['model'],
+        'provider_attempt' => vp3_coding_canvas_provider_attempt_v1($pdo,$row),
+        'live_source_available' => vp3_coding_canvas_response_ready_v1($pdo),
     ];
 }
 
@@ -136,7 +163,7 @@ function vp3_coding_canvas_queue_v1(
     ?array $commands = null, ?int $retryOf = null, ?array $editContext = null
 ): array {
     if (!agent_job_engine_schema_ready_v1900($pdo) || !agent_job_control_ready_v1900($pdo)
-        || !vp3_ai_service_usage_ready_v1($pdo)) {
+        || !vp3_ai_service_usage_ready_v1($pdo)||!vp3_coding_canvas_response_ready_v1($pdo)) {
         throw new RuntimeException('Coding Agent requires Database Upgrade.', 503);
     }
     if ($conversationId < 1) throw new InvalidArgumentException('Choose a current Chat.');
@@ -267,6 +294,8 @@ function vp3_coding_canvas_queue_v1(
 
 function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?callable $generate = null): array
 {
+    ignore_user_abort(true);
+    @set_time_limit(330);
     $run = agent_worker_cloud_active_row_v1910($pdo, $user, $claim);
     if (!$run || $run['source_kind'] !== 'coding_canvas'
         || !in_array($run['capability_key'], ['coding.build', 'coding.repair'], true)
@@ -299,6 +328,28 @@ function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?call
         }
         $commands = vp3_coding_canvas_command_list_v1($goal['commands'] ?? $source['revision']['commands'] ?? []);
         $attribution = ['agent_id'=>$agentId,'conversation_id'=>$cid];
+        require_once __DIR__.'/coding-canvas-response-v1.php';
+        $lastHeartbeat=microtime(true);
+        $attribution['before_dispatch']=static function()use($pdo,$user,$claim,$agentId,$cid,$goal,$runId,$source):bool{
+            if(!agent_worker_cloud_active_row_v1910($pdo,$user,$claim))return false;
+            $live=vp3_coding_canvas_scope_v1($pdo,$user,$agentId,$cid);
+            vp3_coding_canvas_authority_v1($pdo,$live,$agentId,true);
+            if(!subscription_has_entitlement($live,'main_ai.access'))return false;
+            vp3_coding_canvas_sources_current_v1($pdo,$live,$agentId,$goal,$runId);
+            if($source!==null){
+                $current=vp3_coding_canvas_read_v1($pdo,$live,$agentId,$goal['canvas_id'],$goal['source_revision']);
+                if($current['canvas']['draft_revision']!==$goal['expected_draft']||$current['canvas']['active_revision']!==$goal['expected_active'])return false;
+            }
+            return true;
+        };
+        $attribution['provider_checkpoint']=static function(array $snapshot)use($pdo,$user,$claim,$run,$source,$runId,&$lastHeartbeat,$attribution):bool{
+            if(microtime(true)-$lastHeartbeat>=10){
+                if(!$attribution['before_dispatch']()||!agent_job_heartbeat_v1900($pdo,$user,$runId,(int)$claim['action']['id'],
+                    $claim['lease_token'],45,'Receiving new Canvas code',180))return false;
+                $lastHeartbeat=microtime(true);
+            }
+            return vp3_coding_canvas_response_save_v1($pdo,$user,$run,$claim,$source['revision']['source_hash']??null,$snapshot);
+        };
         if (isset($goal['edit_context'])) {
             $attribution['edit_context'] = vp3_coding_canvas_edit_context_v1($goal['edit_context'],$source['revision']??null);
         }

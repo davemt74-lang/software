@@ -7,6 +7,7 @@ require_once __DIR__.'/coding-canvas-library-image-v1.php';
 require_once __DIR__.'/coding-canvas-provider-v1.php';
 require_once __DIR__.'/shared-folders-v161.php';
 require_once __DIR__.'/schema-metadata.php';
+require_once __DIR__.'/coding-canvas-response-schema-v1.php';
 
 function vp3_coding_canvas_schema_v1(PDO $pdo): void
 {
@@ -52,6 +53,7 @@ function vp3_coding_canvas_schema_v1(PDO $pdo): void
     }
     require_once __DIR__.'/coding-canvas-source-v1.php';
     vp3_coding_canvas_source_schema_v1($pdo);
+    vp3_coding_canvas_response_schema_v1($pdo);
 }
 
 function vp3_coding_canvas_visibility_ready_v1(PDO $pdo): bool

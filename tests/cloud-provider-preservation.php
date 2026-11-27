@@ -51,7 +51,7 @@ function table_exists(string $table): bool {
 }
 function homeserver_agent_v018_last_attempt(): array {return ['failure_class'=>'timeout','latency_ms'=>125];}
 // The HTTP double also runs in local/CI PHP builds without the cURL extension.
-foreach(['CURLOPT_POST','CURLOPT_RETURNTRANSFER','CURLOPT_CONNECTTIMEOUT','CURLOPT_TIMEOUT','CURLOPT_HTTPHEADER','CURLOPT_POSTFIELDS','CURLOPT_FOLLOWLOCATION','CURLOPT_SSL_VERIFYPEER','CURLOPT_SSL_VERIFYHOST','CURLOPT_BUFFERSIZE','CURLOPT_WRITEFUNCTION','CURLINFO_HTTP_CODE'] as $index=>$name){
+foreach(['CURLOPT_POST','CURLOPT_RETURNTRANSFER','CURLOPT_CONNECTTIMEOUT','CURLOPT_TIMEOUT','CURLOPT_HTTPHEADER','CURLOPT_POSTFIELDS','CURLOPT_FOLLOWLOCATION','CURLOPT_SSL_VERIFYPEER','CURLOPT_SSL_VERIFYHOST','CURLOPT_BUFFERSIZE','CURLOPT_WRITEFUNCTION','CURLINFO_HTTP_CODE','CURLOPT_HEADERFUNCTION','CURLOPT_NOPROGRESS','CURLOPT_XFERINFOFUNCTION'] as $index=>$name){
     if(!\defined($name))\define($name,50000+$index);
 }
 function check(bool $ok,string $label): void {
@@ -72,6 +72,7 @@ function curl_setopt_array(object $handle,array $options): bool {$handle->option
 function curl_setopt(object $handle,int $key,mixed $value): bool {$handle->options[$key]=$value;return true;}
 function curl_getinfo(object $handle,int $key): int {return $handle->status??$GLOBALS['replyStatus'];}
 function curl_error(object $handle): string {return '';}
+function curl_errno(object $handle): int {return 0;}
 function curl_close(object $handle): void {}
 function curl_exec(object $handle): string|bool {
     $payload=json_decode($handle->options[CURLOPT_POSTFIELDS],true);
@@ -88,7 +89,24 @@ function curl_exec(object $handle): string|bool {
         }
         return $error;
     }
-    if($GLOBALS['codingReply']!==null)return json_encode(($GLOBALS['codingReply'])($provider));
+    if($GLOBALS['codingReply']!==null){
+        $decoded=($GLOBALS['codingReply'])($provider);
+        if(empty($payload['stream']))return json_encode($decoded);
+        if($provider==='openai'){
+            $text='';foreach($decoded['output']??[] as $item)foreach($item['content']??[] as $part)if(($part['type']??'')==='output_text')$text.=$part['text'];
+            $decoded['id']??='resp_coding_fixture';$decoded['status']??='completed';
+            $events=[['type'=>'response.created','response'=>['id'=>$decoded['id']]],['type'=>'response.output_text.delta','delta'=>$text],['type'=>'response.'.$decoded['status'],'response'=>$decoded]];
+        }else{
+            $text='';foreach($decoded['content']??[] as $part)if(($part['type']??'')==='text')$text.=$part['text'];
+            $usage=$decoded['usage']??[];
+            $events=[['type'=>'message_start','message'=>['id'=>$decoded['id']??'msg_coding_fixture','usage'=>isset($usage['input_tokens'])?['input_tokens'=>$usage['input_tokens']]:[]]],
+                ['type'=>'content_block_start','index'=>0,'content_block'=>['type'=>'text','text'=>'']],
+                ['type'=>'content_block_delta','index'=>0,'delta'=>['type'=>'text_delta','text'=>$text]],
+                ['type'=>'content_block_stop','index'=>0],['type'=>'message_delta','delta'=>['stop_reason'=>$decoded['stop_reason']??'end_turn'],'usage'=>isset($usage['output_tokens'])?['output_tokens'=>$usage['output_tokens']]:[]],['type'=>'message_stop']];
+        }
+        foreach($events as $event)if(($handle->options[CURLOPT_WRITEFUNCTION])($handle,'data: '.json_encode($event)."\n\n")===0)return false;
+        return true;
+    }
     $reply='Hello from the configured provider.';
     if(!$GLOBALS['wrongTestReply']&&preg_match('/VP3 connection test [a-f0-9]{16}/',json_encode($payload),$match))$reply=$match[0];
     $openai=$provider==='openai';
@@ -101,9 +119,10 @@ function curl_exec(object $handle): string|bool {
     foreach($events as $event)($handle->options[CURLOPT_WRITEFUNCTION])($handle,'data: '.json_encode($event)."\n\n");
     return true;
 }
+require_once dirname(__DIR__).'/includes/schema-metadata.php';
 foreach(['ai-settings.php','ai-runtime-v100.php','ai-stream-v121.php','recommendations.php','agent-brain-context-v99.php','chat-engine.php','chat-execution-v019.php','cognitive-turn-v2430.php',
     'ai-service-policy-v1.php','ai-service-usage-v1.php','ai-usage-accounting-v032.php','user-llm-v1.php','agent-runtime-routing-v420.php',
-    'agent-tool-json-v1.php','coding-canvas-model-v1.php','coding-canvas-commands-v1.php','coding-canvas-provider-v1.php'] as $file){
+    'agent-tool-json-v1.php','coding-canvas-model-v1.php','coding-canvas-commands-v1.php','coding-canvas-response-schema-v1.php','coding-canvas-stream-v1.php','coding-canvas-provider-v1.php'] as $file){
     $source=file_get_contents(dirname(__DIR__).'/includes/'.$file);
     $source=preg_replace('/^require_once __DIR__[^\n]*\n/m','',$source);
     $source=str_replace('__DIR__',var_export(dirname(__DIR__).'/includes',true),$source);
@@ -472,6 +491,8 @@ try {
         'An inference callback without the owner session cannot publish a private Chat notice');
     $signedIn=true;$providerStatuses=[];$errorEnvelope=null;
 
+    $pdo->exec('CREATE TABLE agent_workflow_runs(id INTEGER PRIMARY KEY)');
+    vp3_coding_canvas_response_schema_v1($pdo);
     $buildModel=['provider'=>'openai','model'=>$customModel];
     $nextModel=['provider'=>'anthropic','model'=>'claude-haiku-5-5'];
     foreach([$buildModel,$nextModel] as $model){
