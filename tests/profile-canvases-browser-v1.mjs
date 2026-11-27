@@ -51,6 +51,10 @@ try{
     await page.route('**/api/**',async route=>{
       const request=route.request(),endpoint=new URL(request.url()),body=request.method()==='GET'?Object.fromEntries(endpoint.searchParams):request.postDataJSON();
       requests.push({path:endpoint.pathname,body});
+      if(endpoint.pathname==='/api/profile-phone-v1.php'){
+        assert.equal(request.method(),'GET');assert.equal(body.action,'public');assert.equal(body.username,'fixture-owner');
+        return route.fulfill({json:{ok:true,contract:'vp3.profile-phone.v1',enabled:false,number:'',href:''}});
+      }
       if(endpoint.pathname==='/api/profile-calls-pa3c.php')return route.fulfill({json:{ok:true,contract:'vp3.profile-call.v1',calls:[],can_offer:false,reason:''}});
       if(endpoint.pathname==='/api/profile-speech-pa4a.php')return route.fulfill({json:{ok:true,contract:'vp3.profile-speech.v1',ready:false,revision:1,presets:[]}});
       if(endpoint.pathname==='/api/profile-conversation-checkout-pa5.php')return route.fulfill({json:{ok:true,products:[],checkouts:[]}});
