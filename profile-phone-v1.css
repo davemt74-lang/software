@@ -1,5 +1,16 @@
 .profile-phone{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:10px 16px;border-bottom:1px solid #e2e8f0;background:#fff;color:#334155}
 .profile-phone[hidden]{display:none!important}
+.profile-phone [hidden]{display:none!important}
+.profile-phone-actions,.profile-phone-controls{display:flex;align-items:center;gap:8px;flex-wrap:wrap;max-width:100%}
+.profile-phone-actions{width:100%}
+.profile-phone button{font:inherit;font-size:12px;line-height:1.3;min-height:40px;padding:8px 13px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;color:#0f172a;cursor:pointer}
+.profile-phone button:disabled{opacity:.55;cursor:not-allowed}
+.profile-phone button:focus-visible{outline:2px solid #2563eb;outline-offset:3px}
+.profile-phone .profile-phone-browser{background:#172554;border-color:#172554;color:#fff;font-weight:650}
+.profile-phone .profile-phone-end{border-color:#fecaca;background:#fff1f2;color:#9f1239;font-weight:650}
+.profile-phone .profile-phone-mute[aria-pressed=true]{background:#e2e8f0;border-color:#64748b}
+.profile-phone[data-call-state=connected] .profile-phone-note{color:#166534;font-weight:650}
+.profile-phone[data-call-state=ending] .profile-phone-note{color:#92400e}
 .profile-phone-link{display:inline-flex;align-items:center;justify-content:center;min-height:40px;padding:8px 13px;border:1px solid #cbd5e1;border-radius:999px;color:#0f172a;text-decoration:none;font-weight:650;white-space:nowrap}
 .profile-phone-link:before{content:'\260e';margin-right:7px;font-size:17px}
 .profile-phone-link:focus-visible{outline:2px solid #2563eb;outline-offset:3px}

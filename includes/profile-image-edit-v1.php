@@ -111,7 +111,7 @@ function vp3_profile_image_edit_admit_v1(PDO $pdo,array $ctx,array $conversation
     $settings=vp3_profile_image_catalog_settings_v1($pdo,$owner);
     if(empty($settings['enabled']))vp3_profile_image_edit_error_v1('Photo editing is unavailable on this profile.','PROFILE_IMAGE_UNAVAILABLE',409);
     $thread=vp3_profile_handoff_thread_pa3($pdo,$owner,$cid,true);
-    if(($conversation['status']??'')==='owner_joined'||($thread&&($thread['mode']==='owner'||in_array($thread['live_status'],['waiting','accepted'],true)))||vp3_profile_handoff_media_active_pa3d($pdo,$owner,$cid,true))vp3_profile_image_edit_error_v1('Return to the Profile Agent before requesting a photo edit.','PROFILE_IMAGE_OWNER_ACTIVE',409);
+    if(($conversation['status']??'')==='owner_joined'||($thread&&($thread['mode']==='owner'||in_array($thread['live_status'],['waiting','accepted'],true)))||vp3_profile_handoff_call_active_pa3d($pdo,$owner,$cid,true))vp3_profile_image_edit_error_v1('Return to the Profile Agent before requesting a photo edit.','PROFILE_IMAGE_OWNER_ACTIVE',409);
     $visitor=(int)($ctx['visitor']['id']??0);$visitorKey=hash('sha256',$visitor>0?'member:'.$visitor:'session:'.(int)$ctx['session_id']);
     $since=gmdate('Y-m-d 00:00:00');
     $q=$pdo->prepare('SELECT COUNT(*) FROM profile_image_edits_v1 WHERE owner_user_id=? AND created_at>=?');$q->execute([$owner,$since]);

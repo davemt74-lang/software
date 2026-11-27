@@ -7,7 +7,9 @@ INSTALL
    The new tables are profile_phone_settings_v1 (optional public-line approval),
    profile_agent_response_settings_v1 (owner response mode),
    profile_agent_owner_requests_v1 (durable requests for owner input), and
-   profile_agent_knowledge_saves_v1 (reviewed answer filing receipts).
+   profile_agent_knowledge_saves_v1 (reviewed answer filing receipts),
+   profile_browser_phone_calls_v1 (visitor-bound browser calls), and
+   profile_browser_phone_cancellations_v1 (canceled call requests).
    Fresh setup.php installs them too. Public reads never install schema.
    Upgrade completeness includes these tables; existing Phone or Knowledge
    setup alone does not mean the Profile additions are installed.
@@ -34,24 +36,41 @@ RESPONSE MODES AND EXISTING KNOWLEDGE ACCESS
    unavailable to visitors. Existing visibility does not expose an unpublished
    personal note on its own. Open the saved note in My Knowledge for later edits.
 
-PUBLIC TWILIO PHONE ENTRY
+PUBLIC TWILIO PHONE CALLING
 7. Keep the current tested Twilio setup and signed incoming callbacks. Assign
    the line to an active Agent belonging to the owner, enable incoming voice,
    and ensure the owner has the existing Phone number and voice allowances.
    Browser answering, voicemail, fallback and recording remain configured in
    the existing Phone workspace. See CLOUD-PHONE-WORKSPACE-DEPLOY.txt.
+   For Call in browser, configure the existing same-account API Key SID/Secret
+   and TwiML App SID in Admin > Phone and enable browser calling for the line.
+   The TwiML App Voice Request URL is the configured HTTPS installation's
+   /api/phone-browser-voice-v1.php (POST). Set its Voice Status Callback to
+   /api/phone-browser-status-v1.php (POST, without a call query parameter).
+   Keep the number's existing /api/phone-voice-inbound-v130.php callback and
+   the generated child-leg callback query parameters unchanged.
 8. Open Profile Agent > Agent > Profile phone calls. Select the eligible assigned
    Twilio line and enable Show Call by phone in my Profile chat. Save.
    Publication defaults to off. The selected number becomes public; personal
    callback details remain private. Number reassignment revokes publication,
    even if the line later returns to the same owner.
-9. The public chat's Call by phone action opens the visitor's phone app using
-   the approved number. This is a native dialer handoff, not anonymous Twilio
-   browser media inside the widget. Existing Profile browser audio/video stays
-   in the separate native call system. A changed number requires another click.
-10. A click is not evidence that a call connected. Existing Profile call totals
-   measure native profile_calls_pa3c records; Twilio activity/recording reports
-   remain in Phone. Do not add a successful call to reports merely from a click.
+9. Call in browser requests microphone permission after the visitor clicks,
+   connects using the bundled Twilio SDK and shows ringing/route, mute and hangup
+   controls in the widget. Call by phone remains the native phone-app option.
+   A changed number requires another click. Existing native Profile audio/video
+   remains separate; simultaneous owner calls and microphone use are prevented.
+   An SDK connection does not prove the owner answered. The UI distinguishes
+   owner pickup from the configured Phone Agent and voicemail. A Phone call
+   does not join the owner to live text chat; other drafts are retained.
+10. Calls follow the line's existing browser-owner, supported Cloud Phone Agent
+    or voicemail route. The Phone Agent keeps its existing phone-only scope;
+    it is not automatically granted the Profile text or personal Knowledge.
+    The current HomeServer SIP bridge requires a carrier caller number, so
+    anonymous SDK calls use the supported browser/Cloud/voicemail fallback.
+    Signed carrier outcomes are tied to the exact Profile conversation and
+    appear as Status receipts. Existing native call report totals stay native;
+    Twilio activity/recording reports remain in Phone. A phone-app click alone
+    is not a connected-call receipt.
 
 ACCEPTANCE
 11. From a separate visitor browser, open the Profile, send a message, and check
@@ -91,17 +110,40 @@ ACCEPTANCE
     inspect visit/chat/call/commerce/image measures and coverage. Keep unavailable
     evidence distinct from zero, and recorded conversion value distinct from
     verified payment receipts. Refresh stalled reads rather than assuming zero.
+    Check Owner responses for submitted/answered questions, separate gap/direct/
+    service/allowance reasons, and median/90th-percentile verified reply delay.
+    Current owner requests show waiting/delegated counts, oldest questions,
+    current waiting time, recurring gaps and exact conversation links.
+    Review suggested existing notes in My Knowledge. These are keyword matches
+    for review, not automatic edits or permission changes. Revoke a note's
+    current Agent access and verify its suggestion disappears. Old unproven
+    original reasons and unavailable sources must remain marked unknown.
 18. With an explicitly enabled test phone line, place a real call from the chat
-    link and verify configured incoming routing, voicemail and recording behavior.
-    Disable publication and confirm the next chat read/click removes the action.
+    widget and verify microphone permission, owner ringing/pickup, mute, hangup,
+    missed pickup, configured Agent/voicemail fallback, and existing recording
+    behavior. Test the phone-app option separately. Check the conversation receipt
+    and Phone history. Deny microphone permission and confirm no redial occurs.
+    Close the widget or switch account and confirm microphone capture stops.
+    Cancel while preparation is pending; no late response should start a call.
+    Disable publication and confirm the next read removes the action and stops
+    a current visitor call. Agent work resumes only after a confirmed end and
+    under the saved Automated/User responses and explicit pause settings.
 
 RECOVERY
 19. Read failures expose retry/reload controls. After an uncertain settings or
     other mutation response, reload and inspect saved state before resubmitting.
     A stale account page must reload; it cannot reuse old conversation authority.
-20. Disabling Profile phone publication is sufficient to remove the new public
-    action. Existing phone assignments and historical calls/messages are retained.
-    Do not delete the table or provider records as a routine rollback.
+20. Disabling Profile phone publication removes the public actions. The widget
+    rechecks authority during a call; existing assignments and historical records
+    remain. A missing completion callback is reconciled against the exact carrier
+    call, at most every 30 seconds during status/recovery or a later call attempt.
+    Authenticated owner Phone/native call views also perform that recovery after
+    public calling is disabled. If the Twilio account itself has changed, the
+    old account's remaining call must be checked with that account's credentials.
+    Unknown provider state keeps the reservation held. Check Twilio connectivity
+    and the fixed status callback before retrying; do not delete the tables or
+    provider records as a routine rollback. Public owner Dial legs have a 600-second
+    bound and later public routing is fenced at ten minutes.
 
 The full source audit and test inventory are in
 docs/PROFILE-AGENT-RELIABILITY-AUDIT-20261127.md in the repository.

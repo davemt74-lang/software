@@ -102,6 +102,7 @@ jobs:
           php tests/profile-analytics-period-ref-v1.php
           php tests/profile-event-clock-v1.php
           php tests/profile-analytics-period-v1.php
+          php tests/profile-response-analytics-v1.php
           php tests/profile-analytics-authority-v1.php
           php tests/profile-analytics-briefings-v1.php
           node tests/profile-specialist-analytics-period-v1.mjs

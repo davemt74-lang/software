@@ -72,7 +72,7 @@ try{
     check(f.requests.every(request=>request.body.conversation_namespace==='a'.repeat(64)),'all native browser requests bind the original principal namespace after '+code);await f.close();
   }
   {
-    const f=await fixture({owner:true});await f.send('Please speak with the owner');await f.page.getByText('The profile owner has joined this conversation.',{exact:true}).waitFor();
+    const f=await fixture({owner:true});await f.send('Please speak with the owner');await f.page.getByText('The profile owner is handling this conversation. Replies will appear here when sent.',{exact:true}).waitFor();
     check(!f.requests.some(request=>request.body.action==='dispatch'),'owner takeover does not trigger an automatic Agent dispatch');await f.close();
   }
   console.log(`PROFILE_VISITOR_HANDOFF_PA3_BROWSER=PASS ${checks} checks`);

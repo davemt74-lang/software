@@ -214,6 +214,11 @@ jobs:
           test -f _deploy/docs/CLOUD-PHONE-WORKSPACE-DEPLOY.txt
           test -f _deploy/includes/profile-phone-v1.php
           test -f _deploy/api/profile-phone-v1.php
+          test -f _deploy/api/profile-phone-browser-v1.php
+          test -f _deploy/includes/profile-browser-phone-schema-v1.php
+          test -f _deploy/includes/profile-browser-phone-v1.php
+          test -f _deploy/includes/profile-response-analytics-v1.php
+          test -f _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/profile-phone-v1.js
           test -f _deploy/profile-phone-settings-v1.js
           test -f _deploy/profile-phone-v1.css

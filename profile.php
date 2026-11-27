@@ -571,7 +571,7 @@ window.VP3_PROFILE_WEBMCP={
 <?php endif; ?>
 <?php if($agent&&!$chatPreview): $profileCallsBuild='profile-calls-pa3c-'.substr(hash('sha256',hash_file('sha256',__DIR__.'/profile-calls-pa3c.js').hash_file('sha256',__DIR__.'/profile-calls-pa3c.css')),0,12); ?>
 <link rel="stylesheet" href="<?= e(url('/profile-phone-v1.css?v='.substr(hash_file('sha256',__DIR__.'/profile-phone-v1.css'),0,12))) ?>">
-<script>window.STONEFELLOW_PROFILE_AGENT.phoneEndpoint=<?= json_encode(url('/api/profile-phone-v1.php'),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>;</script>
+<script>Object.assign(window.STONEFELLOW_PROFILE_AGENT,{phoneEndpoint:<?= json_encode(url('/api/profile-phone-v1.php'),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,browserPhoneEndpoint:<?= json_encode(url('/api/profile-phone-browser-v1.php'),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,phoneSdkUrl:<?= json_encode(url('/assets/twilio-voice-2.18.5.min.js'),JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT) ?>,phoneSdkIntegrity:'sha384-LUG7DmzDPWNKRYoqyGpV4d/IByMLiya/oUhMSc/4/6hi0wbzO/8PffM4lzeFEYS8'});</script>
 <script src="<?= e(url('/profile-phone-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-phone-v1.js'),0,12))) ?>"></script>
 <link rel="stylesheet" href="<?= e(url('/profile-calls-pa3c.css?v='.$profileCallsBuild)) ?>">
 <link rel="stylesheet" href="<?= e(url('/profile-speech-pa4a.css?v='.substr(hash_file('sha256',__DIR__.'/profile-speech-pa4a.css'),0,12))) ?>">

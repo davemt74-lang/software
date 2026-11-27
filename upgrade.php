@@ -22,6 +22,7 @@ require_once __DIR__ . '/includes/media-collections-v1.php';
 require_once __DIR__ . '/includes/profile-image-catalog-v1.php';
 require_once __DIR__ . '/includes/profile-image-edit-v1.php';
 require_once __DIR__ . '/includes/profile-agent-knowledge-v1.php';
+require_once __DIR__ . '/includes/profile-browser-phone-schema-v1.php';
 require_once __DIR__.'/includes/social-feed-v1.php';
 require_once __DIR__ . '/includes/cognitive-memory-v570.php';
 require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
@@ -322,6 +323,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_profile_phone_ready_v1($schemaConnection)
         && vp3_profile_responses_ready_v1($schemaConnection)
         && vp3_profile_knowledge_ready_v1($schemaConnection)
+        && vp3_profile_browser_phone_ready_v1($schemaConnection)
         && vp3_agent_phone_shell_ready_v1($schemaConnection)
         && vp3_managed_control_ready_v1($schemaConnection)
         && vp3_managed_recording_ready_v1($schemaConnection)
@@ -579,6 +581,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             profile_agent_ensure_schema();
             vp3_profile_responses_install_v1($pdo);
             vp3_profile_knowledge_install_v1($pdo);
+            vp3_profile_browser_phone_install_v1($pdo);
             vp3_profile_event_clock_install_v1($pdo);
             vp3_profile_handoff_ensure_schema_pa3($pdo);
             vp3_profile_image_edit_install_v1($pdo);

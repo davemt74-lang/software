@@ -21,13 +21,23 @@ function vp3_profile_analytics_metric_text_v1(array $metric,string $side='curren
         'image_initial_creations'=>'initial free image creations',
         'image_revisions_completed'=>'completed free image revisions',
         'image_requests_failed'=>'failed image requests',
+        'owner_requests_submitted'=>'questions submitted to the owner',
+        'knowledge_gap_requests'=>'questions with a verified knowledge gap',
+        'user_response_requests'=>'questions sent directly under User responses',
+        'service_unavailable_requests'=>'questions submitted after service failure',
+        'quota_exhausted_requests'=>'questions submitted after an allowance limit',
+        'unknown_reason_requests'=>'questions with an unknown original reason',
+        'owner_requests_answered'=>'submitted questions answered by the owner',
+        'owner_response_messages'=>'owner replies answering submitted questions',
+        'median_owner_response_seconds'=>'seconds median owner response time from first submission',
+        'p90_owner_response_seconds'=>'seconds 90th percentile owner response time from first submission',
     ];
     $key=$metric['key']??null;$row=$metric[$side]??null;
     if(!is_string($key)||!isset($labels[$key])||!is_array($row))return null;
     $coverage=$row['coverage']??null;
     $value=$coverage==='complete'?($row['value']??null):($coverage==='partial'?($row['observed_value']??null):null);
     if((!is_int($value)&&!is_float($value))||!is_finite((float)$value)||$value<0||$value>9007199254740991)return null;
-    $seconds=in_array($key,['median_first_reply_seconds','median_call_accept_seconds'],true);
+    $seconds=in_array($key,['median_first_reply_seconds','median_call_accept_seconds','median_owner_response_seconds','p90_owner_response_seconds'],true);
     if(!$seconds&&floor((float)$value)!=(float)$value)return null;
     $number=$seconds?rtrim(rtrim(number_format((float)$value,2,'.',''),'0'),'.'):number_format((float)$value,0,'.',',');
     $label=$labels[$key];
@@ -153,7 +163,7 @@ function vp3_profile_analytics_money_text_v1(array $row,string $side='current'):
 function vp3_profile_analytics_discoverable_v1(array $data): bool
 {
     if(!in_array($data['coverage']??null,['ready','limited'],true))return false;
-    foreach($data['metrics']??[] as $metric){
+    foreach(array_merge($data['metrics']??[],($data['response_activity']['contract']??null)==='vp3.profile-response-analytics.v1'?($data['response_activity']['metrics']??[]):[]) as $metric){
         if(!is_array($metric))continue;
         foreach(['current','previous'] as $side){
             if(vp3_profile_analytics_metric_text_v1($metric,$side)===null)continue;
@@ -170,6 +180,38 @@ function vp3_profile_analytics_discoverable_v1(array $data): bool
         }
     }
     return false;
+}
+
+/** Completed-period request evidence only. Current waiting ages and note titles stay in the live workspace. */
+function vp3_profile_analytics_response_report_v1(mixed $activity): array
+{
+    $out=['facts'=>[],'summary'=>[],'actions'=>[],'next_step'=>''];
+    if(!is_array($activity)||($activity['contract']??null)!=='vp3.profile-response-analytics.v1'
+        ||!in_array($activity['coverage']??null,['complete','partial'],true))return $out;
+    $metrics=[];foreach($activity['metrics']??[] as $metric)if(is_array($metric)&&is_string($metric['key']??null))$metrics[$metric['key']]=$metric;
+    $positive=static function(string $key)use($metrics):bool{
+        $point=$metrics[$key]['current']??[];$n=($point['coverage']??null)==='complete'?($point['value']??null):($point['observed_value']??null);
+        return (is_int($n)||is_float($n))&&$n>0;
+    };
+    if(!$positive('owner_requests_submitted')&&!$positive('owner_requests_answered'))return $out;
+    $parts=[];
+    foreach(['owner_requests_submitted','knowledge_gap_requests','user_response_requests','service_unavailable_requests','quota_exhausted_requests','unknown_reason_requests'] as $key)
+        if($positive($key)&&($text=vp3_profile_analytics_metric_text_v1($metrics[$key]))!==null)$parts[]=$text;
+    if($parts)$out['facts'][]=implode('; ',$parts).'.';
+    $parts=[];
+    foreach(['owner_requests_answered','owner_response_messages','median_owner_response_seconds'] as $key)
+        if(isset($metrics[$key])&&($text=vp3_profile_analytics_metric_text_v1($metrics[$key]))!==null&&($positive('owner_requests_answered')||$positive($key)))$parts[]=$text;
+    if($parts)$out['facts'][]=implode('; ',$parts).'. Unanswered questions are excluded from response-time samples.';
+    foreach($activity['current']['questions']??[] as $question){
+        if(!is_array($question)||!is_int($question['count']??null)||$question['count']<2)continue;
+        $excerpt=vp3_profile_specialist_text_v1($question['question_excerpt']??'',160);if($excerpt==='')continue;
+        $out['facts'][]='Repeated knowledge-gap wording in this period: “'.$excerpt.'” ('.$question['count'].' submitted questions).';
+        $out['actions'][]='Review the repeated questions and relevant existing Knowledge notes in Profile Analytics. Any note update remains your choice.';break;
+    }
+    foreach(['knowledge_gap_requests','owner_requests_answered','owner_requests_submitted'] as $key)
+        if($positive($key)&&($text=vp3_profile_analytics_metric_pair_v1($metrics[$key]))!==null)$out['summary'][]=$text;
+    $out['next_step']='Open this Profile period to review submitted questions and owner response times.';
+    return $out;
 }
 
 /** Pure renderer shared by source discovery, exact rereads and explicit catch-up. */
@@ -193,6 +235,7 @@ function vp3_profile_analytics_source_item_v1(array $data,int $agent,int $chat):
     $metrics=[];
     foreach($data['metrics'] as $metric)if(is_array($metric)&&is_string($metric['key']??null))$metrics[$metric['key']]=$metric;
     $images=vp3_profile_analytics_image_report_v1($metrics,$data['image_usage']??null);
+    $responses=vp3_profile_analytics_response_report_v1($data['response_activity']??null);
     $facts=[$period];
     $groups=$images['facts']?[
         ['visit_records','recognized_browser_contacts','new_conversations','accepted_visitor_turns'],
@@ -216,7 +259,8 @@ function vp3_profile_analytics_source_item_v1(array $data,int $agent,int $chat):
     // visible; the exact period destination retains every underlying measure.
     if($images['facts'])$facts=array_merge([$period],$images['facts'],$detail!==null?[$detail]:[],array_slice($facts,1));
     elseif($detail!==null)$facts[]=$detail;
-    $summary=$images['summary'];$fallback=[];
+    if($responses['facts'])$facts=array_merge([$period],$responses['facts'],array_slice($facts,1));
+    $summary=array_merge($responses['summary'],$images['summary']);$fallback=[];
     $keys=array_values(array_unique(array_merge(['visit_records','accepted_visitor_turns','calls_accepted','verified_paid_orders'],array_keys($metrics))));
     foreach($keys as $key){
         if(count($summary)>=3)break;
@@ -237,11 +281,12 @@ function vp3_profile_analytics_source_item_v1(array $data,int $agent,int $chat):
     }
     $summary=($data['coverage']==='limited'?'Partial coverage. ':'').implode('; ',array_slice($summary,0,4)).'.';
     if($summary==='.'||$summary==='Partial coverage. .')$summary='Period details are available with the stated source coverage.';
-    $report=vp3_profile_specialist_sections_v1($facts,$images['actions'],[],$images['next_step'],$images['question']!==''?[$images['question']]:[]);
+    $next=$responses['next_step']!==''?$responses['next_step']:$images['next_step'];
+    $report=vp3_profile_specialist_sections_v1($facts,array_merge($responses['actions'],$images['actions']),[],$next,$images['question']!==''?[$images['question']]:[]);
     $url=vp3_profile_analytics_period_href_v1($agent,$chat,$data['ref']);
     $revision=hash('sha256',json_encode(['profile-period-report-v1',$data['revision'],$url,$title,$summary,$report],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE));
     return ['ref'=>$data['ref'],'revision'=>$revision,'specialist'=>'profile','title'=>$title,
-        'summary'=>vp3_profile_specialist_text_v1($summary,1200),'next_step'=>$images['next_step'],'question'=>$images['question'],'url'=>$url,
+        'summary'=>vp3_profile_specialist_text_v1($summary,1200),'next_step'=>$next,'question'=>$images['question'],'url'=>$url,
         'status'=>'completed_period','priority'=>'low','trigger'=>'analytics_period','profile_source_kind'=>'analytics',
         'disposition'=>'current','presentation_owner'=>'profile_briefing_v1','profile_presentation_owned'=>true,
         'legacy_delivered'=>false,'private_summary_only'=>true,'public_evidence_untrusted'=>true,

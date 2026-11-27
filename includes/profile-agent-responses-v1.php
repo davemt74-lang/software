@@ -175,7 +175,11 @@ function vp3_profile_owner_request_create_v1(PDO $pdo,array $ctx,array $conversa
         $name=mb_strimwidth(trim((string)preg_replace('/[\x00-\x1f\x7f]+/u',' ',(string)$profile['display_name'])),0,120,'…');
         if($name==='')$name='the profile owner';
         $receipt='Submitted to '.$name.'. Waiting for a response.';
-        $context=json_encode(['contract'=>VP3_PROFILE_RESPONSE_V1,'request_id'=>$id,'visitor_message_id'=>$visitorMessageId,'revision'=>$revision],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
+        // Keep the submission reason and application UTC clock in each durable
+        // receipt. Reopening the ledger may change its current reason; reports
+        // must not relabel an earlier submission using today's value.
+        $context=json_encode(['contract'=>VP3_PROFILE_RESPONSE_V1,'request_id'=>$id,'visitor_message_id'=>$visitorMessageId,'revision'=>$revision,
+            'reason'=>$reason,'submitted_at_ms'=>$now],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE|JSON_THROW_ON_ERROR);
         $pdo->prepare("INSERT INTO profile_agent_messages(conversation_id,sender_type,sender_user_id,message,context_json) VALUES(?,'receipt',NULL,?,?)")->execute([$cid,$receipt,$context]);$receiptId=(int)$pdo->lastInsertId();
         $pdo->prepare('UPDATE profile_agent_owner_requests_v1 SET receipt_message_id=? WHERE id=? AND owner_user_id=?')->execute([$receiptId,$id,$owner]);
         // CRM sessions can retain a previously signed-in visitor. The bound

@@ -14,6 +14,10 @@ if(($argv[1]??'')==='cleanup'){
 putenv('VP3_PA3_CONFIG='.$config);
 require __DIR__.'/profile-handoff-pa3.php';
 if(($argv[1]??'')==='init'){
+    // This fixture also backs suites that reset the same database repeatedly.
+    // Clear its Knowledge additions before recreating the canonical seed rows.
+    foreach(['profile_agent_knowledge_saves_v1','shared_knowledge_index','artist_transcript_folders_v177'] as $table)
+        if(table_exists($table))$pdo->exec('DELETE FROM '.$table);
     pa3_reset();
     // The owner inbox reply returns the real dashboard aggregate as well as its
     // receipt. Extend this HTTP fixture's agent rows for that existing read.
@@ -37,9 +41,10 @@ if(($argv[1]??'')==='init'){
         'file_size'=>'INTEGER NOT NULL DEFAULT 0',
     ] as $column=>$definition)if(!column_exists('knowledge_items',$column))$pdo->exec('ALTER TABLE knowledge_items ADD COLUMN '.$column.' '.$definition);
     $mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
-    if($mysql){$pdo->exec('ALTER TABLE knowledge_items MODIFY id INT UNSIGNED NOT NULL AUTO_INCREMENT');$pdo->exec('ALTER TABLE knowledge_chunks MODIFY id INT UNSIGNED NOT NULL AUTO_INCREMENT');}
+    // Convert the initial fixture IDs once, before the canonical index adds its FK.
+    if($mysql&&!table_exists('shared_knowledge_index')){$pdo->exec('ALTER TABLE knowledge_items MODIFY id INT UNSIGNED NOT NULL AUTO_INCREMENT');$pdo->exec('ALTER TABLE knowledge_chunks MODIFY id INT UNSIGNED NOT NULL AUTO_INCREMENT');}
     $auto=$mysql?'INT UNSIGNED AUTO_INCREMENT PRIMARY KEY':'INTEGER PRIMARY KEY AUTOINCREMENT';
-    $pdo->exec("CREATE TABLE artist_transcript_folders_v177(id $auto,created_by_user_id INTEGER NOT NULL,folder_name VARCHAR(80),sort_order INTEGER NOT NULL DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    $pdo->exec("CREATE TABLE IF NOT EXISTS artist_transcript_folders_v177(id $auto,created_by_user_id INTEGER NOT NULL,folder_name VARCHAR(80),sort_order INTEGER NOT NULL DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
     $pdo->exec("INSERT INTO artist_transcript_folders_v177(id,created_by_user_id,folder_name) VALUES(10,1,'Owner answers'),(20,4,'Foreign private folder')");
     $pdo->exec("INSERT INTO role_permissions VALUES('member','personal_knowledge.access'),('member','personal_knowledge.manage')");
     shared_knowledge_index_ensure_schema_v236($pdo);

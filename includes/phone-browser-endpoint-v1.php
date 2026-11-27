@@ -20,6 +20,11 @@ function vp3_phone_browser_endpoint_v1(string $kind): void
         if($kind==='voice'){echo vp3_phone_browser_voice_v1($pdo,$_POST,$signature);return;}
         if($kind==='disclosure'){echo vp3_phone_browser_disclosure_v1($pdo,$_POST,$signature,$public);return;}
         if($kind==='status'||$kind==='complete'){
+            if($kind==='status'&&$public===''){
+                require_once __DIR__.'/profile-browser-phone-v1.php';
+                vp3_profile_browser_phone_parent_status_v1($pdo,$_POST,$signature);
+                http_response_code(204);return;
+            }
             $result=vp3_phone_browser_status_v1($pdo,$_POST,$signature,$public,$kind==='complete');
             if($kind==='status'){http_response_code(204);return;}
             if(!empty($result['fallback'])){
@@ -33,12 +38,23 @@ function vp3_phone_browser_endpoint_v1(string $kind): void
                             $start=$pdo->prepare("UPDATE phone_voice_calls_v130 SET state='conversation_active' WHERE provider='twilio' AND provider_call_sid=? AND state='voicemail_offered' AND owner_user_id=? AND agent_id=? AND phone_number_id=?");
                             $start->execute([$sid,$route['owner_user_id'],$route['agent_id'],$route['phone_number_id']]);
                             if($start->rowCount()===1){
+                                if(vp3_profile_browser_phone_find_sid_v1($pdo,$sid)!==null){
+                                    require_once __DIR__.'/profile-browser-phone-v1.php';
+                                    vp3_profile_browser_phone_route_v1($pdo,$sid,'agent');
+                                }
                                 echo vp3_phone_voice_gather_v140((string)$name,vp3_phone_voice_callback_url_v130(),'Hello. I am '.$name.', an AI phone assistant. How can I help?',1);
                                 return;
                             }
                         }
                     }
-                    if($name!==false){echo vp3_phone_voicemail_twiml_v1($pdo,$route,(string)$result['call']['provider_call_sid'],(string)$name,vp3_phone_voice_callback_url_v130());return;}
+                    if($name!==false){
+                        $sid=(string)$result['call']['provider_call_sid'];
+                        if(vp3_profile_browser_phone_find_sid_v1($pdo,$sid)!==null){
+                            require_once __DIR__.'/profile-browser-phone-v1.php';
+                            vp3_profile_browser_phone_route_v1($pdo,$sid,'voicemail');
+                        }
+                        echo vp3_phone_voicemail_twiml_v1($pdo,$route,$sid,(string)$name,vp3_phone_voice_callback_url_v130());return;
+                    }
                 }
             }
             echo vp3_phone_browser_hangup_v1();return;

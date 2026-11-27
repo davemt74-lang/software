@@ -8,7 +8,7 @@ Candidate branch: `codex/profile-agent-reliability-20261127`
 
 ## Scope and result
 
-This audit covers the public Profile Agent chat, native visits and announcements, owner Inbox, Agent Radar, the main member Messages page, Profile image editing and owner preview, and the Profile specialist's analytics reports. It also adds an opt-in entry from the public chat to an assigned Twilio phone line. The follow-up adds explicit owner response modes, durable requests for owner input, filing reviewed owner answers into the existing Knowledge folders, and the remaining free image allowance.
+This audit covers the public Profile Agent chat, native visits and announcements, owner Inbox, Agent Radar, the main member Messages page, Profile image editing and owner preview, and the Profile specialist's analytics reports. It also adds opt-in calling from the public chat to an assigned Twilio phone line. The follow-ups add explicit owner response modes, durable requests for owner input, filing reviewed owner answers into the existing Knowledge folders, the remaining free image allowance, knowledge-gap and owner-response reports, and Twilio calling inside the Profile widget.
 
 The candidate repairs reproduced application failures and adds regression coverage. The evidence comes from source review, real isolated SQL and PHP HTTP fixtures, and Chromium running production markup and scripts with controlled services. It does not establish the condition of a deployed site's database, provider credentials, worker configuration, microphone permissions, or Twilio routing. No production database was modified, no paid image/model request was submitted, and no telephone call was placed.
 
@@ -68,17 +68,27 @@ The new `profile_agent_knowledge_saves_v1` table records source provenance and i
 
 Implementation: `includes/profile-agent-knowledge-v1.php`, `profile-owner-knowledge-v1.js`, and the owner actions in `api/profile-agent.php`.
 
-## Twilio entry in public Profile chat
+## Twilio calling in public Profile chat
 
-The new **Call by phone** action opens a native `tel:` destination for an owner-approved assigned Twilio number. The incoming call follows that number's existing Phone routing, browser-answering configuration, voicemail, and recording settings. This is a phone-app handoff; it does not implement anonymous browser-to-PSTN media inside the Profile widget. Existing native Profile browser audio/video remains governed by the separate call system.
+**Call by phone** opens the visitor's phone app for an owner-approved assigned Twilio number. **Call in browser** uses the bundled Twilio Voice JavaScript SDK 2.18.5, requests microphone permission after an explicit click, and provides connection/ringing status, mute, hang up, and uncertain-end recovery inside the Profile widget. Both follow the approved line's existing Phone configuration. Existing native Profile browser audio/video remains a separate transport; owner reservations and the shared microphone lease prevent conflicting calls.
 
 The owner enables the action under **Profile Agent > Agent > Profile phone calls**. Publication starts off. The owner selects an eligible assigned line; an arbitrary destination cannot be submitted. The saved binding includes number ID, Agent ID, and E.164 number. Public reads verify current assignment, active Agent, public/enabled Profile, account access, and the voice allowance before projecting the number. Private personal callback details are not part of this projection.
 
-The browser rereads approval when opening/restoring the chat and before handing off a click. A changed destination requires another deliberate click. Revocation removes the link. Settings require owner/account binding, CSRF, and the exact revision; an uncertain save requires a reload before another write. Canonical number reassignment revokes publication, including a line that later returns to its former owner.
+The browser rereads approval when opening/restoring the chat and before a call. A changed destination requires another deliberate click. Revocation removes the actions. Settings require owner/account binding, CSRF, and the exact revision; an uncertain save requires a reload before another write. Canonical number reassignment revokes publication, including a line that later returns to its former owner.
 
-Storage is the new `profile_phone_settings_v1` table, installed explicitly by Setup/Database Upgrade. Public GETs do not create or repair schema. `vp3_upgrade_complete()` includes the new table in readiness. Scripts and styles use content-based versions.
+Browser calls use an outgoing-only, per-call identity and a short-lived token. The token cannot register as the owner or receive incoming calls. A single-use server intent binds the current visitor credential, conversation, selected Profile Agent, approved phone line, separately assigned Phone Agent, and configuration. The browser supplies no telephone destination or provider call SID. A signed carrier request consumes that intent and routes the canonical incoming Phone receipt directly; it does not call the public number back through the telephone network.
 
-Implementation: `includes/profile-phone-v1.php`, `api/profile-phone-v1.php`, `profile-phone-v1.js`, `profile-phone-settings-v1.js`, and `profile-phone-v1.css`.
+The existing owner browser, supported Cloud Phone Agent, and voicemail paths remain in use. The Phone Agent retains its existing isolated phone inference scope; this integration does not give it the Profile text conversation or personal Knowledge. The current HomeServer SIP bridge requires a carrier-proven caller number, so anonymous SDK calls use the supported browser/Cloud/voicemail fallback. Calls made through the visitor's phone app retain ordinary carrier routing.
+
+Saved call outcomes belong to the exact Profile conversation, with a Status receipt and canonical Phone history. SDK connection is distinct from owner pickup. Only a verified child-leg answer or completed child with positive duration proves that the owner answered. Parent completion records the overall outcome and duration; a missed owner leg can still proceed to Agent or voicemail. Late events cannot regress a terminal outcome, and historical completion can settle an already-revoked call without restoring access. Voicemail evidence is retained.
+
+Preparation, cancellation, and recovery are idempotent. A canceled request cannot be admitted later after its response was lost. The browser stops microphone capture on close, page exit, session change, loss of its capture lease, or an expired server authority lease. Current Profile publication, credentials, line approval and entitlements are rechecked. New calls are limited to three per visitor credential and ten per owner in ten minutes, with one owner reservation at a time. Public owner Dial legs are limited to 600 seconds and subsequent public routing is fenced at ten minutes. Provider status reconciliation is bounded to once per 30 seconds for an active reservation; it repairs lost callbacks using the exact authenticated carrier receipt. An uncertain provider response keeps the reservation held instead of inventing a completed call.
+
+Agent text/image work is held while the browser call is active, and obsolete execution leases are invalidated. Settlement schedules eligible work using the current response mode; User responses and explicit job pauses remain authoritative. The separate `phone_call_active` projection never claims the owner joined a live text chat. An existing owner chat can continue; other drafts remain editable until the phone call ends.
+
+Storage adds `profile_browser_phone_calls_v1` and `profile_browser_phone_cancellations_v1` alongside `profile_phone_settings_v1`, installed explicitly by Setup/Database Upgrade. Public reads do not create or repair schema. `vp3_upgrade_complete()` includes readiness for the new tables. Scripts and styles use content-based versions.
+
+Implementation: `includes/profile-browser-phone-schema-v1.php`, `includes/profile-browser-phone-v1.php`, `api/profile-phone-browser-v1.php`, the existing signed Phone callback helpers, `profile-agent.js`, and `profile-phone-v1.js`/CSS. The existing phone-line approval settings remain authoritative.
 
 ## Image module findings
 
@@ -118,7 +128,19 @@ The rolling Radar property dashboard uses 7/30/90-day selections and reports hum
 
 Complete measures expose a value. Partial evidence exposes an observed value with coverage. Unavailable or unconfigured sources retain nulls and reasons. Comparisons require usable complete values on both sides; an empty median is not zero delay. The candidate's timeout fixes preserve these distinctions and let the owner retry stalled reads.
 
-**Twilio reporting limit:** the current Profile call adapter reads native `profile_calls_pa3c` activity. A `tel:` click does not establish Twilio connection, acceptance, duration, or outcome and is not counted as a completed native call. Twilio activity and recording reports remain in the existing Phone workspace. Correlating signed Twilio call receipts to a public Profile conversation would be additional reporting work.
+**Call metric scope:** the existing 21-measure Profile report continues to count native `profile_calls_pa3c` activity in its call totals. Browser Twilio calls now have exact Profile-conversation correlation and verified outcomes in their own ledger and Status receipts, while canonical Twilio activity, voicemail and recording reports stay in Phone. Those transports are not silently combined into native call totals. A phone-app link click still supplies no connection or outcome proof.
+
+### Knowledge gaps and owner responses
+
+The existing completed-period reader now adds ten owner-response measures: submitted requests, knowledge gaps, direct User responses requests, service failures, allowance failures, unknown original reasons, questions answered, distinct owner replies, median response time, and 90th-percentile response time. These are additive to the established 21 measures. A reply answering several questions counts each question once and the reply message once. Timing starts at the first durable submission and ends at the verified owner reply operation, including time delegated back to the Agent. Unanswered requests do not become timing samples.
+
+Recurring gap questions are grouped conservatively by normalized wording, with counts and exact conversation links. Keyword topics cover questions requiring the owner. Original reasons come from immutable receipt metadata; an old reopened request without original evidence remains unknown. Service and allowance failures are not classified as missing Knowledge. Source limits, missing proof, and incomplete history stay visible as partial or unavailable coverage.
+
+The separate current-work section shows waiting/delegated question counts, longest and median waiting time, reason counts, oldest questions, and unresolved gap groups. Current wait age starts at the latest submission or re-submission. It is distinct from completed-period response time and historical reporting windows. Delegated turns already answered or resolved are excluded from pending counts.
+
+Unresolved gap groups suggest up to three related existing personal Knowledge notes using matching keywords. The current private Chat principal must have personal Knowledge access and the existing item/Agent permission rules must permit each note before its title/content is considered. Source permission is checked again after the aggregate transaction. Suggestions open the existing note editor in its folder for owner review; reporting neither writes notes nor changes sharing. Future visitor use remains governed by the existing **Knowledge Access > Knowledge Base** Allow/audience controls. No second permission system is introduced.
+
+The same verified period measures feed the specialist summary and existing coordination sources. Current waiting questions and mutable note suggestions remain in the live-work view. No model or index-writing search is required to read these reports. New implementation is `includes/profile-response-analytics-v1.php`, with adapters in the existing period reader, summary, and specialist workspace.
 
 ## Validation evidence
 
@@ -156,6 +178,28 @@ Frontend gates passed 601 checks: visitor handoff VM 33, owner threads VM 44, do
 Recovery Baseline on the prior PR head also identified one stale Radar source-contract assertion. It expected an inline owner expression after the endpoint had been changed to capture the authenticated owner before releasing the session lock. The corrected test requires the captured owner, canonical read, and fresh owner recheck. The contract and 17 real concurrent Radar API checks pass; the gate was retained.
 
 Recovery Baseline and Section 14 include the new policy, structured inference, Knowledge, and allowance tests. Section 14 includes native MySQL and the new Knowledge browser suite. Run CI on the published follow-up head before merge.
+
+### Follow-up validation: response reports and in-widget Phone
+
+The three approved upgrades were verified on the integrated source with controlled SDK/carrier/provider responses and real SQL/HTTP boundaries:
+
+| Gate | SQLite / browser | Native MariaDB 10.11.19 |
+| --- | --- | --- |
+| Browser Phone service, authority, signature dispatch, cancellation, callbacks, recovery, and work holding | 96 checks | 96 checks |
+| Actual Profile Phone and carrier HTTP endpoints | 56 checks | 56 checks |
+| Knowledge-gap and owner-response reporting | 46 checks | 46 checks |
+| Existing Phone workspace, including competing public reservation | 641 checks | 641 checks |
+| Live Chat HTTP, including repeated shared-fixture resets | 136 checks | 136 checks |
+| In-widget Phone browser state, microphone cleanup, lost acknowledgements and draft continuity | 71 checks | Not applicable |
+| Real report API/browser acceptance, including mobile Knowledge review | 25 checks | Not applicable |
+
+Focused regressions also passed: completed-period SQL 203, briefings 48, existing mounted analytics 94, native Profile calls 153, live text 112, handoff 101, image editing 60, handoff/Knowledge HTTP 90, image HTTP 99, response/live browser 82, native call browser 50, phone approval browser 15, and visitor handoff VM 33. Desktop and 390px mobile report and call screenshots were inspected. Changed PHP/JavaScript syntax, workflow parsing and whitespace checks passed.
+
+The Phone tests distinguish signed parent completion from actual owner pickup, including a completed child arriving before its answered event. They cover twelve authority revocations, one-use intents, end-before-prepare cancellation, bounded anonymous admission, false carrier receipts, provider uncertainty, recovery after public revocation, native/Phone conflicts, and suppression of an obsolete in-flight Agent reply. Historical cleanup does not restore a publication or Knowledge grant.
+
+Four prior-head CI causes were repaired without weakening the gates: a Public Funnel assertion still expected inference inline instead of the shared guarded answer helper; the shared live-Chat fixture recreated an existing Knowledge folder table; Profile boundary assertions expected the previous guard/direct inference form; and the visitor browser test waited for retired owner-live copy. The corrected Public Funnel step's 34 commands passed locally, as did the affected boundary, live-Chat, handoff/Knowledge and visitor-browser suites.
+
+Section 14 now runs both new SQL/API suites on SQLite and native MySQL and includes the new browser suites. Recovery Baseline includes response analytics, and deployment-package checks require the new helpers/API and bundled SDK. These local results do not certify the deployed site's Twilio account, callbacks or media transport. Check CI on the exact published head and run the installed-site acceptance steps before release.
 
 ## Deployment and installed-site acceptance
 

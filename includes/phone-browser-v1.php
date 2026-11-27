@@ -142,6 +142,8 @@ function vp3_phone_browser_action_v1(PDO $pdo,array $scope,array $input): array
     if($scope['conversation_id']<1)vp3_phone_workspace_error_v1('phone_conversation_required',409,'Open a Chat conversation before dialing.');
     if(!$ownerTest&&!$connected&&!is_string($input['to_number']??null))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a valid international phone number.');
     $to=$ownerTest||$connected?'':vp3_phone_e164_v100($input['to_number']);if(array_key_exists('recording_enabled',$input)&&!is_bool($input['recording_enabled']))vp3_phone_workspace_error_v1('invalid_phone_request',422,'Choose a recording preference.');
+    vp3_phone_browser_require_v1($pdo,$scope,$id);
+    vp3_profile_browser_phone_reconcile_owner_v1($pdo,(int)$scope['owner_user_id']);
     return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$scope,$id,$to,$input,$ownerTest,$connected){
         $q=$pdo->prepare('SELECT id FROM users WHERE id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$scope['owner_user_id']]);$n=vp3_phone_browser_require_v1($pdo,$scope,$id,true);
         $testRevision=0;$paired=null;
@@ -149,7 +151,7 @@ function vp3_phone_browser_action_v1(PDO $pdo,array $scope,array $input): array
         if($connected){$paired=vp3_connected_phone_prepare_v1($pdo,$scope,$input,time());$to=$paired['destination'];}
         if(hash_equals((string)$n['phone_e164'],$to))vp3_phone_workspace_error_v1('invalid_phone_destination',422,'Choose a different destination number.');
         $now=time();$pdo->prepare("UPDATE phone_browser_calls_v1 SET state='canceled',ended_epoch=?,updated_epoch=? WHERE owner_user_id=? AND state='prepared' AND intent_expires_epoch<?")->execute([$now,$now,$scope['owner_user_id'],$now]);
-        $q=$pdo->prepare("SELECT COUNT(*) FROM phone_browser_calls_v1 WHERE owner_user_id=? AND state IN ('prepared','dialing','ringing','answered')");$q->execute([$scope['owner_user_id']]);if((int)$q->fetchColumn()>0)vp3_phone_workspace_error_v1('phone_busy',409,'End the current call before dialing another.');
+        $q=$pdo->prepare("SELECT COUNT(*) FROM phone_browser_calls_v1 WHERE owner_user_id=? AND state IN ('prepared','dialing','ringing','answered')");$q->execute([$scope['owner_user_id']]);if((int)$q->fetchColumn()>0||vp3_profile_browser_phone_active_v1($pdo,(int)$scope['owner_user_id']))vp3_phone_workspace_error_v1('phone_busy',409,'End the current call before dialing another.');
         $q=$pdo->prepare('SELECT COUNT(*) FROM phone_browser_calls_v1 WHERE owner_user_id=? AND created_epoch>?');$q->execute([$scope['owner_user_id'],$now-600]);if((int)$q->fetchColumn()>=10)vp3_phone_workspace_error_v1('phone_rate_limited',429,'Wait before placing more calls.');
         $public=bin2hex(random_bytes(16));$intent=bin2hex(random_bytes(32));$record=!$ownerTest&&!$connected&&!empty($input['recording_enabled'])&&!empty($n['recording_enabled']);
         $pdo->prepare("INSERT INTO phone_browser_calls_v1(public_id,owner_user_id,agent_id,phone_number_id,phone_e164,peer_e164,direction,intent_hash,intent_expires_epoch,conversation_id,chat_agent_id,state,recording_enabled,created_epoch,updated_epoch,owner_phone_revision,paired_device_id,paired_profile_id,paired_profile_revision,paired_phone_revision) VALUES (?,?,?,?,?,?,'outbound',?,?,?,?, 'prepared',?,?,?,?,?,?,?,?)")
@@ -181,7 +183,12 @@ function vp3_phone_browser_dial_attrs_v1(array $call,bool $record,int $timeout=2
 }
 function vp3_phone_browser_voice_v1(PDO $pdo,array $form,string $signature): string
 {
-    $parent=vp3_phone_browser_verify_v1($form,$signature,vp3_phone_browser_callback_v1('voice'));$intent=$form['call_intent']??null;
+    $parent=vp3_phone_browser_verify_v1($form,$signature,vp3_phone_browser_callback_v1('voice'));
+    if(array_key_exists('profile_call_intent',$form)||(is_string($form['From']??null)&&str_starts_with($form['From'],'client:vp3_profile_'))){
+        require_once __DIR__.'/profile-browser-phone-v1.php';
+        return vp3_profile_browser_phone_voice_v1($pdo,$form,$parent);
+    }
+    $intent=$form['call_intent']??null;
     if(!is_string($intent)||!preg_match('/^[a-f0-9]{64}$/D',$intent))return vp3_phone_browser_hangup_v1();
     // Resolve the untrusted intent to its owner, then lock that owner before
     // the call row to share the pairing/number-edit lock order.
@@ -227,7 +234,13 @@ function vp3_phone_browser_incoming_v1(PDO $pdo,array $route,string $sid,?string
         if((int)$call['owner_user_id']!==(int)$route['owner_user_id']||!vp3_phone_browser_live_call_v1($pdo,$call)||!in_array($call['state'],['ringing'],true))return vp3_phone_browser_hangup_v1();
         $status=vp3_phone_browser_xml_v1(vp3_phone_browser_callback_v1('status',['call'=>$call['public_id']]));
         $notice=$call['recording_enabled']?'<Say>This call will be recorded. Please hang up now if you do not want to be recorded.</Say><Pause length="2"/>':'';
-        return '<?xml version="1.0" encoding="UTF-8"?><Response>'.$notice.'<Dial'.vp3_phone_browser_dial_attrs_v1($call,(bool)$call['recording_enabled'],vp3_phone_voicemail_ring_timeout_v1($pdo,$call)).'><Client statusCallback="'.$status.'" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"><Identity>'.vp3_phone_browser_identity_v1((int)$call['owner_user_id'],(int)$call['chat_agent_id']).'</Identity><Parameter name="phone_call_id" value="'.$call['public_id'].'"/></Client></Dial></Response>';
+        $profileLimit='';
+        if(vp3_profile_browser_phone_find_sid_v1($pdo,$sid)!==null){
+            require_once __DIR__.'/profile-browser-phone-v1.php';
+            vp3_profile_browser_phone_route_v1($pdo,$sid,'owner');
+            $profileLimit=' timeLimit="600"';
+        }
+        return '<?xml version="1.0" encoding="UTF-8"?><Response>'.$notice.'<Dial'.vp3_phone_browser_dial_attrs_v1($call,(bool)$call['recording_enabled'],vp3_phone_voicemail_ring_timeout_v1($pdo,$call)).$profileLimit.'><Client statusCallback="'.$status.'" statusCallbackMethod="POST" statusCallbackEvent="initiated ringing answered completed"><Identity>'.vp3_phone_browser_identity_v1((int)$call['owner_user_id'],(int)$call['chat_agent_id']).'</Identity><Parameter name="phone_call_id" value="'.$call['public_id'].'"/></Client></Dial></Response>';
     });
 }
 function vp3_phone_browser_call_by_sid_v1(PDO $pdo,string $sid): ?array
@@ -269,7 +282,15 @@ function vp3_phone_browser_status_v1(PDO $pdo,array $form,string $signature,stri
 {
     if(!preg_match('/^[a-f0-9]{32}$/D',$public))throw new InvalidArgumentException('Invalid phone call.');
     $sid=vp3_phone_browser_verify_v1($form,$signature,vp3_phone_browser_callback_v1($complete?'complete':'status',['call'=>$public]));
-    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$form,$public,$sid,$complete){
+    // Profile parent settlement locks the owner before its child receipt. Use
+    // the same order for signed child events without changing legacy callbacks.
+    $lookup=$pdo->prepare('SELECT provider_call_sid FROM phone_browser_calls_v1 WHERE public_id=?');$lookup->execute([$public]);$parent=$lookup->fetchColumn();$lookup->closeCursor();
+    $profile=is_string($parent)&&$parent!==''?vp3_profile_browser_phone_find_sid_v1($pdo,$parent):null;
+    return vp3_phone_workspace_atomic_v1($pdo,function()use($pdo,$form,$public,$sid,$complete,$profile){
+        if($profile!==null){
+            require_once __DIR__.'/profile-browser-phone-v1.php';
+            vp3_profile_browser_phone_owner_lock_v1($pdo,(int)$profile['owner_user_id'],false);
+        }
         $q=$pdo->prepare('SELECT * FROM phone_browser_calls_v1 WHERE public_id=?'.vp3_phone_workspace_lock_v1($pdo));$q->execute([$public]);$call=$q->fetch(PDO::FETCH_ASSOC);if(!$call||!$call['provider_call_sid']||($call['transport_kind']??'browser')==='managed_callback')return ['accepted'=>false];
         if($complete){if(!hash_equals((string)$call['provider_call_sid'],$sid))return ['accepted'=>false];$child=(string)($form['DialCallSid']??'');$state=(string)($form['DialCallStatus']??'');}
         else{$child=$sid;$state=(string)($form['CallStatus']??'');if($sid===$call['provider_call_sid'])return ['accepted'=>false];if(isset($form['ParentCallSid'])&&!hash_equals((string)$call['provider_call_sid'],(string)$form['ParentCallSid']))return ['accepted'=>false];if(!$call['provider_child_sid']&&(!isset($form['ParentCallSid'])||!hash_equals((string)$call['provider_call_sid'],(string)$form['ParentCallSid'])))return ['accepted'=>false];}
@@ -277,11 +298,23 @@ function vp3_phone_browser_status_v1(PDO $pdo,array $form,string $signature,stri
         if($call['provider_child_sid']&&$child!==''&&!hash_equals((string)$call['provider_child_sid'],$child))return ['accepted'=>false];
         $mapped=['queued'=>'dialing','initiated'=>'dialing','ringing'=>'ringing','in-progress'=>'answered','answered'=>'answered','completed'=>'completed','busy'=>'busy','no-answer'=>'no_answer','failed'=>'failed','canceled'=>'canceled'];if(!isset($mapped[$state]))return ['accepted'=>false];$next=$mapped[$state];
         $rank=['prepared'=>0,'dialing'=>1,'ringing'=>2,'answered'=>3,'completed'=>4,'busy'=>4,'no_answer'=>4,'failed'=>4,'canceled'=>4];$current=(string)$call['state'];
-        if(($rank[$current]??4)===4||$rank[$next]<($rank[$current]??0))return ['accepted'=>true,'duplicate'=>true,'call'=>$call,'fallback'=>vp3_phone_browser_fallback_v1($pdo,$call,$complete)];
-        $duration=(string)($form['DialCallDuration']??$form['CallDuration']??'0');if(!preg_match('/^[0-9]{1,6}$/D',$duration))return ['accepted'=>false];$now=time();
+        $duration=(string)($form['DialCallDuration']??$form['CallDuration']??'0');
+        $evidence=['answered'=>$next==='answered'||($next==='completed'&&preg_match('/^[0-9]{1,6}$/D',$duration)&&(int)$duration>0)];
+        if(($rank[$current]??4)===4||$rank[$next]<($rank[$current]??0)){
+            if(vp3_profile_browser_phone_find_sid_v1($pdo,(string)$call['provider_call_sid'])!==null){
+                require_once __DIR__.'/profile-browser-phone-v1.php';
+                vp3_profile_browser_phone_sync_v1($pdo,$call,$complete,$evidence);
+            }
+            return ['accepted'=>true,'duplicate'=>true,'call'=>$call,'fallback'=>vp3_phone_browser_fallback_v1($pdo,$call,$complete)];
+        }
+        if(!preg_match('/^[0-9]{1,6}$/D',$duration))return ['accepted'=>false];$now=time();
         $pdo->prepare('UPDATE phone_browser_calls_v1 SET state=?,provider_child_sid=COALESCE(provider_child_sid,?),duration_seconds=?,ended_epoch=?,updated_epoch=? WHERE id=?')->execute([$next,$child?:null,max((int)$call['duration_seconds'],min((int)$duration,86400)),$rank[$next]===4?$now:null,$now,$call['id']]);
         if($rank[$next]===4)vp3_operator_voice_close_call_v1($pdo,(int)$call['id']);
         $call['state']=$next;$call['provider_child_sid']=$call['provider_child_sid']?:$child;$call['duration_seconds']=max((int)$call['duration_seconds'],min((int)$duration,86400));
+        if(vp3_profile_browser_phone_find_sid_v1($pdo,(string)$call['provider_call_sid'])!==null){
+            require_once __DIR__.'/profile-browser-phone-v1.php';
+            vp3_profile_browser_phone_sync_v1($pdo,$call,$complete,$evidence);
+        }
         return ['accepted'=>true,'state'=>$next,'call'=>$call,'fallback'=>vp3_phone_browser_fallback_v1($pdo,$call,$complete)];
     });
 }

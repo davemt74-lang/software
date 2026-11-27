@@ -15,6 +15,12 @@ try{
         $profile=profile_by_username($pdo,$_GET['username']);
         if(!$profile)throw new RuntimeException('Profile calling is unavailable.',404);
         $result=vp3_profile_phone_public_v1($pdo,$profile);
+        require_once dirname(__DIR__).'/includes/profile-browser-phone-schema-v1.php';
+        $result['browser']=['contract'=>VP3_PROFILE_BROWSER_PHONE_V1,'enabled'=>false,'reason'=>'Browser calling is unavailable. You can use your phone app.'];
+        if(vp3_profile_browser_phone_ready_v1($pdo)){
+            require_once dirname(__DIR__).'/includes/profile-browser-phone-v1.php';
+            $result['browser']=vp3_profile_browser_phone_availability_v1($pdo,$profile);
+        }
     }else{
         $user=current_user();
         if(!$user||!has_permission('account.access',$user)||!personal_capability_has_v242('profile_agent.access',$user))throw new RuntimeException('Sign in to manage your Profile calling.',403);
