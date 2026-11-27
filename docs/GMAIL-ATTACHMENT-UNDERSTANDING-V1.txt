@@ -30,6 +30,9 @@ The selected Cloud provider receives the original PDF (including scans) using
 its native PDF input, or the original image. A compatible vision/PDF model is
 required on the existing Conversation service/account route. No provider/model
 switch or paid retry occurs if the selected route cannot read the document.
+The canonical Agent compute plan is checked before analysis and again at
+dispatch. HomeServer-only and selected HomeServer routes cannot silently send
+document bytes to Cloud or pass native file blocks to legacy HomeServer Chat.
 OpenAI requests use store:false. Provider retention/account policies otherwise
 remain those of the configured provider; this is not a zero-retention claim.
 

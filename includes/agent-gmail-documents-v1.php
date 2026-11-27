@@ -249,15 +249,19 @@ function agent_gmail_document_action_v1(PDO $pdo,array $user,array $principal,in
         return ['review'=>agent_gmail_document_public_v1($old)];
     }
     try {
+        if ($model===null) agent_gmail_document_cloud_route_v1($pdo,$user,$agent);
+        agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
         $bytes=agent_gmail_document_bytes_v1($read,$part,$http);
+        agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
         require_once __DIR__.'/agent-brain-soul-v1.php';$soul=agent_brain_soul_profile_v1($user,'email');
         $mail=agent_connection_gmail_read_message_v1($read['raw']);
         $prompt=json_encode(['owner_instruction'=>$instruction?:'Summarize this attachment, identify important missing details, and suggest a short reply asking about those gaps.',
             'email_soul'=>$soul['content'],'message'=>['subject'=>$mail['subject'],'from'=>$mail['from'],'body'=>mb_substr($mail['body'],0,4000)],
             'attachment'=>['name'=>$part['name'],'mime'=>$part['mime']]],JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE);
         $byteHash=hash('sha256',$bytes);$dispatched=false;
-        $before=static function()use($pdo,$user,$principal,$chat,$source,$current,$http,$owner,$agent,$id,$part,$byteHash,&$dispatched): bool {
+        $before=static function()use($pdo,$user,$principal,$chat,$source,$current,$http,$owner,$agent,$id,$part,$byteHash,$model,&$dispatched): bool {
             if ($dispatched) throw new DomainException('This attachment review was already dispatched.',409);
+            if ($model===null) agent_gmail_document_cloud_route_v1($pdo,$user,$agent);
             $liveRead=agent_gmail_document_read_v1($pdo,$user,$principal,$chat,$source,$current,$http);
             if (!hash_equals($byteHash,hash('sha256',agent_gmail_document_bytes_v1($liveRead,$part,$http)))) throw new DomainException('The attachment bytes changed before analysis.',409);
             agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
@@ -278,6 +282,7 @@ function agent_gmail_document_action_v1(PDO $pdo,array $user,array $principal,in
         $review=agent_gmail_document_result_v1((string)($answer['answer']??''),$part['mime']);
         $liveRead=agent_gmail_document_read_v1($pdo,$user,$principal,$chat,$source,$current,$http);
         if (!hash_equals($byteHash,hash('sha256',agent_gmail_document_bytes_v1($liveRead,$part,$http)))) throw new DomainException('The attachment changed during analysis.',409);
+        agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
         $result=['review'=>$review,'bytes_sha256'=>$byteHash,'soul'=>['version'=>$soul['version'],'revision'=>$soul['revision']]];
         $pdo->prepare("UPDATE agent_gmail_document_reviews_v1 SET state='ready',result_enc=?,lease_epoch=0,updated_epoch=? WHERE id=? AND state='dispatched'")
             ->execute([ai_encrypt_secret(json_encode($result,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)),time(),$id]);

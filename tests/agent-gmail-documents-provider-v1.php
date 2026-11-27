@@ -9,7 +9,9 @@ require_once dirname(__DIR__).'/includes/agent-gmail-document-input-v1.php';
 $protocol='vp3.gmail-document-review.v1';$pdf=file_get_contents(__DIR__.'/fixtures/gmail-documents/quote.pdf');
 $document=['mime'=>'application/pdf','name'=>'Quote Q-104','bytes'=>$pdf];
 $control=static fn(Closure $guard):array=>['surface'=>'tool_json','protocol'=>$protocol,'gmail_document_review'=>true,
-    'gmail_document'=>$document,'before_gmail_document_dispatch'=>$guard];
+    'gmail_document'=>$document,'before_gmail_document_dispatch'=>static function()use($guard,$pdo,$owner):bool{
+        agent_gmail_document_cloud_route_v1($pdo,$owner,17);return $guard();
+    }];
 $review=static fn(Closure $guard):array=>ai_v100_with_service_context(['service'=>'conversation','background'=>false,
     'stage'=>$protocol,'agent_id'=>17,'conversation_id'=>11],static fn()=>ai_generate_chat_response(
         '{"owner_instruction":"Check this quote","email_soul":"Be brief.","message":{"body":"Exact requested email"}}',
@@ -40,6 +42,16 @@ $GLOBALS['gmailSummaryScenario']='compose';$calls=count($GLOBALS['gmailSummaryDi
 $response=$review(static fn():bool=>false);
 check_gmail_summary(empty($response['ok'])&&count($GLOBALS['gmailSummaryDispatch'])===$calls
     &&(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,'late source revocation prevents dispatch and releases the real usage reservation');
+$GLOBALS['gmailSummaryHomeOnly']=true;
+try {$blockedRoute=$review(static fn():bool=>true);}
+catch (DomainException $error) {
+    if ($error->getCode()!==503) throw $error;
+    $blockedRoute=['ok'=>false];
+}
+check_gmail_summary(empty($blockedRoute['ok'])&&count($GLOBALS['gmailSummaryDispatch'])===$calls
+    &&(int)$pdo->query('SELECT COUNT(*) FROM ai_token_reservations')->fetchColumn()===0,
+    'the shipped document route fence honors HomeServer-only preferences after usage reservation and releases the unsent allowance');
+$GLOBALS['gmailSummaryHomeOnly']=false;
 foreach([[],['service'=>'conversation'],['service'=>'conversation','background'=>true],['service'=>'initiative','background'=>false]] as $wrong){
     $response=ai_v100_with_service_context($wrong,static fn()=>ai_generate_chat_response('{}',[],[],$owner,'main_ai',$control(static fn():bool=>true)));
     check_gmail_summary(empty($response['ok'])&&count($GLOBALS['gmailSummaryDispatch'])===$calls,'document review cannot run without explicit foreground Conversation accounting');

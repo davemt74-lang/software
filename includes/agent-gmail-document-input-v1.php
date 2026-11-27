@@ -2,6 +2,16 @@
 declare(strict_types=1);
 const AGENT_GMAIL_DOCUMENT_MAX_BYTES_V1=2097152;
 
+/** Legacy HomeServer Chat cannot receive these native provider file inputs. */
+function agent_gmail_document_cloud_route_v1(PDO $pdo,array $user,int $agent): void
+{
+    if (!function_exists('vp3_agent_runtime_plan_v420')) require_once __DIR__.'/agent-runtime-routing-v420.php';
+    $plan=vp3_agent_runtime_plan_v420($pdo,$user,$agent,'chat',['service'=>'conversation','background'=>false]);
+    if (!empty($plan['blocked'])||($plan['route']??null)!=='vp3_cloud'||empty($plan['cloud']['ready'])) {
+        throw new DomainException('Attachment review needs an available Cloud PDF/image model under this Agent’s current compute preference. No attachment analysis was dispatched.',503);
+    }
+}
+
 /** Provider-bound input: no URL, uploaded browser data, active document or archive. */
 function agent_gmail_document_input_v1(array $document): array
 {

@@ -34,6 +34,7 @@ function gd_http(string $method,string $url,array $headers,?array $body,bool $fo
     if (preg_match('~/messages/([^/]+)/attachments/([^/]+)$~',(string)parse_url($url,PHP_URL_PATH),$m)) {
         if ($m[1]!=='doc_one'||$m[2]!=='attachment_one') throw new LogicException('Wrong exact message attachment endpoint.');
         $bytes=$GLOBALS['gdBytes'];
+        if (is_callable($GLOBALS['gdAttachmentHook']??null)) ($GLOBALS['gdAttachmentHook'])();
         return ['status'=>200,'json'=>['size'=>strlen($bytes),'data'=>rtrim(strtr(base64_encode($bytes),'+/','-_'),'=')]];
     }
     return pec_http_v1($method,$url,$headers,$body,$form);
@@ -140,6 +141,12 @@ gd_reject(static fn()=>gd_analyze(static function(string $prompt,array $service,
     $a=gd_model($prompt,$service,$control);$GLOBALS['gdBytes']=substr_replace($GLOBALS['gdBytes'],'9',7,1);return $a;
 }),'bytes changed during inference prevent saving or returning an answer');$GLOBALS['gdBytes']=$pdf;
 gd_check(gd_action('get')['review']['state']==='failed','failed in-flight analysis remains inspectable without an automatic retry');
+$attachmentReads=0;$GLOBALS['gdAttachmentHook']=static function()use(&$attachmentReads,$pdo):void{
+    if (++$attachmentReads===3) $pdo->exec('UPDATE agent_connections_v1 SET read_enabled=0 WHERE id=7');
+};
+gd_reject(static fn()=>gd_analyze(),'revocation during final attachment-byte verification prevents publishing a saved review');
+unset($GLOBALS['gdAttachmentHook']);$pdo->exec('UPDATE agent_connections_v1 SET read_enabled=1 WHERE id=7');
+gd_check(gd_action('get')['review']['state']==='failed','revocation before publication leaves no ready result');
 gd_reject(static fn()=>gd_analyze(static function(string $p,array $s,array $c):array{
     $c['before_gmail_document_dispatch']();$c['before_gmail_document_dispatch']();return ['ok'=>true,'answer'=>gd_answer()];
 }),'a model transport cannot consume its dispatch claim twice');
