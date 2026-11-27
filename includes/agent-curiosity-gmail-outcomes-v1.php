@@ -28,8 +28,11 @@ function vp3_curiosity_gmail_response_v1(PDO $pdo,array $user,array $binding,str
     $notice=agent_connection_email_followup_delivered_v1($pdo,$connection,$agent,$cid,[$post])[$post]??null;
     if(($notice['message_id']??null)!==$watch['reply_message_id']||($notice['kind']??null)!=='thread'
         ||!agent_connection_email_followup_origin_v1($pdo,$watch))return null;
-    $revision=hash('sha256',json_encode([$ctx['request_key'],$draft['message_enc'],$draft['sent_message_id'],
-        $watch['operation_key'],$watch['reply_message_id'],$post,$watch['expires_at']],JSON_THROW_ON_ERROR));
+    // Composer timestamps and saved watch settings do not make the same reply new.
+    $sentContent=['subject'=>$payload['subject'],'body'=>$payload['body'],
+        'reply'=>agent_connection_gmail_reply_binding_v1($payload['reply']),'attachments'=>$payload['attachments']??[]];
+    $revision=hash('sha256',json_encode([$ctx['request_key'],$draft['id'],$sentContent,$draft['sent_message_id'],
+        $watch['operation_key'],$watch['reply_message_id']],JSON_THROW_ON_ERROR));
     return $ctx+['draft'=>$draft,'watch'=>$watch,'connection'=>$connection,
         'response'=>['source_ref'=>$ref,'revision'=>$revision,'original_question'=>$ctx['thread']['analysis_origin']['question'],
             'owner_request'=>$ctx['confirmed']['summary'],'interpretation'=>'A watched reply is available; the owner objective remains unverified.']];
@@ -75,7 +78,10 @@ function vp3_curiosity_gmail_response_read_v1(PDO $pdo,array $user,array $bindin
     return ['content_digest'=>$digest,'source_ref'=>$expected['source_ref'],'original_question'=>$expected['original_question'],
         'owner_request'=>$ctx['owner_reply'],'sent_wording'=>mb_substr($sentText['body'],0,6000),
         'sender_response'=>mb_substr($replyText['body'],0,6000),'sent_wording_truncated'=>mb_strlen($sentText['body'])>6000,
-        'sender_response_truncated'=>mb_strlen($replyText['body'])>6000,'observed_at'=>gmdate(DATE_ATOM,intdiv($r['received_at_ms'],1000))];
+        'sender_response_truncated'=>mb_strlen($replyText['body'])>6000,
+        'sent_attachments_unreviewed'=>agent_gmail_document_parts_v1($sent)!==[],
+        'reply_attachments_unreviewed'=>agent_gmail_document_parts_v1($reply)!==[],
+        'observed_at'=>gmdate(DATE_ATOM,intdiv($r['received_at_ms'],1000))];
 }
 
 /** Model classifications are tentative interpretations, never completed business objectives. */

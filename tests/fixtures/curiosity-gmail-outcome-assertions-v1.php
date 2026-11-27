@@ -50,6 +50,10 @@ canvas_pipeline_check(vp3_curiosity_gmail_responses_v1($pdo,$owner,array_replace
     'a sibling Chat cannot borrow the watched response');
 if($scenario==='gmail-outcome-newer')$newerReply=true;
 if($scenario==='gmail-outcome-truncated')$replyRaw['payload']['body']['data']=rtrim(strtr(base64_encode('December 6 is earliest. '.str_repeat('Additional terms. ',700)),'+/','-_'),'=');
+if($scenario==='gmail-outcome-attachment'){
+    $text=$replyRaw['payload'];$replyRaw['payload']=['mimeType'=>'multipart/mixed','headers'=>$text['headers'],'parts'=>[
+        ['mimeType'=>'text/plain','body'=>$text['body']],['mimeType'=>'application/pdf','filename'=>'Revised terms.pdf','body'=>['size'=>100,'attachmentId'=>'unreviewed_terms']]]];
+}
 canvas_pipeline_check(vp3_curiosity_analysis_schedule_v1($pdo,$owner,$binding)==='queued','a verified watched reply admits one existing Curiosity analysis job');
 $runs=canvas_pipeline_runs('initiative.prepare');$reviewRun=(int)end($runs)['id'];$outcomeCalls=0;
 $done=vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($reviewRun),static function(string $prompt)use($pdo,$finding,$scenario,&$replyRaw,&$outcomeCalls):string{
@@ -61,7 +65,7 @@ $done=vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($reviewRun),st
     if($scenario==='gmail-outcome-changed')$replyRaw['payload']['body']['data']=rtrim(strtr(base64_encode('December 5 is now available.'),'+/','-_'),'=');
     $ref=$scenario==='gmail-outcome-unknown'?'curiosity-finding:'.str_repeat('f',32):$finding;
     return json_encode(['draft'=>'The actual sent email requests December 5, while the supplier offers December 6. The owner needs to decide.',
-        'questions'=>[],'email_outcomes'=>[['source_ref'=>$ref,'state'=>$scenario==='gmail-outcome-truncated'?'answered':'conflict',
+        'questions'=>[],'email_outcomes'=>[['source_ref'=>$ref,'state'=>in_array($scenario,['gmail-outcome-truncated','gmail-outcome-attachment'],true)?'answered':'conflict',
             'summary'=>'The email sent by the owner requests December 5; the watched reply offers December 6 as the earliest date.',
             'question'=>'Would December 6 work, or should we ask about another option?']]]);
 },['gmail_http'=>$outcomeHttp],false);
@@ -77,6 +81,10 @@ $after=vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding);$saved=canvas_pi
 canvas_pipeline_check($saved['output']['email_outcomes'][0]['state']==='conflict'&&$outcomeCalls===1,'one canonical receipt stores the typed source-bound interpretation');
 canvas_pipeline_check($after['revision']===$before['revision']&&vp3_curiosity_analysis_schedule_v1($pdo,$owner,$binding)==='already_handled',
     'an analysis output cannot manufacture new input or another paid response analysis');
+$payload['composer']['saved_at']=time()+1;$payload['review_metadata']=['seen'=>true];
+$pdo->prepare('UPDATE agent_connection_email_drafts_v1 SET message_enc=? WHERE id=?')->execute([ai_encrypt_secret(json_encode($payload)),$draftId]);
+canvas_pipeline_check(vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding)['revision']===$before['revision'],
+    'non-content draft metadata cannot reset the response identity or create another analysis opportunity');
 $q=$pdo->prepare("SELECT id,result_json FROM agent_workflow_receipts WHERE run_id=? AND status='completed' ORDER BY id DESC LIMIT 1");$q->execute([$reviewRun]);$proof=$q->fetch(PDO::FETCH_ASSOC);
 $pdo->prepare('UPDATE agent_workflow_receipts SET result_json=? WHERE id=?')->execute(['{}',$proof['id']]);
 canvas_pipeline_check(vp3_curiosity_gmail_outcome_v1($pdo,$owner,$binding,$before['email_replies'][$finding])===null,

@@ -343,7 +343,7 @@ unchanged input does not dispatch another model pass.
 Optional typed assessments use answered, partial, conflict or unclear, a concise
 summary and an optional useful owner-decision question. References come only from
 the supplied watched responses. The server binds each interpretation to its native
-source revision, read content digest and observed time. Truncated messages cannot
+source revision, read content digest and observed time. Truncated messages or unreviewed attachments cannot
 establish an answered question. Model summaries cannot contain addresses or URLs.
 No supplier statement automatically completes a business objective or confirms an
 owner preference; the owner objective remains explicitly unverified.
@@ -361,7 +361,8 @@ second source or an unreviewed finding cannot bypass that boundary. The worker
 rechecks actual mail and source revisions before preparing the message. Existing
 Chat activity, delivery, voice and interruption controls remain in force. A
 canonical delivered decision binds its native watched-response revision, preventing
-another paid prompt for the same reply. The actual owner answer uses the existing
+another paid prompt for the same reply. Non-content composer metadata cannot
+reset that response identity. The actual owner answer uses the existing
 Chat anchor and follow-through engine for the next bounded private objective.
 Sending, new reply watches and domain actions retain their existing authorization.
 
@@ -372,7 +373,7 @@ analysis, canonical interpretation, Brainstorming, OB1, actual Agent Chat delive
 and authenticated owner follow-through. SQLite and native MySQL cover the complete
 loop, receipt mismatches, no automatic analysis loop, no repeated decision or paid
 call, no unnecessary question, sibling Chat isolation, access withdrawal, newer
-mail, changed response content, unknown model references and truncated coverage.
+mail, changed response content, unknown model references, truncated coverage and unreviewed attachments.
 Existing native Gmail tests cover composer/send lifecycle; provider and model
 transports remain synthetic. Live installation timing and model quality remain
 separate deployment acceptance checks.
