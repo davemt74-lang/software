@@ -73,6 +73,15 @@ $invalid=gmail_email_capture_get_v1($pdo,pec_user_v1(),$GLOBALS['gcPrincipal'],1
 gc_check($invalid['state']==='failed'&&str_contains($invalid['received_text'],'received partial response'),'received provider output survives a format failure');
 $never=static function(){throw new RuntimeException('A failed attempt must never be redispatched.');};
 gc_check(gc_analyze(['request_id'=>$invalidRequest],$never)['state']==='failed','replaying a failed attempt does not spend another model call');
+$oversizedRequest=bin2hex(random_bytes(16));
+gc_reject(static fn()=>gc_analyze(['request_id'=>$oversizedRequest],static function($prompt,$service,$control):array{
+    $control['before_gmail_capture_dispatch']();$v=json_decode(gc_answer(),true);$v['summary']=str_repeat('x',2001);
+    return ['ok'=>true,'answer'=>json_encode($v,JSON_THROW_ON_ERROR)];
+}),'invalid provider fields are response failures, not editable-input errors',[502]);
+$oversized=gmail_email_capture_get_v1($pdo,pec_user_v1(),$GLOBALS['gcPrincipal'],11,$GLOBALS['gcSource'],
+    substr(gmail_email_capture_hash_v1([1,7,11,$oversizedRequest]),0,32),gc_current(),'gc_http');
+gc_check($oversized['state']==='failed'&&$oversized['reason']==='invalid_response'&&str_contains($oversized['received_text'],str_repeat('x',2001)),
+    'invalid provider fields remain recoverable through the same saved-attempt inspector');
 $before=(int)$pdo->query('SELECT COUNT(*) FROM user_calendar_events')->fetchColumn();
 $fields=['title'=>'Camera launch','timezone'=>'America/Phoenix','date'=>'2026-12-12','start_time'=>'10:00','end_date'=>'2026-12-12','end_time'=>'11:00','location'=>'Phoenix'];
 $save=static fn(array $f)=>gmail_email_capture_save_v1($pdo,pec_user_v1(),$GLOBALS['gcPrincipal'],11,$GLOBALS['gcSource'],'calendar',['text'=>$GLOBALS['gcText'],'fields'=>$f],gc_current(),'gc_http');

@@ -30,15 +30,19 @@ function gmail_email_capture_result_v1(string $answer): array
     try {$v=vp3_tool_json_object_v1($answer,['coverage','summary','extracted_text','product_query','dates'],48000);}
     catch (InvalidArgumentException|JsonException $e) {throw new DomainException('The analysis format could not be verified. Its received response was retained.',502,$e);}
     if (!in_array($v['coverage']??null,['readable','partial','unreadable'],true)||!is_array($v['dates']??null)||!array_is_list($v['dates'])||count($v['dates'])>5) throw new DomainException('The analysis format could not be verified.',502);
-    $out=['coverage'=>$v['coverage'],'summary'=>gmail_email_capture_text_v1($v['summary']??null,2000),
-        'extracted_text'=>gmail_email_capture_text_v1($v['extracted_text']??null,6000),
-        'product_query'=>gmail_email_capture_text_v1($v['product_query']??null,160),'dates'=>[]];
+    $readText=static function(mixed $value,int $limit):string{
+        try {return gmail_email_capture_text_v1($value,$limit);}
+        catch (DomainException $e) {throw new DomainException('The analysis format could not be verified. Its received response was retained.',502,$e);}
+    };
+    $out=['coverage'=>$v['coverage'],'summary'=>$readText($v['summary']??null,2000),
+        'extracted_text'=>$readText($v['extracted_text']??null,6000),
+        'product_query'=>$readText($v['product_query']??null,160),'dates'=>[]];
     if ($out['summary']==='') throw new DomainException('The analysis did not include a readable result.',502);
     // Search phrases must not carry source URLs or address/token-like strings.
     if (preg_match('~https?://|www\.|[?&=]|\b[^\s@]+@[^\s@]+\b~i',$out['product_query'])) $out['product_query']='';
     foreach ($v['dates'] as $date) {
         if (!is_array($date)||array_diff(array_keys($date),['title','start_local','end_local','timezone','note'])) throw new DomainException('The suggested date could not be verified.',502);
-        $d=[];foreach (['title'=>190,'start_local'=>16,'end_local'=>16,'timezone'=>80,'note'=>300] as $field=>$limit) $d[$field]=gmail_email_capture_text_v1($date[$field]??'', $limit);
+        $d=[];foreach (['title'=>190,'start_local'=>16,'end_local'=>16,'timezone'=>80,'note'=>300] as $field=>$limit) $d[$field]=$readText($date[$field]??'', $limit);
         try {new DateTimeZone($d['timezone']);} catch (Throwable) {$d['timezone']='';}
         foreach (['start_local','end_local'] as $field) {
             $at=DateTimeImmutable::createFromFormat('!Y-m-d\TH:i',$d[$field],new DateTimeZone($d['timezone']?:'UTC'));

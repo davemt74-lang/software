@@ -13,7 +13,12 @@ function gmail_email_capture_source_v1(PDO $pdo,array $user,int $connection,stri
     if (array_intersect(['SPAM','TRASH','DRAFT'],(array)($mail['labels']??[]))) return null;
     foreach (['message_id','thread_id','subject','from','body'] as $field) if (!is_string($mail[$field]??null)) return null;
     foreach (['message_id','thread_id'] as $field) if ($mail[$field]===''||agent_connection_gmail_id_v1($mail[$field])!==$mail[$field]) return null;
-    $record=agent_connections_require_grant_v1($pdo,(int)$user['id'],$connection,'read',$grant);
+    try {$record=agent_connections_require_grant_v1($pdo,(int)$user['id'],$connection,'read',$grant);}
+    catch (AgentConnectionExceptionV1 $error) {
+        if (!in_array((int)$error->getCode(),[401,403,404,409],true)) throw $error;
+        // Exact readers report a source change when access is revoked during their GET.
+        throw new DomainException('Gmail access changed. Reopen the email.',409,$error);
+    }
     if (!is_string($record['client_fingerprint']??null)||!is_string($record['account_email']??null)) return null;
     $source=['contract'=>'gmail-capture-source-v1','owner'=>(int)$user['id'],'connection'=>$connection,'grant'=>$grant,
         'fingerprint'=>$record['client_fingerprint'],'account'=>$record['account_email'],
