@@ -2,7 +2,6 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/coding-canvas-store-v1.php';
-require_once __DIR__.'/agent-job-engine-v1900.php';
 
 /** Explicit Database Upgrade only; keep manual provenance in the canonical version store. */
 function vp3_coding_canvas_source_schema_v1(PDO $pdo): void
@@ -90,6 +89,7 @@ function vp3_coding_canvas_source_save_v1(PDO $pdo,array $user,int $agentId,int 
             $q->execute([$owner]);$active=$q->fetchColumn();$activeGoal=$active===false?null:json_decode((string)$active,true);
             if($active!==false&&(!is_array($activeGoal)||($activeGoal['canvas_id']??null)===$id))throw new RuntimeException('Finish or stop the Coding Agent request for this app before saving source edits.',409);
         }
+        require_once __DIR__.'/agent-job-engine-v1900.php';
         require_once __DIR__.'/coding-canvas-email-v1.php';
         if ((int)$row['conversation_id']!==$cid && vp3_coding_canvas_email_binding_v1($pdo,$user,$agentId,$id,$base)!==null) {
             throw new RuntimeException('Open the original Chat to edit this email-connected Canvas.',409);
