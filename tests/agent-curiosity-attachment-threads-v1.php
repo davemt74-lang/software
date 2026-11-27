@@ -92,7 +92,8 @@ canvas_pipeline_check($posted['ok']&&canvas_pipeline_result($ask)['initiative_me
 $post=(int)canvas_pipeline_result($ask)['initiative_message_id'];
 $q=$pdo->prepare('SELECT context_json FROM chat_messages WHERE id=?');$q->execute([$post]);
 $context=json_decode($q->fetchColumn(),true);$state=$context['initiative_followthrough_state'];
-$answer='Please prepare a reply asking the supplier to confirm delivery by December 4.';
+$factual=($argv[1]??'')==='factual';
+$answer=$factual?'I prefer December 4 delivery for this order.':'Please prepare a reply asking the supplier to confirm delivery by December 4.';
 $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(11,1,'user',?)")->execute([$answer]);$mid=(int)$pdo->lastInsertId();
 $GLOBALS['pipelineModel']=static function(string $prompt,string $protocol):string{
     if($protocol==='vp3.initiative-reply.v1')return json_encode(['intent'=>'resolve','focus'=>'The owner wants reply wording that asks for delivery by December 4.']);
@@ -105,6 +106,12 @@ canvas_pipeline_check(!empty($reply['handled'])&&vp3_curiosity_question_v1($pdo,
 $fresh=vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding);
 canvas_pipeline_check($fresh['revision']!==$snapshot['revision']&&count($fresh['owner_answers'])===1
     &&$fresh['owner_answers'][0]['answer']===$answer,'the verified answer supplies fresh, source-bound analysis context');
+if($factual){
+    canvas_pipeline_check(vp3_curiosity_confirmed_v1($pdo,$owner,7,11,[$threadId],'taste')===[]
+        &&vp3_curiosity_confirmed_v1($pdo,$owner,7,11,[$threadId],'goal')===[],
+        'a one-order delivery preference closes the factual gap without becoming a standing taste or requested goal');
+    echo 'CURIOSITY_ATTACHMENT_FACTUAL=PASS ('.($checks-$threadChecks).' assertions, '.($mysql?'mysql':'sqlite').")\n";return;
+}
 canvas_pipeline_check(vp3_curiosity_analysis_schedule_v1($pdo,$owner,$binding)==='queued','an owner answer admits one reassessment');
 $runs=canvas_pipeline_runs('initiative.prepare');$reassess=(int)end($runs)['id'];
 $done=vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($reassess),static function(string $prompt)use($choice):string{

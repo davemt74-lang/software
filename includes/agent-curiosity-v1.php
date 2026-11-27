@@ -562,7 +562,8 @@ function vp3_curiosity_apply_reply_v1(PDO $pdo,array $user,int $agentId,int $con
         $question['state']=$disposition;$question['reply_message_id']=$replyMessageId;$question['reply_hash']=hash('sha256',$raw);
         $thread['questions'][$index]=$question;$thread['updated_at']=$now;$thread['state']=$disposition;
         $actionable=$disposition==='answered'&&vp3_curiosity_answer_is_actionable_v1($answer);
-        if($actionable||($disposition==='answered'&&vp3_curiosity_taste_v1($answer))){
+        // An attachment answer describes this file/order, never a standing personal preference.
+        if($actionable||(!isset($thread['analysis_origin'])&&$disposition==='answered'&&vp3_curiosity_taste_v1($answer))){
             $thread['confirmed'][$actionable?'goal':'taste']=['conversation_id'=>$conversationId,'message_id'=>$replyMessageId,
                 'question_id'=>$questionId,'answer_hash'=>$question['reply_hash']];
         }
@@ -600,6 +601,7 @@ function vp3_curiosity_reply_source_v1(PDO $pdo,array $scope,int $cid,int $mid,s
 
 function vp3_curiosity_confirmed_row_v1(PDO $pdo,array $scope,array $thread,string $kind='goal',bool $honorStop=true,?array $documents=null): ?array
 {
+    if($kind==='taste'&&isset($thread['analysis_origin']))return null;
     if(!vp3_curiosity_thread_source_current_v1($pdo,$scope,$thread,$documents))return null;
     $proof=$thread['confirmed'][$kind]??null;
     if(!is_array($proof)||($honorStop&&in_array($thread['state'],['skipped','deferred'],true)))return null;
