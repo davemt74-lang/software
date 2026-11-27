@@ -5,8 +5,15 @@ require_once __DIR__.'/coding-canvas-store-v1.php';
 
 function vp3_coding_canvas_phone_source_v1(PDO $pdo,array $user,int $agent,int $conversation,string $canvas,int $revision):array
 {
+    // Saved canvases can be opened from another private Chat or a new Chat.
+    // Validate the browsing context independently; the native source reader
+    // verifies the Canvas's actual owner, Agent and original conversation.
+    vp3_phone_agent_workspace_need_v1($conversation>=0);
+    if($conversation>0)vp3_phone_agent_workspace_chat_v1($pdo,(int)$user['id'],$agent,$conversation);
     $source=vp3_phone_agent_workspace_source_v1($pdo,$user,$agent,'canvas',$canvas,time());
-    vp3_phone_agent_workspace_need_v1($source!==null&&$source['conversation_id']===$conversation&&$source['target']['revision']===$revision,409);
+    if($source===null||$source['target']['revision']!==$revision){
+        throw new RuntimeException('This Canvas version changed or is no longer available. Reopen the Canvas before sending it to a phone.',409);
+    }
     return $source;
 }
 /** Main-app session only. A paired native Canvas cannot enumerate or grant other phones. */

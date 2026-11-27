@@ -18,7 +18,7 @@ try{
   const [owner,other]=preparePhoneSite(repo,site,sessions,php);
   const canvas=JSON.parse(execFileSync(php,['-d','session.save_path='+sessions,path.join(repo,'tests/fixtures/phone-agent-paired-http-v1.php'),site],{encoding:'utf8'}));
   const port=await localPort(),baseURL='http://127.0.0.1:'+port;
-  server=spawn(php,['-d','session.save_path='+sessions,'-d','display_errors=0','-S','127.0.0.1:'+port,'-t',site],{stdio:['ignore','ignore','pipe']});
+  server=spawn(php,['-d','session.save_path='+sessions,'-d','display_errors=0','-d','log_errors=1','-d','error_reporting=-1','-S','127.0.0.1:'+port,'-t',site],{stdio:['ignore','ignore','pipe']});
   server.stderr.on('data',b=>{logs+=b;});
   const ready=await request.newContext({baseURL});
   for(let i=0;i<60;i++){try{if((await ready.get('/health.txt')).ok())break;}catch{}await delay(100);}
@@ -38,12 +38,40 @@ try{
   await page.locator('.phone-agent-approval').getByText(/No login is needed/).waitFor();
   assert.equal((await pairedAction({action:'status',device_id:d.id})).state,'approval_required');
   assert.equal((await pairedAction({action:'enroll',device_id:d.id,confirmed:true,expected_revision:0,csrf_token:owner.csrf})).status,401);
-  const targets=ok(await post(main.request,'/api/coding-canvas-v1.php',{action:'phone_targets',csrf_token:owner.csrf,agent_id:0,...canvas}));
+  const browsed={...canvas,conversation_id:9}; // Open an existing Canvas while a different owned Chat is selected.
+  const targets=ok(await post(main.request,'/api/coding-canvas-v1.php',{action:'phone_targets',csrf_token:owner.csrf,agent_id:0,...browsed}));
   assert.deepEqual(targets.phones.map(p=>p.id),[d.id]);assert.equal(targets.phones[0].agent_access.enabled,false);
-  const sent=ok(await post(main.request,'/api/coding-canvas-v1.php',{action:'phone_send',csrf_token:owner.csrf,agent_id:0,...canvas,device_id:d.id,generation:d.generation,expected_revision:0,confirmed:true,request_id:randomUUID()}));
+  const fromNewChat=ok(await post(main.request,'/api/coding-canvas-v1.php',{action:'phone_targets',csrf_token:owner.csrf,agent_id:0,...canvas,conversation_id:0}));
+  assert.deepEqual(fromNewChat.phones.map(p=>p.id),[d.id],'a saved Canvas also lists phones when opened from a new unsaved Chat');
+  const foreignChat=await post(main.request,'/api/coding-canvas-v1.php',{action:'phone_targets',csrf_token:owner.csrf,agent_id:0,...canvas,conversation_id:10});
+  assert.equal(foreignChat.status,403,'a foreign browsing conversation never becomes authority over another owner');
+  const staleVersion=await post(main.request,'/api/coding-canvas-v1.php',{action:'phone_targets',csrf_token:owner.csrf,agent_id:0,...browsed,revision:2});
+  assert.equal(staleVersion.status,409);assert.match(staleVersion.error,/Reopen the Canvas/);
+  const editor=await main.newPage();editor.setDefaultTimeout(12000);
+  await editor.goto('/chat.php?agent=system&conversation_id=9&canvas_id='+canvas.canvas_id);
+  try{await editor.locator('#chatCodingCanvasV1 .vp3-coding-canvas-edit-app').click();}catch(error){console.error('EDITOR',JSON.stringify(await editor.evaluate(()=>({url:location.href,title:document.title,text:document.body.innerText.slice(0,1800),cfg:typeof VP3_CODING_CANVAS_V1,chat:typeof STONEFELLOW_CHAT,thread:!!document.getElementById('chatThread')}))));throw error;}
+  await editor.locator('#chatCodingCanvasV1').getByRole('button',{name:'Send Canvas to Connected Phone',exact:true}).click();
+  const sendDialog=editor.getByRole('dialog',{name:'Send Canvas to Connected Phone',exact:true});
+  const phoneSelect=sendDialog.getByRole('combobox',{name:'Connected phone',exact:true});
+  await phoneSelect.locator('option').filter({hasText:'No-login iPhone'}).waitFor({state:'attached'});
+  assert.equal(await phoneSelect.inputValue(),d.id,'the real editor lists this connected phone from a different Chat');
+  if(process.env.VP3_PHONE_AGENT_SCREENSHOT_DIR){
+    mkdirSync(process.env.VP3_PHONE_AGENT_SCREENSHOT_DIR,{recursive:true});
+    await editor.screenshot({path:path.join(process.env.VP3_PHONE_AGENT_SCREENSHOT_DIR,'canvas-phone-dropdown-fixed.png')});
+  }
+
+  await sendDialog.getByRole('checkbox').check();
+  const sentResponse=editor.waitForResponse(r=>new URL(r.url()).pathname==='/api/coding-canvas-v1.php'&&r.request().postDataJSON()?.action==='phone_send');
+  await sendDialog.getByRole('button',{name:'Send Canvas',exact:true}).click();
+  const response=await sentResponse;const sent=ok({status:response.status(),...await response.json()});
+  await sendDialog.waitFor({state:'hidden'});
+
   await page.locator('.phone-agent-approval').getByRole('button',{name:'Check for approval'}).click();
   const card=page.locator('[data-item="'+sent.phone_delivery.item_ref+'"]');await card.getByText('Phone checklist',{exact:true}).waitFor();
   const s=ok(await pairedAction({action:'status',device_id:d.id}));assert.equal(s.authorization_mode,'paired_device');
+  const detail=ok(await pairedAction({action:'detail',device_id:d.id,item_ref:sent.phone_delivery.item_ref,
+    csrf_token:s.csrf_token,enrollment_revision:s.enrollment_revision,scope_revision:s.scope_revision}));
+  assert.equal(detail.item.conversation_id,canvas.conversation_id,'delivery keeps the Canvas original conversation rather than relabeling it as the browsing Chat');
   await card.getByRole('button',{name:'Open canvas'}).click();
   const native=page.frameLocator('.phone-agent-native-frame');await native.getByRole('heading',{name:'Phone checklist'}).waitFor();
   await native.frameLocator('iframe').getByText('Private saved canvas arrived.',{exact:true}).waitFor();
@@ -77,5 +105,5 @@ try{
   }
   await ready.dispose();
   assert.doesNotMatch(logs,/PHP (?:Fatal error|Warning|Parse error)/);
-  console.log('Phone paired HTTP: visible approval gate, explicit Canvas delivery, actual native viewer without login, main API denial, anonymous session and revocation passed.');
+  console.log('Phone paired HTTP: cross-chat/new-chat phone discovery and delivery, preserved Canvas origin, stale/foreign context denial, native viewer without login and revocation passed.');
 }catch(e){console.error(logs.slice(-5500));throw e;}finally{await browser?.close();server?.kill('SIGTERM');rmSync(temp,{recursive:true,force:true});}
