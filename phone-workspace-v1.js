@@ -7,6 +7,7 @@
   try{if(parent!==window&&parent.location.origin===location.origin&&parent.VP3PhoneWorkspaceV1?.ownerId===Number(config.owner_id)){
     const shared=parent.VP3PhoneWorkspaceV1;
     window.VP3PhoneWorkspaceV1=Object.freeze({ownerId:shared.ownerId,bindMessage:shared.bindMessage,open:shared.open,openHistory:shared.openHistory,openRecordings:shared.openRecordings,
+      openOwnerSetup:shared.openOwnerSetup,openConnectedPhone:shared.openConnectedPhone,close:shared.close,
       operatorDiagnostics:shared.operatorDiagnostics,contextChanged:()=>{},refresh:shared.refresh});
     document.addEventListener('click',event=>{if(event.target.closest?.('[data-phone-workspace-toggle]')){event.preventDefault();shared.open();}});
     window.dispatchEvent(new Event('vp3:phone-workspace-ready'));return;
