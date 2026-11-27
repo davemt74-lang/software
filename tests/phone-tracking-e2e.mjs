@@ -237,7 +237,7 @@ async function verifyTwoPhoneRoutes(baseURL, apiOwner, owner, other) {
 }
 
 async function startWithFreshSensorReading(page, context, reading) {
-  await page.getByRole('tab',{name:'Phone',exact:true}).click();
+  await page.locator('#phone-tab-connection').click();
   const started = page.waitForResponse(response => new URL(response.url()).pathname === phoneEndpoint &&
     response.request().postDataJSON()?.action === 'start');
   await page.locator('#phone-start').click();
@@ -388,7 +388,7 @@ async function browserJourney(baseURL, owner, other) {
     const d=check(await ownerApi(desktop,owner),'communication grant').devices.find(d=>d.id===deviceId);
     return d?.communication?.owner_calls&&d.communication.owner_requests;
   });
-  await phone.getByRole('tab',{name:'Phone',exact:true}).click();
+  await phone.locator('#phone-tab-connection').click();
   const holderForm=phone.locator('#phone-communication-form');
   await holderForm.getByLabel('My personal phone number',{exact:true}).fill('+16025550129');
   await holderForm.getByRole('button',{name:'Save communication preferences',exact:true}).click();
@@ -539,7 +539,7 @@ async function browserJourney(baseURL, owner, other) {
     check(await phoneApi(handset, 'status'), 'phone read').device.location_state === 'requested');
   assert.equal(gpsRequests, 0, 'Pairing and owner request must leave phone geolocation idle');
   assert.equal(await map.locator('#phone-map .phone-map-marker').count(), 0);
-  await phone.getByRole('tab',{name:'Phone',exact:true}).click();
+  await phone.locator('#phone-tab-connection').click();
   await phone.locator('#phone-start').waitFor();
   assert.match(await phone.locator('#phone-owner').innerText(), /Map Operator/);
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'iPhone page must fit its viewport');

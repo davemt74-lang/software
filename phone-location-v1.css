@@ -155,3 +155,6 @@ button.phone-chat-retry { width: auto; min-height: 44px; margin-top: .3rem; colo
 /* Five primary tabs keep their complete labels on narrow installed phones. */
 #phone-location .phone-tabs>[role=tab]{font-size:12px;padding-inline:2px;white-space:nowrap;overflow-wrap:normal}
 @media(max-width:360px){#phone-location .phone-tabs>[role=tab]{font-size:11px}.phone-agent-unread{margin-left:2px;min-width:1rem;padding-inline:1px}}
+
+/* Chat is the landing view; Phone settings stay in the compact header. */
+.phone-settings-button{display:inline-grid;place-items:center;flex:none;width:42px;min-width:42px;height:42px;min-height:42px;margin:0;padding:9px;border:1px solid #cddbd6;border-radius:12px;background:#fff;color:#294b42}.phone-settings-button svg{width:23px;height:23px}.phone-settings-button[aria-expanded="true"]{background:#e6f1eb}.phone-brand-line>div:first-child{margin-right:auto}

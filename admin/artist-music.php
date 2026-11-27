@@ -7,7 +7,9 @@ $user=current_user();$pdo=db();
 if(!$pdo){http_response_code(503);exit('Database unavailable.');}
 if(!music_workspace_resources_v330_schema_ready($pdo)||!artist_music_v185_schema_ready()||!artist_media_v182_schema_ready()){
     http_response_code(503);
-    ?><!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Music Library upgrade required</title></head><body><main><h1>Music Library needs a database upgrade</h1><p>An administrator must complete the VP3 database upgrade before songs can be edited.</p><a href="<?= e(url('/upgrade.php')) ?>">Open database upgrade</a></main></body></html><?php
+    $adminTitle='Music Library upgrade required';require __DIR__.'/_header.php';
+    ?><section class="admin-section"><h2>Music Library needs a database upgrade</h2><p>An administrator must complete the VP3 database upgrade before songs can be edited.</p><a href="<?= e(url('/upgrade.php')) ?>">Open database upgrade</a></section><?php
+    require __DIR__.'/_footer.php';
     exit;
 }
 $isPost=($_SERVER['REQUEST_METHOD']??'GET')==='POST';

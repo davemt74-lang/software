@@ -35,11 +35,11 @@ try{
    return route.fulfill({status:409,json:{ok:false}});
   });
   await page.goto('https://phone-shell.test/phone-location.php');
-  await page.getByRole('tab',{name:'Home',exact:true}).waitFor();
-  assert.equal(await page.locator('#phone-home').isVisible(),true);assert.equal(await page.locator('#phone-dock').isVisible(),false);assert.equal(requests.filter(q=>q.action==='location_checkin'||q.action==='information_list').length,0);
-  await page.locator('#phone-user-menu summary').click();await page.getByRole('button',{name:'Phone settings',exact:true}).waitFor();await page.locator('#phone-user-menu summary').press('Escape');assert.equal(await page.locator('#phone-user-menu').evaluate(e=>e.open),false);
+  await page.getByRole('tab',{name:'Chat',exact:true}).waitFor();
+  assert.equal(await page.locator('#phone-chat').isVisible(),true);assert.equal(await page.locator('#phone-dock').isVisible(),true);assert.equal(requests.filter(q=>q.action==='location_checkin'||q.action==='information_list').length,0);
+  await page.locator('#phone-user-menu summary').click();await page.locator('#phone-user-menu').getByRole('button',{name:'Phone settings',exact:true}).waitFor();await page.locator('#phone-user-menu summary').press('Escape');assert.equal(await page.locator('#phone-user-menu').evaluate(e=>e.open),false);
   await page.getByRole('tab',{name:/^Requests/}).click();await page.getByText('Can you review this?',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Delete request',exact:true}).count(),0,'holder has no owner delete control');
-  await page.getByRole('tab',{name:'Phone',exact:true}).click();
+  await page.locator('#phone-tab-connection').click();
   await assert.match(await page.locator('#phone-push-test-state').textContent(),/worker has not run recently.*Last test:.*was opened/,'current blocker and past success remain visible together');
   await page.getByLabel('Let the Location Specialist learn from this check-in').check();await page.getByRole('button',{name:'Check In Location',exact:true}).click();
   await page.getByText(/Checked in · 1h 1m/).waitFor();assert.equal(requests.filter(q=>q.action==='location_checkin').length,1);
@@ -49,7 +49,7 @@ try{
   device.holder_can_save_places=false;device.holder_place_version++;device.checkins.recent[0].reason='left_area';await page.evaluate(()=>window.dispatchEvent(new Event('online')));await page.getByText(/Automatically checked out after leaving/).waitFor();assert.equal(await page.getByRole('button',{name:'Save this location',exact:true}).isVisible(),false,'revoked saved-location permission removes the action');
   const geometry=await page.evaluate(()=>({width:innerWidth,body:document.documentElement.scrollWidth,bottom:document.getElementById('phone-location').getBoundingClientRect().bottom,height:innerHeight,nested:[...document.querySelectorAll('#phone-connection *')].filter(n=>['auto','scroll'].includes(getComputedStyle(n).overflowY)&&n.scrollHeight>n.clientHeight+2).map(n=>n.id)}));
   assert.ok(geometry.body<=geometry.width+1,JSON.stringify(geometry));assert.ok(geometry.bottom<=geometry.height+2,JSON.stringify(geometry));assert.deepEqual(geometry.nested,[]);
-  if(process.env.VP3_PHONE_SCREENSHOTS){mkdirSync(process.env.VP3_PHONE_SCREENSHOTS,{recursive:true});await page.screenshot({path:process.env.VP3_PHONE_SCREENSHOTS+'/phone-location-checkins-'+width+'.png'});await page.getByRole('tab',{name:'Home',exact:true}).click();await page.screenshot({path:process.env.VP3_PHONE_SCREENSHOTS+'/phone-home-'+width+'.png'});}
+  if(process.env.VP3_PHONE_SCREENSHOTS){mkdirSync(process.env.VP3_PHONE_SCREENSHOTS,{recursive:true});await page.screenshot({path:process.env.VP3_PHONE_SCREENSHOTS+'/phone-location-checkins-'+width+'.png'});await page.getByRole('tab',{name:'Chat',exact:true}).click();await page.screenshot({path:process.env.VP3_PHONE_SCREENSHOTS+'/phone-chat-'+width+'.png'});}
   assert.deepEqual(errors,[]);await page.close();console.log('PASS Phone shell, Requests, location check-in/checkout, and permission-scoped saved place at '+width+'px');
  }
 }finally{await browser.close();}

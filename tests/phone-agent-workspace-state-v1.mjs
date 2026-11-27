@@ -24,7 +24,7 @@ delete envelope.agent_id;
 const page={...envelope,items:[row],counts:{unread:1,needs_action:1,complete:true},has_more:false,next_cursor:null};
 
 equal(contract.status(status,device).counts,null,'Status does not invent counts before source discovery.');
-equal(contract.status({...status,counts:{unread:3,needs_action:1,complete:false}},device).counts,{unread:3,needs_action:1,complete:false});
+equal(contract.status({...status,counts:{unread:3,needs_action:1,complete:false}},device).counts,{unread:3,needs_action:1,new_canvases:0,complete:false});
 for(const change of [{owner_eligible:false},{enrolled:false},{csrf_token:''},{scope_revision:null},{revision:3},{device_id:'e'.repeat(32)},
   {agent:{id:-1,name:'Wrong'}},{state:'ready',agents:[{id:0,name:'Main'},{id:0,name:'Duplicate'}]}]){
   rejects(()=>contract.status({...status,...change},device),'Malformed ready status cannot grant owner access.');

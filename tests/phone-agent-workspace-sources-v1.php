@@ -389,6 +389,7 @@ try{
     $paired=vp3_phone_agent_workspace_request_v1($pdo,null,$token,['action'=>'status','device_id'=>$deviceId],$clock+31);
     pas_check($paired['state']==='ready'&&$paired['authorization_mode']==='paired_device'&&!isset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']),
         'actual native sources are available through approved pairing without manufacturing a main-app session');
+    require __DIR__.'/fixtures/phone-inbox-canvases-v1.php';
 
     // The wrapper's earlier authorization cannot outlive owner-mode revocation at the actual canonical send boundary.
     $sendDraft=pas_draft();$sendSource=$read('gmail_draft',$sendDraft['id']);

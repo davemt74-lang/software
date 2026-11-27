@@ -39,10 +39,13 @@ function native_click_fixture_v1(): array
 
 function native_click_fixture_query_v1(string $key,int $cid,int $priorBuckets=0,string $placement='profile_agent'): array
 {
+    // Keep fixture issuances stable when MySQL lock tests cross a real 15-minute
+    // boundary. Relative buckets must stay distinct from the first accepted link.
+    static $issuances=[];
     parse_str((string)parse_url((string)profile_product_promotion_click_url_v1(['key'=>$key],$placement,$cid),PHP_URL_QUERY),$query);
-    if($priorBuckets>0){
-        $query['expires']=(string)((int)$query['expires']-$priorBuckets*VP3_PROMOTION_CLICK_LINK_BUCKET_V1);
-        $query['proof']=hash_hmac('sha256',profile_product_promotion_click_payload_v1($key,$placement,$cid,(int)$query['expires']),$_SESSION['vp3_promotion_click_secret_v1']);
-    }
+    $binding=$key.':'.$placement.':'.$cid;
+    $issuances[$binding]??=(int)$query['expires'];
+    $query['expires']=(string)($issuances[$binding]-$priorBuckets*VP3_PROMOTION_CLICK_LINK_BUCKET_V1);
+    $query['proof']=hash_hmac('sha256',profile_product_promotion_click_payload_v1($key,$placement,$cid,(int)$query['expires']),$_SESSION['vp3_promotion_click_secret_v1']);
     return $query;
 }

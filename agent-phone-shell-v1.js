@@ -62,7 +62,7 @@
   }
   function addPhoneButtons(){if(!window.VP3_PHONE_WORKSPACE_V1)return;
     const hosts=[...document.querySelectorAll('.admin-page-actions,.admin-mobile-bar,.site-header .header-right')];
-    if(!hosts.length&&!document.querySelector('[data-phone-workspace-toggle]'))hosts.push(document.body);
+    if(!cfg.admin_surface&&!hosts.length&&!document.querySelector('[data-phone-workspace-toggle]'))hosts.push(document.body);
     for(const host of hosts){
       if(host.querySelector('[data-phone-workspace-toggle]'))continue;const b=make('button');b.type='button';b.className='vp3-personal-phone-button';b.dataset.phoneWorkspaceToggle='';b.setAttribute('aria-label','Phone');b.setAttribute('aria-expanded','false');b.setAttribute('aria-controls','vp3PhoneWorkspace');
       b.innerHTML='<svg viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M7 3H4a1 1 0 0 0-1 1c0 9.4 7.6 17 17 17a1 1 0 0 0 1-1v-3l-5-2-2 2a13 13 0 0 1-7-7l2-2-2-5Z"/></svg>';host.prepend(b);

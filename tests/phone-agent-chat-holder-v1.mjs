@@ -91,18 +91,20 @@ try {
   device.status = 'approved';
   device.allow_location = true;
   const wake = () => page.evaluate(() => window.dispatchEvent(new Event('online')));
-  const connection = page.getByRole('tab',{name:'Phone',exact:true});
+  const connection = page.locator('#phone-tab-connection');
   const chat = page.getByRole('tab',{name:'Chat',exact:true});
   const invitation = page.locator('#phone-camera');
   await wake();
   await connection.waitFor();
-  assert.equal(await page.getByRole('tab',{name:'Home',exact:true}).getAttribute('aria-selected'),'true');
-  assert.equal(await page.locator('#phone-chat-form').isVisible(),false);
-  assert.equal(chatReads,0,'the Connection tab does not request the private transcript');
+  assert.equal(await chat.getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#phone-chat-form').isVisible(),true);
+  await page.waitForFunction(()=>document.getElementById('phone-chat-transcript')?.textContent?.includes('No messages')||document.getElementById('phone-chat-empty')?.hidden===false);
+  assert.ok(chatReads>0,'Chat landing loads the paired phone’s own transcript.');
+  const landingReads=chatReads;
   await page.locator('#phone-user-menu summary').click();await page.locator('#phone-tab-info').click();
   await page.locator('#phone-info-title').waitFor();
   assert.equal(await page.locator('#phone-chat-form').isVisible(),false,'Info does not need the composer');
-  assert.equal(chatReads,0,'Info guide never requests private Chat');
+  assert.equal(chatReads,landingReads,'Opening Info does not request additional private Chat.');
   assert.equal(await page.locator('#phone-guide-notification-state').textContent(),'Background notifications are not enabled yet.');
   // Synthetic browser API only. Never request actual browser/OS permission or contact a provider.
   await page.evaluate(({publicKey,pushSub})=>{
@@ -154,7 +156,7 @@ try {
   assert.deepEqual(pushActions,['push_register','push_test','push_disable']);
   assert.equal(await page.evaluate(()=>window.phonePushFixture.unsubscribed),1);
   assert.equal(await page.evaluate(()=>Object.values(localStorage).some(s=>s.includes('Qsynthetic-notification-fixture'))||Object.values(sessionStorage).some(s=>s.includes('Qsynthetic-notification-fixture'))),false);
-  assert.equal(await connection.getAttribute('aria-selected'),'true');
+  assert.equal(await connection.getAttribute('aria-expanded'),'true');
   assert.equal(await page.locator('#phone-chat-form').isVisible(),false);
   // Safari pans its visual viewport independently while focusing and closing the keyboard.
   // Offsetting the page by this value used to leave the top of the phone screen blank.
@@ -170,7 +172,7 @@ try {
   await invitation.getByRole('button',{name:'Decline'}).click();
   await page.getByRole('button',{name:'Dismiss camera message'}).click();
   await invitation.waitFor({state:'hidden'});
-  assert.equal(await connection.getAttribute('aria-selected'),'true','incoming requests work on Connection');
+  assert.equal(await connection.getAttribute('aria-expanded'),'true','incoming requests work on Connection');
   await chat.click();
   const apps = page.getByRole('button',{name:'Phone apps'});
   await apps.click();
@@ -207,9 +209,9 @@ try {
   turns.push({request_id:'old-auto-turn',message:'What about earlier?',state:'replied',
     reply:'Previous agent message.',owner_reply:'A personal follow-up.'});
   await connection.click();
-  await page.getByRole('tab',{name:'Home',exact:true}).focus();await page.getByRole('tab',{name:'Home',exact:true}).press('ArrowRight');
+  await chat.focus();await chat.press('ArrowRight');
   assert.equal(await page.locator('#phone-tab-agent').getAttribute('aria-selected'),'true','keyboard navigation includes the visible AGENT approval tab');
-  await page.locator('#phone-tab-agent').press('ArrowRight');
+  await page.locator('#phone-tab-agent').press('ArrowLeft');
   await page.getByText('A personal follow-up.').waitFor();
   const historic = page.locator('[data-request="old-auto-turn"]');
   assert.deepEqual(await historic.locator('small').allTextContents(),['You','Agent','Owner']);
@@ -231,11 +233,13 @@ try {
   await page.setViewportSize({width:375,height:550});
   await chat.focus();
   await chat.press('Home');
-  assert.equal(await page.getByRole('tab',{name:'Home',exact:true}).getAttribute('aria-selected'),'true');
-  assert.equal(await input.isVisible(),false);
+  assert.equal(await chat.getAttribute('aria-selected'),'true');
+  assert.equal(await input.isVisible(),true);
   assert.equal(await input.inputValue(),'Unsent chat draft');
-  await connection.press('End');
-  assert.equal(await connection.getAttribute('aria-selected'),'true');
+  await chat.press('End');
+  assert.equal(await page.getByRole('tab',{name:/^Requests/}).getAttribute('aria-selected'),'true');
+  await connection.click();
+  assert.equal(await connection.getAttribute('aria-expanded'),'true');
   await page.locator('#phone-user-menu summary').click();const info=page.locator('#phone-tab-info');await info.click();
   assert.equal(await page.locator('#phone-info').isVisible(),true);
   await chat.click();
@@ -280,11 +284,11 @@ try {
   assert.equal(await page.locator('.phone-information-item').count(),2,'only the notified card receives focus within the current inbox');
   await page.goto('https://phone.test/phone-location.php?push_event='+pushRefs.test);
   await page.getByText('Notification opened in VP3 Phone.',{exact:true}).waitFor();
-  assert.equal(await connection.getAttribute('aria-selected'),'true');
+  assert.equal(await connection.getAttribute('aria-expanded'),'true');
   const readsBeforeUnavailable=chatReads;
   await page.goto('https://phone.test/phone-location.php?push_event='+pushRefs.stale);
   await page.getByText('This notification is no longer available. Review the current connection in VP3 Phone.',{exact:true}).waitFor();
-  assert.equal(await connection.getAttribute('aria-selected'),'true','an unavailable notification opens Phone settings');
+  assert.equal(await connection.getAttribute('aria-expanded'),'true','an unavailable notification opens Phone settings');
   assert.equal(await page.locator('#phone-chat-form').isVisible(),false);
   assert.equal(await page.locator('.phone-bubble').count(),0);
   assert.equal(chatReads,readsBeforeUnavailable,'a stale tap never requests private Chat');

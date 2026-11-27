@@ -55,7 +55,7 @@ async function sendFromFooter(phone,message) {
   }
   phone.page=await phone.context.newPage();
   await phone.page.goto('/phone-location.php');
-  const home=phone.page.getByRole('tab',{name:'Home',exact:true});
+  const home=phone.page.getByRole('tab',{name:'Chat',exact:true});
   await home.waitFor();
   assert.equal(await home.getAttribute('aria-selected'),'true');
   const chatTab=phone.page.getByRole('tab',{name:'Chat',exact:true});

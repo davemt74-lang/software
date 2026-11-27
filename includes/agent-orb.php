@@ -1,9 +1,10 @@
 <?php
 declare(strict_types=1);
 $orbUser=current_user();
-if(vp3_agent_shell_admin_page_v1())return;
+if(preg_match('~(?:^|/)admin(?:/|$)~',(string)($_SERVER['SCRIPT_NAME']??'')))return;
 if(!$orbUser||!has_permission('chat.access',$orbUser)||!empty($GLOBALS['VP3_AGENT_ORB_RENDERED']))return;
 $GLOBALS['VP3_AGENT_ORB_RENDERED']=true;
+require_once __DIR__.'/phone-workspace-ui-v1.php';
 // Also covers admin/public member pages that do not use member-header.php.
 echo vp3_phone_workspace_runtime_v1($orbUser);
 if(!in_array(basename((string)($_SERVER['SCRIPT_NAME']??'')),['chat.php','chat-legacy-v108.php'],true)){

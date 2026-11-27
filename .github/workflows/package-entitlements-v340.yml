@@ -411,6 +411,7 @@ jobs:
         run: |
           node tests/agent-phone-shell-browser-v1.mjs
           node tests/member-transcriptions-browser-v1.mjs
+          node tests/admin-standard-header-browser-v1.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

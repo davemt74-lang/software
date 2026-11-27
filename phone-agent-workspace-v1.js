@@ -15,7 +15,8 @@
   const check = (ok,message='The Agent workspace response could not be verified.') => {if(!ok){const error=new Error(message);error.code='invalid_workspace_response';throw error;}};
   const counts = value => {
     check(isObject(value)&&integer(value.unread)&&integer(value.needs_action)&&typeof value.complete==='boolean');
-    return {unread:value.unread,needs_action:value.needs_action,complete:value.complete};
+    check(value.new_canvases===undefined||integer(value.new_canvases));
+    return {unread:value.unread,needs_action:value.needs_action,new_canvases:value.new_canvases??0,complete:value.complete};
   };
   function target(value,kind,agentId){
     check(isObject(value)&&integer(value.agent_id)&&value.agent_id===agentId&&integer(value.conversation_id,1));
@@ -118,7 +119,7 @@
     const make=(tag,value='',className='')=>{const node=document.createElement(tag);node.textContent=value;if(className)node.className=className;return node;};
     const button=(label,handler,className='')=>{const node=make('button',label,className);node.type='button';node.addEventListener('click',event=>{if(event.isTrusted)void handler(event);});return node;};
     const enrollmentContent=make('div');
-    const head=make('header','','phone-agent-head'),heading=make('h1','Your Agent'),sub=make('p','Results and decisions, brought to you.','phone-agent-subtitle');
+    const head=make('header','','phone-agent-head'),heading=make('h1','Inbox'),sub=make('p','Results and decisions, brought to you.','phone-agent-subtitle');
     const title=make('div');title.append(heading,sub);const headControls=make('div','','phone-agent-head-controls');
     headControls.append(button('Refresh',async()=>{await refreshStatus(true);if(live())void loadFeed();}),button('Settings',()=>shell.openConnection()));head.append(title,headControls);
     const filterBar=make('nav','','phone-agent-filters');filterBar.setAttribute('aria-label','Filter Agent results');
@@ -134,7 +135,7 @@
     const feed=make('div');feed.append(head,callBanner,filterBar,list,empty,more);
     const detailHost=make('div','','phone-agent-detail');detailHost.hidden=true;
     const gate=make('section','','phone-agent-approval');
-    gate.append(make('h1','AGENT'),make('p','Email drafts, custom canvases, images and private Agent results arrive here.'));
+    gate.append(make('h1','Inbox'),make('p','Email drafts, custom canvases, images and private Agent results arrive here.'));
     const gateStatus=make('p');gateStatus.setAttribute('role','status');
     gate.append(gateStatus,button('Check for approval',()=>refreshStatus(true),'secondary'));
     host.append(gate,feedback,feed,detailHost);
@@ -142,10 +143,10 @@
     function live(){return reachable&&device?.status==='approved'&&owner?.state==='ready'&&scope!==null&&!document.hidden;}
     function captured(){return {fence:model.capture(),device:device?.id,scope};}
     function current(value){return value.device===device?.id&&value.scope===scope&&model.current(value.fence);}
-    function setCounts(value){if(owner)owner.counts=value;shell.setAgent({enabled:owner?.state==='ready',unread:value.unread,countsComplete:value.complete});sub.textContent=value.complete
+    function setCounts(value){if(owner)owner.counts=value;shell.setAgent({enabled:owner?.state==='ready',unread:value.new_canvases??0,countsComplete:value.complete});sub.textContent=value.complete
       ? value.needs_action>0?value.needs_action+' '+(value.needs_action===1?'item needs':'items need')+' you.':'Results and decisions, brought to you.'
       :'Recent results and decisions. More may be available.';}
-    function closeNative(){nativeController?.abort();nativeController=null;try{native?.close?.();}catch{}native=null;panel.classList.remove('phone-agent-native');}
+    function closeNative(){nativeController?.abort();nativeController=null;try{native?.close?.();}catch{}native=null;panel.classList.remove('phone-agent-native');root.classList.remove('phone-canvas-open');}
     function disposeCalls(){
       callSerial++;callLoading=false;callAt=0;callRefreshPending=false;callClient?.dispose();callClient=null;
       callSettings?.dispose();callSettings=null;callSettingsHost?.remove();callSettingsHost=null;callState?.clear();callBanner.replaceChildren();callBanner.hidden=true;
@@ -288,13 +289,19 @@
       const capture=captured(),serial=++listSerial,cursor=append?nextCursor:null,filter=selected;loading=true;controls();
       if(!silent)message(append?'Loading more results…':'Checking your Agent’s results…');
       try{
-        const result=page(await api('feed',{filter,limit:10,...(cursor?{cursor}:{})},capture),capture.scope);
+        const result=page(await api('feed',{filter,limit:10,visit:visible&&!opened,...(cursor?{cursor}:{})},capture),capture.scope);
         if(!current(capture)||serial!==listSerial||filter!==selected)return false;
         const received=result.items.map(row=>model.merge(row));
         if(append){const values=new Map(rows.map(row=>[row.item_ref,row]));for(const row of received)values.set(row.item_ref,row);rows=[...values.values()];}else rows=received;
         nextCursor=result.next_cursor;hasMore=result.has_more;setCounts(result.counts);if(!silent)message('');callRefreshPending=true;return true;
       }catch(error){failure(error,capture);return false;}
       finally{if(current(capture)&&serial===listSerial){loading=false;renderFeed();if(callRefreshPending){callRefreshPending=false;void refreshCalls(true);}}}
+    }
+    let badgeLoading=false;
+    async function refreshBadge(){
+      if(!live()||visible||badgeLoading)return;const capture=captured();badgeLoading=true;
+      try{const result=page(await api('feed',{filter:'all',limit:1},capture),capture.scope);if(current(capture)&&!visible)setCounts(result.counts);}
+      catch(error){failure(error,capture);}finally{badgeLoading=false;}
     }
     async function canClose(){
       if(native?.canClose)return (await native.canClose())!==false;
@@ -354,7 +361,7 @@
         const value=detail(await api('detail',{item_ref:ref},capture),capture.scope);
         if(!current(capture)||serial!==detailSerial)return false;
         const sourceRevision=value.item.source_revision;value.item=model.merge(value.item);check(value.item.item_ref===ref&&value.item.source_revision===sourceRevision);
-        opened=value;const top=make('div','','phone-agent-detail-top');top.append(button('← Back to results',back,'phone-agent-back'));
+        opened=value;const top=make('div','','phone-agent-detail-top');top.append(button('← Back to Inbox',back,'phone-agent-back'));
         if(['gmail_draft','gmail_attention'].includes(value.item.source_kind)){
           const progress=make('p','','phone-agent-email-call-status');progress.dataset.emailCallDetail='true';progress.hidden=true;top.append(progress);
         }
@@ -368,6 +375,7 @@
         }else{
           check(typeof window.VP3PhoneAgentMediaV1?.open==='function','The private viewer is unavailable. Refresh the app to try again.');
           panel.classList.add('phone-agent-native');const body=make('div','','phone-agent-native-host');detailHost.append(body,detailActions(row));
+          if(row.source_kind==='canvas')root.classList.add('phone-canvas-open');
           nativeController=new AbortController();const openedController=nativeController;
           const controller=await window.VP3PhoneAgentMediaV1.open({host:body,item:row,detail:value.detail,scope:{...capture.scope},signal:openedController.signal,
             onChanged:()=>void sourceChanged(ref,capture),onBack:()=>void back(),discuss:()=>void discuss(ref)});
@@ -408,7 +416,7 @@
     }
     function renderEnrollment(note=''){
       gate.hidden=owner?.state==='ready';
-      if(!gate.hidden){feed.hidden=true;gateStatus.textContent=reachable?'In the main app, open Phone Tracking, select this phone, then Permissions → Allow AGENT. No login is needed on this phone.':'Reconnect to check AGENT approval.';}
+      if(!gate.hidden){feed.hidden=true;gateStatus.textContent=reachable?'In the main app, open Phone Tracking, select this phone, then Permissions → Allow Inbox access. No login is needed on this phone.':'Reconnect to check Inbox approval.';}
       enrollment.hidden=!device||device.status!=='approved';if(enrollment.hidden)return;
       const signature=JSON.stringify([device.id,reachable,owner?.state,owner?.revision,owner?.scope_revision,owner?.agents,owner?.preferences,writing,note]);
       if(signature===settingsSignature)return;settingsSignature=signature;
@@ -418,7 +426,7 @@
       if(note)enrollmentContent.append(make('p',note,'phone-agent-feedback'));
       if(!reachable){enrollmentContent.append(make('p','Reconnect to check your private Agent workspace.'));return;}
       if(!owner){enrollmentContent.append(make('p','Check whether this phone can receive your private Agent results.'),button('Check Agent access',()=>refreshStatus(true),'secondary'));return;}
-      if(owner.state==='approval_required'){enrollmentContent.append(make('p','Approve AGENT access for this phone in the main app’s Phone Tracking permissions. You do not need to sign in on the phone.'),button('Check for approval',()=>refreshStatus(true),'secondary'));return;}
+      if(owner.state==='approval_required'){enrollmentContent.append(make('p','Approve Inbox access for this phone in the main app’s Phone Tracking permissions. You do not need to sign in on the phone.'),button('Check for approval',()=>refreshStatus(true),'secondary'));return;}
       if(owner.state==='sign_in_required'){
         enrollmentContent.append(make('p','Sign in as the account owner to receive your private Agent results and review email on this phone.'));
         const link=make('a','Sign in to your account');const url=new URL('login.php',location.href);url.searchParams.set('return_to',new URL('phone-location.php',location.href).pathname);link.href=url.href;
@@ -426,7 +434,7 @@
       }
       if(!owner.owner_eligible||owner.state==='unavailable'){enrollmentContent.append(make('p','Private Agent access is unavailable for this connection. Your existing phone features are still available.'),button('Check again',()=>refreshStatus(true),'secondary'));return;}
       if(owner.authorization_mode==='paired_device'){
-        enrollmentContent.append(make('p','AGENT access was approved from the main app. No phone login is required.'),button('Open Agent',()=>shell.openAgent(),'secondary'));
+        enrollmentContent.append(make('p','Inbox access was approved from the main app. No phone login is required.'),button('Open Inbox',()=>shell.openAgent(),'secondary'));
         const label=make('label'),toggle=make('input');toggle.type='checkbox';toggle.checked=owner.preferences.notifications_enabled;
         label.append(toggle,make('span','Notify this phone about new Agent items.'));toggle.addEventListener('change',e=>{if(e.isTrusted)void changeEnrollment('preferences',{notifications_enabled:toggle.checked});});
         enrollmentContent.append(label,button('Remove Agent access',()=>changeEnrollment('revoke',{}),'text-button'));return;
@@ -435,9 +443,9 @@
       for(const candidate of owner.agents){const option=make('option',candidate.name);option.value=String(candidate.id);select.append(option);}
       select.value=String(owner.agent?.id??0);const field=make('label','','phone-agent-setting');field.append(make('span','Main Agent'),select);enrollmentContent.append(field);
       if(owner.state==='ready'){
-        enrollmentContent.append(make('p','Your private Agent results and email decisions are available in the Agent tab.'));
+        enrollmentContent.append(make('p','Your private Agent results and email decisions are available in Inbox.'));
         const actions=make('div','','phone-agent-enrollment-actions');actions.append(button('Use selected Agent',()=>changeEnrollment('select_agent',{agent_id:Number(select.value)}),'secondary'),
-          button('Open Agent',()=>shell.openAgent(),'secondary'));enrollmentContent.append(actions);
+          button('Open Inbox',()=>shell.openAgent(),'secondary'));enrollmentContent.append(actions);
         const label=make('label'),toggle=make('input');toggle.type='checkbox';toggle.checked=owner.preferences.notifications_enabled;
         label.append(toggle,make('span','Notify this phone about new Agent items. Phone notification permission is managed in Phone.'));
         toggle.addEventListener('change',event=>{if(event.isTrusted)void changeEnrollment('preferences',{notifications_enabled:toggle.checked});});enrollmentContent.append(label,
@@ -458,9 +466,10 @@
       const changed=!next||!scope||scope.device_id!==next.device_id||scope.scope_revision!==next.scope_revision||scope.enrollment_revision!==next.enrollment_revision;
       if(changed)clearPrivate();value.counts=value.counts||(!changed&&previousCounts)||{unread:0,needs_action:0,complete:false};owner=value;
       if(next){gate.hidden=true;feed.hidden=Boolean(opened);scope=changed?next:Object.assign(scope,next);model.bind([next.device_id,next.enrollment_revision,next.scope_revision].join('/'));heading.textContent=value.agent.name||'Your Agent';
-        setCounts(value.counts);shell.setAgent({enabled:true,unread:value.counts.unread,countsComplete:value.counts.complete,defaultView:true});setupCalls();}
+        setCounts(value.counts);shell.setAgent({enabled:true,unread:value.counts.new_canvases??0,countsComplete:value.counts.complete,defaultView:true});setupCalls();}
       settingsSignature='';renderEnrollment();
       if(next&&visible&&!opened&&(!rows.length||changed))void loadFeed();
+      if(next&&!visible)void refreshBadge();
       else if(next&&visible&&opened)void auditOpenSource();
       if(next)void refreshCalls();
       if(next&&pendingNotification){const ref=pendingNotification;pendingNotification=null;void shell.openAgent().then(ok=>{if(ok)void openItem(ref,{notification:true});});}
@@ -487,7 +496,7 @@
       enrollment.hidden=!device;if(!device)return;
       renderEnrollment();controls();if(reachable)void refreshStatus(!wasReachable||changed);
     }
-    function setVisible(value){visible=value===true;if(visible){void refreshStatus();if(live()&&!opened&&!rows.length)void loadFeed();}void refreshCalls();}
+    function setVisible(value){visible=value===true;if(visible){void refreshStatus();if(live()&&!opened)void loadFeed(false,{silent:rows.length>0});}void refreshCalls();}
     async function openNotification(ref){
       if(!reference(ref))return false;pendingNotification=ref;
       if(live()){pendingNotification=null;if(await shell.openAgent())return openItem(ref,{notification:true});return false;}

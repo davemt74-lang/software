@@ -6,13 +6,15 @@ window.VP3PhoneAgentChat = function (request, apps) {
   const form = get('chat-form'), input = get('chat-input'), send = get('chat-send');
   const toggle = get('apps-toggle'), menu = get('apps'), notice = get('chat-status');
   const main = get('location');
+  const chatLanding=main?.dataset.chatLanding==='1';
   const history = get('chat-history'), empty = get('chat-empty'), tabs = get('tabs');
   const connection = get('connection'), info = get('info'), connectionTab = get('tab-connection'), chatTab = get('tab-chat'), infoTab = get('tab-info');
   const agent = get('agent'), agentTab = get('tab-agent'), agentUnread = get('agent-unread');
   const home=get('home'),requests=get('requests');
-  const tabItems = [['home',get('tab-home'),home],['agent',agentTab,agent],['chat',chatTab,chat],['requests',get('tab-requests'),requests],['connection',connectionTab,connection],
-    ...(!home&&infoTab?[['info',infoTab,info]]:[])].filter(([,tab,panel])=>tab&&panel);
+  const tabItems = [['home',get('tab-home'),home],['chat',chatTab,chat],['agent',agentTab,agent],['requests',get('tab-requests'),requests],['connection',connectionTab,connection],
+    ...(!home&&infoTab?.getAttribute('role')==='tab'?[['info',infoTab,info]]:[])].filter(([,tab,panel])=>tab&&panel);
   let selectedTab = 'connection';
+  let pushLandingPending = new URL(location.href).searchParams.has('push_event');
   let agentEnabled = false, navigated = false, navigationVersion = 0;
   let deviceId = null, online = false, generation = 0, nextPoll = 0, polling = false;
   let turns = [], outgoing = null, sending = false, lastTranscript = '';
@@ -36,7 +38,8 @@ window.VP3PhoneAgentChat = function (request, apps) {
     selectedTab=view;
     for(const [key,tab,panel] of tabItems){
       const active=key===view;panel.hidden=!active;
-      tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;
+      if(tab.getAttribute('role')==='tab'){tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;}
+      else tab.setAttribute('aria-expanded',String(active));
     }
     info.hidden=view!=='info';
     if(deviceId)main.dataset.tab=view;
@@ -63,15 +66,15 @@ window.VP3PhoneAgentChat = function (request, apps) {
   }
   for(const [key,tab] of tabItems)tab.addEventListener('click',()=>void navigateTab(key));
   async function openGuide(){if(await navigateTab('info'))get('info-title').focus({preventScroll:true});}
-  if(home&&infoTab)infoTab.addEventListener('click',openGuide);
+  if(infoTab&&!tabItems.some(([key])=>key==='info'))infoTab.addEventListener('click',openGuide);
   for(const id of ['setup-guide','footer-guide'])get(id).addEventListener('click',openGuide);
   get('info-back').addEventListener('click',async()=>{
-    if(await navigateTab(deviceId&&home?'home':'connection'))(deviceId?(get('tab-home')||connectionTab):get('setup-guide')).focus({preventScroll:true});
+    if(await navigateTab(deviceId?(chatLanding?'chat':home?'home':'connection'):'connection'))(deviceId?(chatLanding?chatTab:get('tab-home')||connectionTab):get('setup-guide')).focus({preventScroll:true});
   });
   tabs.addEventListener('keydown',event=>{
     if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
     event.preventDefault();
-    const visible=tabItems.filter(([,tab])=>!tab.hidden);
+    const visible=tabItems.filter(([,tab])=>!tab.hidden&&tab.getAttribute('role')==='tab');
     let index=visible.findIndex(([,tab])=>tab===event.target);
     if(index<0)index=visible.findIndex(([key])=>key===selectedTab);
     const next=event.key==='Home'?0:event.key==='End'?visible.length-1:(index+(event.key==='ArrowRight'?1:-1)+visible.length)%visible.length;
@@ -289,13 +292,16 @@ window.VP3PhoneAgentChat = function (request, apps) {
       empty.hidden = false;
       tabs.hidden = !id;
       if(agentTab)agentTab.hidden=!id;
+      if(connectionTab.getAttribute('role')!=='tab')connectionTab.hidden=!id;
       dock.hidden = !id;
       if (id) connection.setAttribute('role','tabpanel');
       else connection.removeAttribute('role');
       connection.setAttribute('aria-labelledby',id ? connectionTab.id : 'phone-label');
-      info.setAttribute('role',home?'region':id?'tabpanel':'region');info.setAttribute('aria-labelledby',home?'phone-info-title':id?infoTab.id:'phone-info-title');
+      info.setAttribute('role',chatLanding||home?'region':id?'tabpanel':'region');info.setAttribute('aria-labelledby',chatLanding||home?'phone-info-title':id?infoTab.id:'phone-info-title');
       get('setup-help').hidden=Boolean(id);
-      selectTab(id&&home?'home':'connection');
+      // Resolve notification targets before Chat landing can load a transcript.
+      selectTab(id?(chatLanding&&!pushLandingPending?'chat':home?'home':'connection'):'connection');
+      if(id)pushLandingPending=false;
       lastTranscript = '';
       status('');
     }
@@ -317,13 +323,13 @@ window.VP3PhoneAgentChat = function (request, apps) {
   }
   function setAgent({enabled=false,unread=0,countsComplete=true,defaultView=false}={}){
     agentEnabled=enabled===true&&Boolean(deviceId)&&Boolean(agentTab);
-    if(agentTab){agentTab.hidden=!deviceId;agentTab.setAttribute('aria-label',unread>0?'Agent, '+(countsComplete?'':'at least ')+unread+' unread':'Agent');}
+    if(agentTab){agentTab.hidden=!deviceId;agentTab.setAttribute('aria-label',unread>0?'Inbox, '+(countsComplete?'':'at least ')+unread+' new '+(unread===1?'canvas':'canvases'):'Inbox');}
     if(agentUnread){agentUnread.hidden=!agentEnabled||!Number.isSafeInteger(unread)||unread<1;agentUnread.textContent=unread>99?'99+':String(unread)+(countsComplete?'':'+');}
     if(agentEnabled)main.dataset.agentReady='true';else delete main.dataset.agentReady;
     if(!deviceId&&selectedTab==='agent'){navigationVersion++;selectTab('connection');}
-    else if(agentEnabled&&defaultView&&!navigated&&['home','connection'].includes(selectedTab))selectTab('agent');
+    else if(!chatLanding&&agentEnabled&&defaultView&&!navigated&&['home','connection'].includes(selectedTab))selectTab('agent');
   }
   return {bind,setAgent,selectedTab:()=>selectedTab,openAgent:()=>navigateTab('agent'),openInfo:openGuide,
-    openHome:()=>navigateTab(home?'home':'connection'),openRequests:()=>navigateTab(requests?'requests':'connection'),
+    openHome:()=>navigateTab(chatLanding?'chat':home?'home':'connection'),openRequests:()=>navigateTab(requests?'requests':'connection'),
     openChat:()=>navigateTab('chat'),openConnection:()=>navigateTab('connection'),openNotification};
 };

@@ -23,7 +23,12 @@ if ($adminCrmVisible && function_exists('crm_v180_schema_ready') && crm_v180_sch
     try { $adminCrmNew = (int)db()->query("SELECT COUNT(*) FROM crm_leads WHERE stage='new'")->fetchColumn(); } catch (Throwable $e) {}
 }
 $isArtistAdmin = user_has_role('artist', $user);
-$adminUserMenuLinks = member_navigation_menu_links($user);
+$adminUserMenuLinks=[];
+if(has_permission('account.access',$user))$adminUserMenuLinks[]=['label'=>'Account settings','url'=>url('/account.php'),'group'=>'account'];
+if(has_permission('admin.access',$user))$adminUserMenuLinks[]=['label'=>'Admin dashboard','url'=>url('/admin/index.php'),'group'=>'admin'];
+if(has_permission('users.manage',$user))$adminUserMenuLinks[]=['label'=>'Users and access','url'=>url('/admin/users.php'),'group'=>'admin'];
+if(has_permission('ai.manage',$user))$adminUserMenuLinks[]=['label'=>'AI and API settings','url'=>url('/admin/ai.php'),'group'=>'admin'];
+$adminUserMenuLinks[]=['label'=>'Sign out','url'=>url('/logout.php'),'group'=>'session','danger'=>true];
 ?>
 <!doctype html>
 <html lang="en">
@@ -35,22 +40,13 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
 <link rel="stylesheet" href="<?= e(url('/admin/admin.css?v=79')) ?>">
 <link data-admin-tech-theme rel="stylesheet" href="<?= e(url('/admin/admin-tech.css?v=admin-operating-center-20260907')) ?>">
 <link rel="stylesheet" href="<?= e(url('/site-branding.css?v=1')) ?>">
+<link rel="stylesheet" href="<?= e(url('/admin/admin-header-standard-v1.css?v='.substr(hash_file('sha256',__DIR__.'/admin-header-standard-v1.css'),0,12))) ?>">
 </head>
 <body class="<?= $adminCanvasMode ? 'admin-canvas-mode' : '' ?>">
 
-<?php if (!$adminCanvasMode): ?>
-<header class="admin-mobile-bar">
-  <button class="admin-mobile-menu" id="adminMenuToggle" type="button" aria-label="Open admin navigation" aria-expanded="false">☰</button>
-  <a class="admin-mobile-brand" href="<?= e(url('/admin/index.php')) ?>" aria-label="VP3">VP3</a>
-  <button class="admin-mobile-user" id="adminMobileUserButton" type="button" aria-label="Open user menu">
-    <?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?>
-  </button>
-</header>
 <div class="admin-sidebar-backdrop" id="adminSidebarBackdrop"></div>
-<?php endif; ?>
 
 <div class="admin-layout<?= $adminCanvasMode ? ' admin-layout-canvas' : '' ?>">
-  <?php if (!$adminCanvasMode): ?>
   <aside class="admin-sidebar" id="adminSidebar">
     <div class="admin-sidebar-head">
       <a class="admin-brand" href="<?= e(url('/admin/index.php')) ?>" aria-label="VP3">VP3</a>
@@ -132,21 +128,29 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
 
     <div class="admin-sidebar-bottom"><a href="<?= e(url('/index.php')) ?>">View Website</a></div>
   </aside>
-  <?php endif; ?>
 
   <main class="admin-content<?= $adminCanvasMode ? ' admin-content-canvas' : '' ?>">
-    <?php if (!$adminCanvasMode): ?>
-    <header class="admin-page-header">
-      <div class="admin-page-title"><span><?= e($siteBrandName) ?> Admin</span><h1><?= e($adminTitle) ?></h1></div>
+    <header class="admin-page-header" data-admin-standard-header>
+      <button class="admin-mobile-menu admin-header-menu" id="adminMenuToggle" type="button" aria-label="Open admin navigation" aria-expanded="false" aria-controls="adminSidebar">☰</button>
+      <div class="admin-page-title"><span><?= e($siteBrandName) ?> Admin</span><h1 title="<?= e($adminTitle) ?>"><?= e($adminTitle) ?></h1></div>
       <div class="admin-page-actions">
+        <?= vp3_phone_workspace_button_v1($user) ?>
         <div class="admin-user-menu" id="adminUserMenu">
-          <button class="admin-user-menu-button" id="adminUserMenuButton" type="button" aria-expanded="false" aria-controls="adminUserDropdown">
+          <button class="admin-user-menu-button" id="adminUserMenuButton" type="button" aria-label="User menu" aria-expanded="false" aria-controls="adminUserDropdown">
             <span class="admin-avatar admin-avatar-sm"><?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?></span>
             <span class="admin-user-menu-copy"><strong><?= e($user['display_name'] ?? '') ?></strong><small><?= e($adminRoleSummary) ?></small></span><span class="admin-user-chevron">⌄</span>
           </button>
           <div class="admin-user-dropdown" id="adminUserDropdown" hidden>
             <div class="admin-user-dropdown-head"><span class="admin-avatar admin-avatar-lg"><?php if (user_avatar_url($user) !== ''): ?><img src="<?= e(user_avatar_url($user)) ?>" alt=""><?php else: ?><span><?= e(user_initials($user)) ?></span><?php endif; ?></span><div><strong><?= e($user['display_name'] ?? '') ?></strong><span><?= e($user['email'] ?? '') ?></span></div></div>
-            <nav class="admin-user-dropdown-links"><?php foreach ($adminUserMenuLinks as $menuLink): ?><a<?= !empty($menuLink['danger']) ? ' class="admin-user-logout"' : '' ?> href="<?= e((string)$menuLink['url']) ?>"><span><?= e((string)$menuLink['label']) ?></span><span>↗</span></a><?php endforeach; ?></nav>
+            <nav class="admin-user-dropdown-links" aria-label="Admin user menu">
+              <?php foreach(['account'=>'Account','admin'=>'Administration','session'=>''] as $group=>$groupLabel):
+                $groupLinks=array_filter($adminUserMenuLinks,static fn($link)=>$link['group']===$group);if(!$groupLinks)continue; ?>
+                <div class="admin-user-menu-group" role="group" aria-label="<?= e($groupLabel?:'Session') ?>">
+                  <?php if($groupLabel): ?><span class="admin-user-menu-group-label"><?= e($groupLabel) ?></span><?php endif; ?>
+                  <?php foreach($groupLinks as $menuLink): ?><a<?= !empty($menuLink['danger'])?' class="admin-user-logout"':'' ?> href="<?= e($menuLink['url']) ?>"><span><?= e($menuLink['label']) ?></span></a><?php endforeach; ?>
+                </div>
+              <?php endforeach; ?>
+            </nav>
           </div>
         </div>
 
@@ -160,7 +164,6 @@ $adminUserMenuLinks = member_navigation_menu_links($user);
         </div>
       </div>
     </header>
-    <?php endif; ?>
 
     <?php if ($notice): ?><div class="notice notice-auto-dismiss" data-auto-dismiss="2600" role="status"><?= e($notice) ?></div><?php endif; ?>
     <?php if ($errorNotice): ?><div class="notice error"><?= e($errorNotice) ?></div><?php endif; ?>

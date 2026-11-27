@@ -347,6 +347,7 @@ function vp3_phone_agent_workspace_matches_v1(array $item,string $filter,int $no
 function vp3_phone_agent_workspace_feed_v1(PDO $pdo,array $scope,array $input): array
 {
     $filter=$input['filter']??'all';$limit=$input['limit']??10;$now=$scope['now'];
+    $visit=$input['visit']??false;vp3_phone_agent_workspace_need_v1(is_bool($visit));
     vp3_phone_agent_workspace_need_v1(in_array($filter,['all','needs_you','for_you','history'],true)&&is_int($limit)&&$limit>=1&&$limit<=20);
     $after=null;
     if (isset($input['cursor'])) {
@@ -390,14 +391,30 @@ function vp3_phone_agent_workspace_feed_v1(PDO $pdo,array $scope,array $input): 
         $lastAccepted=(int)$row['sequence_id'];
     }
     if ($next===null&&count($rows)>100) $next=$lastScanned;
-    $counts=['unread'=>0,'needs_action'=>0,'complete'=>true];
+    $counts=['unread'=>0,'needs_action'=>0,'new_canvases'=>0,'complete'=>true];
     $countRows=vp3_phone_sql_v1($pdo,'SELECT item_ref FROM vp3_phone_agent_items_v1 WHERE owner_user_id=? AND agent_id=? ORDER BY sequence_id DESC LIMIT 201',
         [(int)$scope['user']['id'],$scope['agent']['id']])->fetchAll(PDO::FETCH_ASSOC);
     $counts['complete']=count($countRows)<=200&&empty($discovery['has_more']);
     foreach (($discovery['coverage']??[]) as $coverage) if (!in_array($coverage,['ready','not_supported'],true)) $counts['complete']=false;
-    foreach(array_slice($countRows,0,200) as $row) {
-        try{$item=vp3_phone_agent_workspace_item_v1($pdo,$scope,$row['item_ref'])['item'];}
+    $countRefs=array_column(array_slice($countRows,0,200),'item_ref');
+    if(vp3_phone_agent_device_grants_ready_v1($pdo)){
+        // A newly sent version may have an older canonical sequence. Include
+        // this device's deliveries even when ordinary discovery has paged past it.
+        $delivered=vp3_phone_sql_v1($pdo,'SELECT item_ref,MAX(created_epoch) AS sent_epoch FROM vp3_phone_canvas_deliveries_v1
+            WHERE owner_user_id=? AND device_id=? AND grant_id=? GROUP BY item_ref ORDER BY sent_epoch DESC,item_ref LIMIT 201',
+            [(int)$scope['user']['id'],$scope['device']['id'],$scope['enrollment']['grant_id']])->fetchAll(PDO::FETCH_ASSOC);
+        if(count($delivered)>200)$counts['complete']=false;
+        $countRefs=array_values(array_unique(array_merge($countRefs,array_column(array_slice($delivered,0,200),'item_ref'))));
+    }
+    foreach($countRefs as $countRef) {
+        try{$item=vp3_phone_agent_workspace_item_v1($pdo,$scope,$countRef)['item'];}
         catch(RuntimeException $e){if(!$e instanceof PDOException&&in_array($e->getCode(),[403,404],true))continue;throw $e;}
+        if($item['source_kind']==='canvas'&&$item['receipt']['seen_at']===null){
+            if($visit){
+                $item=vp3_phone_agent_workspace_mutate_v1($pdo,$scope,['operation'=>'seen','item_ref'=>$item['item_ref'],'expected_revision'=>$item['revision']])['item'];
+                foreach($items as &$listed)if($listed['item']['item_ref']===$item['item_ref'])$listed['item']=$item;unset($listed);
+            }else $counts['new_canvases']++;
+        }
         if ($item['receipt']['read_at']===null) $counts['unread']++;
         if (vp3_phone_agent_workspace_matches_v1($item,'needs_you',$now)) $counts['needs_action']++;
     }
@@ -444,7 +461,7 @@ function vp3_phone_agent_workspace_request_v1(PDO $pdo,?array $user,string $toke
     $common=['action','device_id','csrf_token','enrollment_revision','scope_revision'];
     $fields=['status'=>[],'enroll'=>['confirmed','agent_id','expected_revision'],'select_agent'=>['agent_id','expected_revision'],
         'preferences'=>['notifications_enabled','expected_revision'],'revoke'=>['expected_revision'],
-        'feed'=>['filter','limit','cursor'],'detail'=>['item_ref','expected_revision'],'discuss'=>['item_ref','expected_revision'],
+        'feed'=>['filter','limit','cursor','visit'],'detail'=>['item_ref','expected_revision'],'discuss'=>['item_ref','expected_revision'],
         'mutate'=>['item_ref','expected_revision','operation','snooze_until']];
     vp3_phone_agent_workspace_need_v1(is_string($action)&&isset($fields[$action])&&!array_diff(array_keys($input),[...$common,...$fields[$action]]));
     if ($action==='status') return vp3_phone_agent_workspace_status_v1($pdo,$user,$token,$id,$now);
