@@ -9,6 +9,7 @@ $done=vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($work),static 
     ++$modelCalls;$input=json_decode($prompt,true);
     canvas_pipeline_check(!db()->inTransaction()&&$protocol==='vp3.initiative-draft.v1'
         &&$input['response_kind']==='coordination_gmail_reply_draft'&&str_contains($input['owner_reply'],'December 4')
+        &&str_contains($input['owner_reply'],'Q-104-TAIL')&&mb_strlen($input['owner_reply'])>400
         &&str_contains($input['email_soul'],'Email Specialist')&&$input['attachment_review']['coverage']==='partial',
         'the governed Email Specialist receives the actual answer, current Email Soul and uncertain attachment context');
     if($scenario==='gmail-revoked')$pdo->exec('UPDATE agent_connections_v1 SET read_enabled=0 WHERE id=88');

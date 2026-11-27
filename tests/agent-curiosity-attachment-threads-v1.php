@@ -113,6 +113,7 @@ $context=json_decode($q->fetchColumn(),true);$state=$context['initiative_followt
 $factual=($argv[1]??'')==='factual';
 $noDraft=($argv[1]??'')==='gmail-no-request';
 $answer=($factual||$noDraft)?'I prefer December 4 delivery for this order.':'Please prepare a reply asking the supplier to confirm delivery by December 4.';
+if($gmailMode&&!$noDraft)$answer.=' '.str_repeat('Keep the tone concise and treat December 4 as a request. ',8).'Use order reference Q-104-TAIL.';
 $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message) VALUES(11,1,'user',?)")->execute([$answer]);$mid=(int)$pdo->lastInsertId();
 $GLOBALS['pipelineModel']=static function(string $prompt,string $protocol)use($gmailMode,$noDraft):string{
     if($protocol==='vp3.initiative-reply.v1'){
@@ -127,7 +128,7 @@ canvas_pipeline_check(!empty($reply['handled'])&&vp3_curiosity_question_v1($pdo,
     'the authenticated owner reply closes the existing thread through canonical follow-through');
 $fresh=vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding);
 canvas_pipeline_check($fresh['revision']!==$snapshot['revision']&&count($fresh['owner_answers'])===1
-    &&$fresh['owner_answers'][0]['answer']===$answer,'the verified answer supplies fresh, source-bound analysis context');
+    &&$fresh['owner_answers'][0]['answer']===vp3_curiosity_safe_text_v1($answer,400),'the verified answer supplies fresh, source-bound analysis context');
 if($factual||$noDraft){
     canvas_pipeline_check(vp3_curiosity_confirmed_v1($pdo,$owner,7,11,[$threadId],'taste')===[]
         &&vp3_curiosity_confirmed_v1($pdo,$owner,7,11,[$threadId],'goal')===[],
