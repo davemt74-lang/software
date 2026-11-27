@@ -8,7 +8,7 @@ Candidate branch: `codex/profile-agent-reliability-20261127`
 
 ## Scope and result
 
-This audit covers the public Profile Agent chat, native visits and announcements, owner Inbox, Agent Radar, the main member Messages page, Profile image editing and owner preview, and the Profile specialist's analytics reports. It also adds an opt-in entry from the public chat to an assigned Twilio phone line.
+This audit covers the public Profile Agent chat, native visits and announcements, owner Inbox, Agent Radar, the main member Messages page, Profile image editing and owner preview, and the Profile specialist's analytics reports. It also adds an opt-in entry from the public chat to an assigned Twilio phone line. The follow-up adds explicit owner response modes, durable requests for owner input, filing reviewed owner answers into the existing Knowledge folders, and the remaining free image allowance.
 
 The candidate repairs reproduced application failures and adds regression coverage. The evidence comes from source review, real isolated SQL and PHP HTTP fixtures, and Chromium running production markup and scripts with controlled services. It does not establish the condition of a deployed site's database, provider credentials, worker configuration, microphone permissions, or Twilio routing. No production database was modified, no paid image/model request was submitted, and no telephone call was placed.
 
@@ -35,6 +35,39 @@ The candidate repairs reproduced application failures and adds regression covera
 
 Primary implementation files are `profile-agent.js`, `profile-agent-portal.js`, `includes/profile-agent-handoff-pa3.php`, `includes/profile-agent-runtime.php`, `api/agent-radar.php`, `profile-agent-analytics.js`, `profile-image-settings-v1.js`, `includes/human-messaging-v370.php`, `messages-v320.js`, and their related APIs and styles.
 
+## Response modes and submitted owner requests
+
+Profile Agent settings now expose **Automated** and **User responses**. The setting belongs to the Profile owner and is saved with a revision, so a stale settings page cannot silently replace a newer choice. Existing installations retain Automated until the owner chooses otherwise. A partially installed request ledger cannot turn a saved User responses choice back into Automated.
+
+| Selected mode / result | Saved behavior | Visitor experience |
+| --- | --- | --- |
+| User responses | The exact visitor question becomes a durable owner request without knowledge retrieval or model inference. | A saved Status message says "Submitted to [owner]. Waiting for a response." |
+| Automated, supported answer | The Agent uses the currently permissioned context. Source access and response policy are checked again before publishing. | The supported Agent answer appears in the conversation. |
+| Automated, missing information or unsupported action | A structured `needs_owner` result becomes the same durable owner request. Model text cannot claim that a request was submitted. | The server's submitted/waiting Status message appears. |
+| Automated, unavailable service, exhausted quota, or invalid structured output | The question is retained for the owner with its actual reason. | The visitor receives the same saved waiting receipt, rather than a fabricated answer. |
+
+Cloud and HomeServer Profile inference share an explicit two-field answer contract. Unstructured provider output fails closed to an owner request. Native queued chat and signed synchronous external callers use the same classification and policy rules. The explicit image-edit path remains a separate visitor action.
+
+Requests are deduplicated by the exact owned visitor message. Waiting does not mean the owner has joined live, and a Status receipt is not an Agent reply or successful inference completion. Inbox and Main Chat show the request state, while the existing attention, reply, resolve, and delegation actions operate on the canonical conversation. An owner reply to an earlier turn does not clear a later unanswered request or its attention. If multiple text questions are active when inference must hand off, each is saved as an owner request.
+
+Changing the response mode or taking over fences an already running Agent answer. An owner may explicitly return a native queued request to the Agent when Automated is enabled; another knowledge gap reopens the same owner request. For a synchronous external conversation, enabling Agent responses affects future messages and does not invent a background retry of the earlier question.
+
+Storage consists of `profile_agent_response_settings_v1` and `profile_agent_owner_requests_v1`, installed by Setup/Database Upgrade. Their receipt message uses a distinct stored role; public and owner histories render it as Status and do not expose the hidden conversation authority row.
+
+Implementation: `includes/profile-agent-responses-v1.php`, `includes/profile-agent-answer-v1.php`, the existing accepted-turn/public-service/handoff helpers, and the existing visitor, Inbox, and Main Chat scripts.
+
+## Reviewed owner answers in the existing Knowledge system
+
+After the owner answers a submitted question, **Save to Knowledge** appears beside that owner reply in Inbox and Main Chat. The owner reviews the original question and reply, edits the retained title and content, chooses an existing personal Knowledge folder (or Unfiled), and confirms the save. An older answered question remains available after newer questions arrive. If one reply answers several submitted questions, the owner selects which question to retain.
+
+This action creates an ordinary personal Knowledge note using `personal_knowledge_store`, the existing Knowledge item/chunk tables, and the existing personal folder system. It does not create a second knowledge repository or change any sharing policy. The current **Profile Agent > Knowledge Access > Knowledge Base** Allow and audience settings, together with existing item and Agent rules, determine whether the saved note may enter a visitor's answer. The save dialog points back to those existing controls. Saving does not enable Knowledge access or change its audience.
+
+The original owner reply remains a conversation message; it is not saved to Knowledge automatically. The owner must perform the separate review/save action. The server verifies current account and Knowledge-management permissions, the owned folder, and the exact saved question and owner reply. Retrying a confirmed save returns the same note without overwriting later edits made in Knowledge. Further editing and permission management use the existing Knowledge and Knowledge Access screens.
+
+The new `profile_agent_knowledge_saves_v1` table records source provenance and idempotency, rather than a separate permission model. Its source references and owner action metadata stay in the private owner workspace. Visitor histories receive no Knowledge action metadata or private note identifiers.
+
+Implementation: `includes/profile-agent-knowledge-v1.php`, `profile-owner-knowledge-v1.js`, and the owner actions in `api/profile-agent.php`.
+
 ## Twilio entry in public Profile chat
 
 The new **Call by phone** action opens a native `tel:` destination for an owner-approved assigned Twilio number. The incoming call follows that number's existing Phone routing, browser-answering configuration, voicemail, and recording settings. This is a phone-app handoff; it does not implement anonymous browser-to-PSTN media inside the Profile widget. Existing native Profile browser audio/video remains governed by the separate call system.
@@ -54,6 +87,10 @@ The existing public image workflow already provides approved free catalogs and r
 The verified boundaries include current public catalog approval, exact visitor/conversation ownership, source-image grants, frozen reference attribution, request idempotency, quota admission, revision lineage, and rejection of results after owner takeover or authority revocation. A lost acknowledgement recovers the original request instead of submitting another paid request. Owner preview does not create a fake visitor conversation.
 
 The concrete image repair in this candidate is settings recovery: a 15-second request bound, explicit retry, preserved input after an uncertain save, account-denial cleanup, and recovery after browser history restoration. The regression suite covers the actual image composer at desktop and phone widths, result downloads, revisions, account changes, settings, and owner generation preview. Provider responses are controlled test responses; live image-provider configuration still needs installed-site acceptance.
+
+The Image tab now also displays **free image renders remaining**, using the same saved UTC-day admissions as the existing render limits. The displayed number is the lower of the visitor's remaining daily limit and the Profile's remaining shared limit. Initial edits and revisions consume their existing allowance; failed or cancelled admissions retain the existing counting policy. The browser refreshes the server value after requests and does not decrement a separate local counter. A reset time accompanies a known balance; unavailable data remains unknown, not zero or an invented full allowance.
+
+A read-only collection request recognizes an existing member or guest identity without creating a visit, conversation, or new visitor token. Owner preview does not invent a visitor allowance. Late or failed older collection reads cannot replace a newer authoritative balance.
 
 ## Profile specialist analytics inventory
 
@@ -97,6 +134,28 @@ A combined regression run on the integrated candidate passed across Messages, vi
 | Public Twilio entry | 24 service checks, 18 HTTP checks, 15 browser checks including image-settings timeout recovery, and expanded canonical assignment-isolation checks. |
 
 PHP/JavaScript syntax and whitespace checks are included. New regressions are registered in `.github/workflows/authority-section14.yml`. Existing package-entitlement CI runs the expanded assignment-isolation test on SQLite and MySQL. CI results should be checked on the exact PR head before merge; local SQLite results do not substitute for the native MySQL gate.
+
+### Follow-up validation: response modes, Knowledge filing, and allowance
+
+The integrated follow-up passed these targeted gates with real isolated SQL and HTTP handlers. Inference and image transports remain controlled test responses.
+
+| Gate | SQLite | Native MariaDB 10.11.19 |
+| --- | --- | --- |
+| Response modes, durable requests, concurrent turns, and reply settlement | 284 checks | 284 checks |
+| Synchronous native and signed external response policy | 127 checks | 127 checks |
+| Image allowance and returning guest identity | 48 checks | 48 checks |
+| Owner API authority and replies | 92 checks | 92 checks |
+| Image API and personalized remaining allowance | 99 checks | 99 checks |
+| Knowledge folders, source binding, existing access rules, and history metadata | 75 checks | 75 checks |
+| Handoff API, including actual Knowledge preview/save requests | 90 checks | 90 checks |
+
+The Knowledge HTTP cases exercise the actual owner API. They verify canonical note/chunk storage, exact folder and source, CSRF/method/owner checks, safe retries, and unchanged data policies, Agent rules, and capability grants. The save rejects attempted parallel sharing fields. The helper cases verify that a new note follows the existing Knowledge Access Allow/audience settings, including later revocation and relationship restrictions. Canonical Knowledge storage, policy precedence, and shared-index modules are unchanged.
+
+Frontend gates passed 601 checks: visitor handoff VM 33, owner threads VM 44, doorbell VM 98, visitor response/live browser 82, image browser 66, owner Inbox browser 85, Main Chat browser 65, and Knowledge editor browser 28. The final Knowledge editor was visually checked at 1280 by 960 and 390 by 900; the review, folder selector, and actions fit without clipping. The saved note and existing Knowledge Access controls are linked directly.
+
+Recovery Baseline on the prior PR head also identified one stale Radar source-contract assertion. It expected an inline owner expression after the endpoint had been changed to capture the authenticated owner before releasing the session lock. The corrected test requires the captured owner, canonical read, and fresh owner recheck. The contract and 17 real concurrent Radar API checks pass; the gate was retained.
+
+Recovery Baseline and Section 14 include the new policy, structured inference, Knowledge, and allowance tests. Section 14 includes native MySQL and the new Knowledge browser suite. Run CI on the published follow-up head before merge.
 
 ## Deployment and installed-site acceptance
 

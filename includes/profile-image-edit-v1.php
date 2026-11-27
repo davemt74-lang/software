@@ -280,9 +280,46 @@ function vp3_profile_image_edit_cancel_v1(PDO $pdo,int $owner,int $cid): void
     $pdo->prepare("UPDATE profile_image_edits_v1 SET state='cancelled',error_code='conversation_changed' WHERE owner_user_id=? AND conversation_id=? AND turn_id IS NOT NULL AND state IN ('queued','editing','staged')")->execute([$owner,$cid]);
 }
 
-function vp3_profile_image_edit_availability_v1(PDO $pdo,int $owner,?string $publicUsername=null): array
+/** Same UTC-day reservations and principal key as admission; never invent a balance. */
+function vp3_profile_image_edit_allowance_v1(PDO $pdo,int $owner,?array $visitorContext=null): array
 {
-    $out=['contract'=>VP3_PROFILE_IMAGE_EDIT_V1,'enabled'=>false,'max_input_bytes'=>VP3_PROFILE_IMAGE_INPUT_MAX_V1,'catalogs'=>[],'daily_limit'=>0,'visitor_daily_limit'=>0,'reason'=>'Photo editing is unavailable on this profile.'];
+    $out=['contract'=>'vp3.profile-image-allowance.v1','ready'=>false,'remaining'=>null,'resets_at_utc_ms'=>null];
+    if($visitorContext===null||(int)($visitorContext['owner_user_id']??0)!==$owner||$owner<1||!vp3_profile_image_edit_ready_v1($pdo))return $out;
+    $visitor=(int)($visitorContext['visitor']['id']??0);$session=(int)($visitorContext['session_id']??0);
+    if($visitor<0||$session<0||$visitor===$owner)return $out;
+    try{
+        $settings=vp3_profile_image_catalog_settings_v1($pdo,$owner);
+        if(empty($settings['enabled']))return $out;
+        $now=time();$since=gmdate('Y-m-d 00:00:00',$now);
+        $key=$visitor>0?hash('sha256','member:'.$visitor):($session>0?hash('sha256','session:'.$session):null);
+        $q=$pdo->prepare('SELECT COUNT(*) FROM profile_image_edits_v1 WHERE owner_user_id=? AND created_at>=?');$q->execute([$owner,$since]);$ownerUsed=(int)$q->fetchColumn();
+        $visitorUsed=0;
+        if($key!==null){$q=$pdo->prepare('SELECT COUNT(*) FROM profile_image_edits_v1 WHERE owner_user_id=? AND visitor_key=? AND created_at>=?');$q->execute([$owner,$key,$since]);$visitorUsed=(int)$q->fetchColumn();}
+        $remaining=max(0,min((int)$settings['daily_limit']-$ownerUsed,(int)$settings['visitor_daily_limit']-$visitorUsed));
+        return ['contract'=>'vp3.profile-image-allowance.v1','ready'=>true,'remaining'=>$remaining,
+            'resets_at_utc_ms'=>(int)(strtotime($since.' UTC')+86400)*1000];
+    }catch(PDOException){return $out;}
+}
+
+/** Collection browsing reads an existing visitor identity without creating a visit. */
+function vp3_profile_image_collection_visitor_v1(PDO $pdo,int $owner,?array $visitor): ?array
+{
+    $sid=0;$cookie=$_COOKIE['sf_profile_visitor']??null;$legacy=$_SESSION['profile_visit_tokens'][(string)$owner]??null;
+    $cookie=is_string($cookie)?strtolower(trim($cookie)):'';$legacy=is_string($legacy)?strtolower(trim($legacy)):'';
+    $token=preg_match('/^(?:[a-f0-9]{48}|[a-f0-9]{64})$/D',$cookie)?$cookie:(preg_match('/^[a-f0-9]{48}$/D',$legacy)?$legacy:'');
+    if($token!==''){
+        try{
+            $q=$pdo->prepare('SELECT id FROM profile_visit_sessions WHERE owner_user_id=? AND session_key=? LIMIT 1');
+            $q->execute([$owner,hash('sha256',$token.'|'.$owner)]);$sid=(int)$q->fetchColumn();
+        }catch(PDOException){return null;}
+    }
+    return ['owner_user_id'=>$owner,'visitor'=>$visitor,'session_id'=>$sid];
+}
+
+function vp3_profile_image_edit_availability_v1(PDO $pdo,int $owner,?string $publicUsername=null,?array $visitorContext=null): array
+{
+    $out=['contract'=>VP3_PROFILE_IMAGE_EDIT_V1,'enabled'=>false,'max_input_bytes'=>VP3_PROFILE_IMAGE_INPUT_MAX_V1,'catalogs'=>[],'daily_limit'=>0,'visitor_daily_limit'=>0,'reason'=>'Photo editing is unavailable on this profile.',
+        'allowance'=>vp3_profile_image_edit_allowance_v1($pdo,$owner,$visitorContext)];
     if(!vp3_profile_image_edit_ready_v1($pdo))return $out;
     $settings=vp3_profile_image_catalog_settings_v1($pdo,$owner);$out['daily_limit']=(int)$settings['daily_limit'];$out['visitor_daily_limit']=(int)$settings['visitor_daily_limit'];
     if(empty($settings['enabled'])){$out['reason']='The profile owner has not enabled the public image collection yet.';return $out;}
@@ -382,7 +419,7 @@ function vp3_profile_image_edit_state_v1(array $row): string
 }
 function vp3_profile_image_edit_public_projection_v1(PDO $pdo,array $ctx,int $cid,array $result): array
 {
-    $owner=(int)$ctx['owner_user_id'];$result['image_editing']=vp3_profile_image_edit_availability_v1($pdo,$owner,(string)$ctx['profile']['username']);$result['image_edits']=vp3_profile_image_edit_progress_v1($pdo,$owner,$cid);
+    $owner=(int)$ctx['owner_user_id'];$result['image_editing']=vp3_profile_image_edit_availability_v1($pdo,$owner,(string)$ctx['profile']['username'],$ctx);$result['image_edits']=vp3_profile_image_edit_progress_v1($pdo,$owner,$cid);
     if(isset($result['messages']))$result['messages']=vp3_profile_image_edit_messages_v1($pdo,$owner,$cid,$result['messages'],false,$ctx);
     if(isset($result['visitor_message_id'])&&vp3_profile_image_edit_ready_v1($pdo)){
         $messages=vp3_profile_image_edit_messages_v1($pdo,$owner,$cid,[['id'=>(int)$result['visitor_message_id'],'sender_type'=>'visitor']],false,$ctx);

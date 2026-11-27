@@ -135,11 +135,16 @@ jobs:
           node tests/agent-release-profile-chat-api.mjs
           node tests/profile-webmcp-native-outcomes-v1.mjs
           php tests/profile-public-authority-pa1.php
+          php tests/profile-response-public-v1.php
+          php tests/profile-inference-service-v1341.php
+          php tests/profile-inference-v1341.php
+          php -d zend.assertions=1 -d assert.exception=1 tests/homeserver-v235-voice-profile-unit.php
           php tests/agent-message-authority-pa1.php
           node tests/agent-message-api-pa1.mjs
           node tests/profile-owner-api-pa1.mjs
           node tests/profile-owner-threads-pa1.mjs
           php tests/profile-owner-reply-v1.php
+          php tests/profile-owner-knowledge-v1.php
           php tests/profile-attention-situations-pa4b.php
           php tests/profile-specialist-sources-v1.php
           php tests/profile-specialist-report-v1.php
@@ -158,6 +163,8 @@ jobs:
           php tests/profile-arrival-context-v1.php
           php tests/profile-call-outcomes-v1.php
           php tests/profile-handoff-pa3.php
+          php tests/profile-response-modes-v1.php
+          php tests/profile-image-allowance-v1.php
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php
           php tests/profile-live-text-pa3d.php

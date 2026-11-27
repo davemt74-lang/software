@@ -140,6 +140,10 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
     $uid=(int)$user['id'];
     $profile=profile_for_user($pdo,$uid,true)?:[];
     if(empty($profile['username']))$profile=profile_migrate_artist_identity($pdo,$user);
+    $responses=vp3_profile_response_settings_v1($pdo,$uid);
+    $profile['profile_agent_response_mode']=$responses['mode'];
+    $profile['profile_agent_response_revision']=$responses['revision'];
+    $profile['profile_agent_response_ready']=$responses['ready'];
     $agents=user_agents_list_v236($pdo,$uid,true);
 
     $selectedAgent=null;
@@ -176,7 +180,8 @@ function profile_runtime_owner_state(PDO $pdo,array $user): array
 
     $convos=$pdo->prepare('SELECT c.id,c.profile_agent_id,c.profile_session_id,c.status,c.last_summary,c.started_at,c.last_message_at,s.session_key,CASE WHEN s.visitor_user_id=c.visitor_user_id THEN s.identity_disclosed ELSE 0 END AS identity_disclosed,c.visitor_user_id FROM profile_agent_conversations c INNER JOIN profile_visit_sessions s ON s.id=c.profile_session_id WHERE c.owner_user_id=? ORDER BY c.last_message_at DESC,c.id DESC LIMIT 100');
     $convos->execute([$uid]);$conversationRows=$convos->fetchAll()?:[];
-    foreach($conversationRows as &$c){$c=array_merge($c,profile_runtime_visitor_descriptor($pdo,$uid,$c));unset($c['visitor_user_id'],$c['session_key']);}unset($c);
+    $conversationResponses=vp3_profile_response_projections_v1($pdo,$uid,array_column($conversationRows,'id'));
+    foreach($conversationRows as &$c){$c=array_merge($c,profile_runtime_visitor_descriptor($pdo,$uid,$c));$c['response']=$conversationResponses[(int)$c['id']];unset($c['visitor_user_id'],$c['session_key']);}unset($c);
 
     $events=$pdo->prepare('SELECT e.id,e.profile_session_id,e.event_type,e.priority,e.metadata_json,e.created_at,s.session_key,CASE WHEN s.visitor_user_id=e.visitor_user_id THEN s.identity_disclosed ELSE 0 END AS identity_disclosed,e.visitor_user_id FROM profile_events e LEFT JOIN profile_visit_sessions s ON s.id=e.profile_session_id WHERE e.owner_user_id=? ORDER BY e.created_at DESC,e.id DESC LIMIT 100');
     $events->execute([$uid]);$activityRows=$events->fetchAll()?:[];
@@ -293,6 +298,7 @@ function profile_runtime_conversation_owner(PDO $pdo,int $conversationId,int $ow
     $row=$stmt->fetch();
     if(!$row)return null;
     $row=array_merge($row,profile_runtime_visitor_descriptor($pdo,$ownerUserId,$row));
+    $row['response']=vp3_profile_response_projection_v1($pdo,$ownerUserId,$conversationId);
     unset($row['visitor_user_id'],$row['session_key']);
     return $row;
 }

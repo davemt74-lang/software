@@ -58,9 +58,9 @@ function personal_profile_save_v242(PDO $pdo,array $user,array $input): array
     fixture_pa1_mutation($pdo,'save_profile',(int)$user['id']);return [];
 }
 function profile_configure_agent(PDO $pdo,array $user,array $input): array{fixture_pa1_mutation($pdo,'save_profile_agent',(int)$user['id']);return [];}
-function user_agent_resource_catalog_v236(): array{return ['knowledge'=>[]];}
-function user_data_policy_get_v236(PDO $pdo,int $uid,string $type): array{return ['audience_scope'=>'private'];}
-function user_data_policy_save_v236(PDO $pdo,array $user,array $input): array{fixture_pa1_mutation($pdo,'save_profile_access',(int)$user['id']);return [];}
+// Owner history loads canonical Knowledge metadata and its policy helpers.
+// Keep the production module shared with that path instead of redeclaring it.
+require_once __DIR__.'/user-agent-system-v236.php';
 function profile_attention_update(PDO $pdo,int $uid,int $id,string $action): void
 {
     if(!in_array($action,['seen','handled','ignored','snooze'],true))throw new RuntimeException('Unknown attention action.');

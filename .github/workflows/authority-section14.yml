@@ -158,6 +158,7 @@ jobs:
           php -l api/profile-image-settings-v1.php
           php tests/profile-image-catalog-v1.php
           php tests/profile-image-edit-v1.php
+          php tests/profile-image-allowance-v1.php
           php tests/agent-image-transport-v1.php
           node tests/profile-image-settings-api-v1.mjs
           node tests/profile-image-edit-api-v1.mjs
@@ -219,6 +220,7 @@ jobs:
         run: |
           php tests/profile-image-catalog-v1.php
           php tests/profile-image-edit-v1.php
+          php tests/profile-image-allowance-v1.php
       - name: Profile analytics complete windows and unavailable reads
         run: |
           php tests/profile-analytics-reliability-v1.php
@@ -340,7 +342,12 @@ jobs:
       - name: Profile Agent PA1 SQLite and HTTP authority
         run: |
           php tests/profile-public-authority-pa1.php
+          php tests/profile-response-public-v1.php
+          php tests/profile-inference-service-v1341.php
+          php tests/profile-inference-v1341.php
+          php -d zend.assertions=1 -d assert.exception=1 tests/homeserver-v235-voice-profile-unit.php
           php tests/profile-owner-reply-v1.php
+          php tests/profile-owner-knowledge-v1.php
           php tests/agent-message-authority-pa1.php
           node tests/agent-message-api-pa1.mjs
           node tests/profile-owner-api-pa1.mjs
@@ -354,12 +361,15 @@ jobs:
           VP3_TEST_MYSQL_PASS: pa1-fixture
         run: |
           php tests/profile-public-authority-pa1.php
+          php tests/profile-response-public-v1.php
           php tests/profile-owner-reply-v1.php
+          php tests/profile-owner-knowledge-v1.php
           php tests/agent-message-authority-pa1.php
           node tests/profile-owner-api-pa1.mjs
       - name: Profile Agent PA3 handoff and recovery on SQLite
         run: |
           php tests/profile-handoff-pa3.php
+          php tests/profile-response-modes-v1.php
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php
           php tests/profile-live-text-pa3d.php
@@ -400,6 +410,7 @@ jobs:
           VP3_TEST_MYSQL_PASS: pa1-fixture
         run: |
           php tests/profile-handoff-pa3.php
+          php tests/profile-response-modes-v1.php
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php
           php tests/profile-live-text-pa3d.php
@@ -486,6 +497,8 @@ jobs:
           if-no-files-found: ignore
       - name: Profile owner thread selection, drafts and refresh
         run: node tests/profile-owner-threads-pa1-browser.mjs
+      - name: Reviewed owner answers saved to permitted Knowledge
+        run: node tests/profile-owner-knowledge-browser-v1.mjs
       - name: Messages live delivery, exact drafts, history and mobile recovery
         run: node tests/messages-recovery-browser-v1.mjs
       - name: Profile chat storage, history restoration and startup recovery

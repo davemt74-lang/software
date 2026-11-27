@@ -12,6 +12,7 @@ require_once __DIR__ . '/includes/homeserver-https-relay-v1300.php';
 require_once __DIR__ . '/includes/homeserver-shared-agent-v210.php';
 require_once __DIR__ . '/includes/profile-event-clock-v1.php';
 require_once __DIR__ . '/includes/profile-agent-handoff-pa3.php';
+require_once __DIR__ . '/includes/profile-agent-knowledge-v1.php';
 require_once __DIR__ . '/includes/profile-image-catalog-v1.php';
 require_once __DIR__ . '/includes/profile-image-edit-v1.php';
 require_once __DIR__ . '/includes/profile-owner-drafts-v1.php';
@@ -111,6 +112,8 @@ try {
     vp3_youtube_picks_install_v1($pdo);
     vp3_music_chat_schema_v1($pdo);
     profile_agent_ensure_schema($pdo);
+    vp3_profile_responses_install_v1($pdo);
+    vp3_profile_knowledge_install_v1($pdo);
     vp3_profile_event_clock_install_v1($pdo);
     agent_job_engine_ensure_schema_v1900($pdo);
     agent_work_control_ensure_schema_v173($pdo);

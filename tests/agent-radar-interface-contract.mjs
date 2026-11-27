@@ -19,7 +19,9 @@ assert.ok(portal.includes('/profile-agent-radar.css'), 'Radar styles must be iso
 
 assert.ok(endpoint.includes("has_permission('account.access',$user)"), 'Radar endpoint must require signed-in account access');
 assert.ok(endpoint.includes("personal_capability_has_v242('profile_agent.access',$user)"), 'Radar endpoint must remain scoped to Profile Agent owners');
-assert.ok(endpoint.includes('vp3_radar_portal_state($pdo,(int)$user[\'id\'])'), 'Radar endpoint must use the canonical owner-scoped read model');
+assert.ok(endpoint.includes("$owner=(int)$user['id'];"), 'Radar endpoint must capture its owner from the authenticated account');
+assert.ok(endpoint.includes('vp3_radar_portal_state($pdo,$owner)'), 'Radar endpoint must use the canonical read model with that captured owner');
+assert.ok(endpoint.includes("(int)$fresh['id']!==$owner"), 'Radar endpoint must recheck the authenticated owner after its unlocked read');
 assert.ok(!endpoint.includes('$_GET[\'owner'), 'Radar endpoint must not accept arbitrary owner ids');
 
 for (const table of ['vp3_agent_contacts','vp3_radar_events','vp3_radar_sessions','vp3_radar_properties','vp3_agent_registry']) {

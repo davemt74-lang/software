@@ -100,10 +100,12 @@ function vp3_profile_owner_reply_legacy_save_v1(PDO $pdo,array $user,array $conv
     $pdo->prepare("INSERT INTO profile_agent_messages (conversation_id,sender_type,sender_user_id,message,context_json) VALUES (?,'owner',?,?,?)")
         ->execute([$cid,$owner,$message,json_encode($context,JSON_THROW_ON_ERROR)]);
     $messageId=(int)$pdo->lastInsertId();
+    require_once __DIR__.'/profile-agent-responses-v1.php';
+    vp3_profile_owner_requests_settle_v1($pdo,$owner,$cid,'answered',0,$messageId);
     $pdo->prepare("UPDATE profile_agent_conversations SET status='owner_joined',last_summary=?,last_message_at=NOW(),updated_at=NOW() WHERE id=? AND owner_user_id=?")
         ->execute([mb_strimwidth($message,0,900,'…'),$cid,$owner]);
     require_once __DIR__.'/profile-attention-pa4b.php';
     vp3_profile_attention_message_sent_pa4b($pdo,$conversation,$messageId);
-    vp3_profile_attention_settle_conversation_pa4b($pdo,$owner,$cid);
+    vp3_profile_attention_settle_conversation_pa4b($pdo,$owner,$cid,null,$messageId-1);
     return ['message_id'=>$messageId,'duplicate'=>false];
 }

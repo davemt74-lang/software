@@ -715,7 +715,7 @@ function vp3_profile_analytics_backlog_v1(PDO $pdo,int $owner,int $now,?array $h
     $pending=null;$pendingCoverage='unavailable';$pendingReason='storage_unconfigured';
     try{
         if($history!==null&&vp3_profile_analytics_table_v1($pdo,'profile_agent_handoff_turns_pa3')){
-            $rows=vp3_profile_analytics_rows_v1($pdo,"SELECT * FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND state IN ('awaiting_delivery','awaiting_owner','owner_claimed','agent_ready','agent_running') ORDER BY id",[$owner],true);
+            $rows=vp3_profile_analytics_rows_v1($pdo,"SELECT * FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND state IN ('awaiting_delivery','awaiting_owner','owner_requested','owner_claimed','agent_ready','agent_running') ORDER BY id",[$owner],true);
             $pending=0;$pendingCoverage='complete';$pendingReason='complete';
             foreach($rows as $row){
                 if(!vp3_profile_analytics_turn_valid_v1($row,$history,$owner)){$pendingCoverage='partial';$pendingReason='source_proof_incomplete';continue;}

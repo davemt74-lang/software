@@ -185,6 +185,7 @@ $personalKnowledgeAllowed = personal_capability_has_v242('personal_knowledge.acc
   'csrfToken'=>csrf_token(),
 ], JSON_UNESCAPED_SLASHES | JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT) ?>;</script>
 <script src="<?= e(url('/profile-attention-pa4b.js?v='.substr(hash_file('sha256',__DIR__.'/profile-attention-pa4b.js'),0,12))) ?>"></script>
+<script src="<?= e(url('/profile-owner-knowledge-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-owner-knowledge-v1.js'),0,12))) ?>"></script>
 <script src="<?= e(url('/profile-agent-portal.js?v='.substr(hash_file('sha256',__DIR__.'/profile-agent-portal.js'),0,12))) ?>"></script>
 <script src="<?= e(url('/profile-image-settings-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-image-settings-v1.js'),0,12))) ?>"></script>
 <script src="<?= e(url('/profile-phone-settings-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-phone-settings-v1.js'),0,12))) ?>"></script>

@@ -47,7 +47,10 @@ try{
     check(response.headers.get('Cache-Control')==='private, no-store'&&response.headers.get('X-Content-Type-Options')==='nosniff'&&response.headers.get('Cross-Origin-Resource-Policy')==='same-origin'&&response.headers.get('Content-Security-Policy')==="default-src 'none'; sandbox"&&response.headers.get('Content-Disposition')==='inline; filename="reference-image-11.png"','public reference delivery prevents caching, MIME sniffing, cross-origin embedding and executable content');
     for(const actor of [owner,visitor]){
         const view=await jsonRequest('GET',galleryFields,readOnly(actor));response=await reference(referenceFields(),readOnly(actor));
-        check(view.status===200&&JSON.stringify(view.data)===JSON.stringify(publicGallery.data)&&response.status===200,actor===owner?'owner preview can browse the same public collection without visitor impersonation':'signed-in visitor sees the same explicitly public free collection');
+        const common=data=>({...data,image_editing:Object.fromEntries(Object.entries(data.image_editing).filter(([field])=>field!=='allowance'))});
+        check(view.status===200&&JSON.stringify(common(view.data))===JSON.stringify(common(publicGallery.data))&&response.status===200,actor===owner?'owner preview can browse the same public collection without visitor impersonation':'signed-in visitor sees the same explicitly public free collection');
+        const allowance=view.data.image_editing.allowance;
+        check(actor===owner?allowance.ready===false&&allowance.remaining===null:allowance.ready===true&&Number.isInteger(allowance.remaining)&&allowance.remaining>0,actor===owner?'owner preview reports unknown visitor allowance':'signed-in gallery visitor receives their current positive allowance');
         await response.arrayBuffer();
     }
     check(galleryState()===beforeGallery,'anonymous, owner and signed-in gallery/image reads change no sessions, conversations, work, accounting, usage or catalog rows');

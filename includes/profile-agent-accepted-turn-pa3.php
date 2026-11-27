@@ -109,59 +109,47 @@ function vp3_profile_agent_accepted_generate_pa3(PDO $pdo,array $turn,array $cla
     $ctx=vp3_profile_agent_accepted_context_pa3($pdo,$turn);
     require_once __DIR__.'/profile-image-edit-v1.php';
     if(vp3_profile_image_edit_ready_v1($pdo)&&vp3_profile_image_edit_row_v1($pdo,(int)$turn['visitor_message_id']))return vp3_profile_image_edit_generate_v1($pdo,$turn,$claim,$infer);
+    require_once __DIR__.'/profile-agent-answer-v1.php';
+    require_once __DIR__.'/profile-agent-responses-v1.php';
     $owner=(int)$ctx['owner_user_id'];$profile=$ctx['profile'];$agent=$ctx['agent'];$visitor=$ctx['visitor'];$ownerUser=$ctx['owner_user'];
     $query=(string)$ctx['visitor_message']['message'];$cid=(int)$turn['conversation_id'];
-    $historical=vp3_profile_agent_public_history_v1($pdo,$ctx,$cid,(int)$turn['visitor_message_id']);
-    $history=$historical['messages'];$historySources=$historical['source_sets'];
-    $context=profile_agent_context($pdo,$profile,$agent,$visitor,$query);
-    // Background workers use the same supplemental public Commerce/booking
-    // and policy-gated transcript context as API admission entry points.
-    require_once __DIR__.'/profile-agent-transcription-context.php';
-    foreach(profile_agent_transcript_brain_context_v255($pdo,$ownerUser,$agent,$visitor,$query,$cid) as $item)$context[]=$item;
-    if(function_exists('vp3_profile_webmcp_agent_capability_context_v190')){
-        $capability=vp3_profile_webmcp_agent_capability_context_v190($pdo,$profile,$visitor);
-        if(!empty($capability['capabilities']))$context[]=$capability;
-    }
-    $context=array_slice($context,0,24);
-    if(!vp3_profile_agent_public_sources_current_v1($pdo,$ctx,$context,$historySources))vp3_profile_agent_public_unavailable_v1();
-    vp3_profile_agent_accepted_context_pa3($pdo,$turn);
-    $sourceDependencies=vp3_profile_agent_public_source_dependencies_v1($context,$historySources);
-    $profileHome=['attempted'=>false,'success'=>false,'execution'=>null,'failure_class'=>'none'];$mode='model';$needsOwner=false;
-    $control=['surface'=>'profile_agent','profile_owner_user_id'=>$owner,'profile_agent_id'=>(int)$ctx['agent_id'],
-        'profile_agent_name'=>(string)$agent['display_name'],'profile_owner_name'=>(string)($profile['display_name']??$ownerUser['display_name']??''),
-        'profile_instructions'=>(string)($profile['profile_agent_instructions']??'')];
-    $greeting=(bool)preg_match('/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))[!.\s]*$/i',$query);
-    if($greeting&&trim((string)($profile['profile_agent_greeting']??''))!==''){
-        $answer=(string)$profile['profile_agent_greeting'];$mode='configured_greeting';
+    $policy=vp3_profile_response_settings_v1($pdo,$owner);
+    $context=[];$historySources=[];
+    if($policy['mode']==='user_responses'){
+        $generated=vp3_profile_answer_owner_v1('user_responses',(int)$policy['revision']);
     }else{
-        $home=$infer===null&&function_exists('homeserver_profile_v235_answer')?homeserver_profile_v235_answer($owner,$query,$history,$context):null;
-        if($infer===null&&function_exists('homeserver_profile_v235_last'))$profileHome=homeserver_profile_v235_last();
-        if(is_array($home)&&trim((string)($home['answer']??''))!==''){$answer=trim((string)$home['answer']);$mode='homeserver_model';}
-        else{
+        $historical=vp3_profile_agent_public_history_v1($pdo,$ctx,$cid,(int)$turn['visitor_message_id']);
+        $history=$historical['messages'];$historySources=$historical['source_sets'];
+        $context=profile_agent_context($pdo,$profile,$agent,$visitor,$query);
+        require_once __DIR__.'/profile-agent-transcription-context.php';
+        foreach(profile_agent_transcript_brain_context_v255($pdo,$ownerUser,$agent,$visitor,$query,$cid) as $item)$context[]=$item;
+        if(function_exists('vp3_profile_webmcp_agent_capability_context_v190')){
+            $capability=vp3_profile_webmcp_agent_capability_context_v190($pdo,$profile,$visitor);
+            if(!empty($capability['capabilities']))$context[]=$capability;
+        }
+        $context=array_slice($context,0,24);
+        $guard=static function()use($pdo,$ctx,$context,$historySources,$turn):void{
             if(!vp3_profile_agent_public_sources_current_v1($pdo,$ctx,$context,$historySources))vp3_profile_agent_public_unavailable_v1();
             vp3_profile_agent_accepted_context_pa3($pdo,$turn);
-            $generated=$infer?$infer($query,$history,$context,$ownerUser,'profile_agent',$control):ai_generate_chat_response($query,$history,$context,$ownerUser,'profile_agent',$control);
-            $answer=is_array($generated)&&!empty($generated['ok'])&&is_string($generated['answer']??null)?trim($generated['answer']):'';
-            if($answer===''){
-                $needsOwner=true;$mode=!empty($generated['quota_exhausted'])?'quota_handoff':'owner_handoff';
-                $answer=($mode==='quota_handoff'?'This Profile Agent has reached its AI usage allowance. ':'I could not complete that reply right now. ')
-                    .'I’ve asked '.(string)($profile['display_name']??'the profile owner').' for input rather than guessing.';
-            }
-        }
+        };
+        $generated=vp3_profile_answer_generate_v1($pdo,$ctx,$query,$history,$context,$guard,$infer);
+        // A submission receipt discloses no model answer or retrieved material.
+        if($generated['needs_owner']){$context=[];$historySources=[];}
     }
-    if(mb_strlen($answer)>20000)vp3_profile_agent_public_unavailable_v1();
     $sources=[];foreach($context as $item){if(!in_array((string)$item['source'],['profile:identity','profile:rules'],true))$sources[]=['source'=>(string)$item['source'],'title'=>(string)($item['title']??'')];}
-    $messageContext=['sources'=>$sources,'source_dependencies'=>$sourceDependencies,'answer_mode'=>$mode,'handoff_turn_id'=>(int)$turn['id'],'visitor_message_id'=>(int)$turn['visitor_message_id']];
-    if(!$needsOwner&&$mode!=='configured_greeting'){
+    $messageContext=['sources'=>$sources,'source_dependencies'=>vp3_profile_agent_public_source_dependencies_v1($context,$historySources),
+        'answer_mode'=>$generated['answer_mode'],'handoff_turn_id'=>(int)$turn['id'],'visitor_message_id'=>(int)$turn['visitor_message_id']];
+    if(!$generated['needs_owner']&&$generated['answer_mode']!=='configured_greeting'){
         require_once __DIR__.'/profile-product-promotion-v1.php';
         $promotionKey=profile_product_promotion_match_v1($pdo,$profile,$query,$context);
         if($promotionKey!==null)$messageContext['product_promotion_key']=$promotionKey;
     }
+    $profileHome=$generated['homeserver_compute'];
     if(!empty($profileHome['attempted']))$messageContext['homeserver_compute']=[
         'success'=>!empty($profileHome['success']),'failure_class'=>mb_strimwidth(trim((string)($profileHome['failure_class']??'none')),0,80,''),
         'provider'=>mb_strimwidth(trim((string)($profileHome['provider']??'')),0,80,''),'model'=>mb_strimwidth(trim((string)($profileHome['model']??'')),0,160,''),
         'execution'=>is_array($profileHome['execution']??null)?$profileHome['execution']:null];
-    $result=['answer'=>$answer,'context'=>$context,'history_sources'=>$historySources,'message_context'=>$messageContext,'needs_owner'=>$needsOwner,'answer_mode'=>$mode];
+    $result=$generated+['context'=>$context,'history_sources'=>$historySources,'message_context'=>$messageContext];
     vp3_profile_agent_accepted_recheck_pa3($pdo,$turn,$result,false);
     return $result;
 }

@@ -4,63 +4,102 @@ INSTALL
 1. Deploy the reviewed release through the normal Cloud update process.
    Preserve config.php, .env, private/ and uploads/.
 2. Sign in as an administrator and run Database Upgrade (upgrade.php).
-   The new profile_phone_settings_v1 table stores optional public-line approval.
-   Fresh setup.php installs it too. Public reads never install schema.
-   Upgrade completeness now includes this table; existing phone setup alone
-   does not mean the Profile calling addition is installed.
+   The new tables are profile_phone_settings_v1 (optional public-line approval),
+   profile_agent_response_settings_v1 (owner response mode),
+   profile_agent_owner_requests_v1 (durable requests for owner input), and
+   profile_agent_knowledge_saves_v1 (reviewed answer filing receipts).
+   Fresh setup.php installs them too. Public reads never install schema.
+   Upgrade completeness includes these tables; existing Phone or Knowledge
+   setup alone does not mean the Profile additions are installed.
 3. Refresh Profile, Profile Agent, and Messages after deployment. Changed assets
    use content-based versions. Browser history restoration rechecks the current
    account/visitor rather than keeping stale private state.
 
+RESPONSE MODES AND EXISTING KNOWLEDGE ACCESS
+4. In Profile Agent > Agent, choose Automated or User responses. Existing
+   installations retain Automated unless the owner changes it. User responses
+   submits each text question directly to the owner without model inference.
+   Automated uses permitted knowledge and submits the question if it cannot
+   answer. Both submission paths show a saved submitted/waiting Status receipt.
+5. Verify the owner request in Inbox and the existing Main Chat visitor card.
+   Waiting must not claim a live owner connection. Reply, resolve, or explicitly
+   return to Agent using the existing conversation controls. User responses
+   cannot be bypassed by a visitor's stale Agent choice or an old browser tab.
+6. After replying, choose Save to Knowledge beside the owner message. Review
+   the title/content and choose an existing personal Knowledge folder. Saving
+   is deliberate, and it never changes Profile Knowledge access or audience.
+   Use the existing Profile Agent > Knowledge Access > Knowledge Base Allow
+   and audience controls to manage use, along with any existing item/Agent
+   rules. With Knowledge access disabled, a newly saved answer must remain
+   unavailable to visitors. Existing visibility does not expose an unpublished
+   personal note on its own. Open the saved note in My Knowledge for later edits.
+
 PUBLIC TWILIO PHONE ENTRY
-4. Keep the current tested Twilio setup and signed incoming callbacks. Assign
+7. Keep the current tested Twilio setup and signed incoming callbacks. Assign
    the line to an active Agent belonging to the owner, enable incoming voice,
    and ensure the owner has the existing Phone number and voice allowances.
    Browser answering, voicemail, fallback and recording remain configured in
    the existing Phone workspace. See CLOUD-PHONE-WORKSPACE-DEPLOY.txt.
-5. Open Profile Agent > Agent > Profile phone calls. Select the eligible assigned
+8. Open Profile Agent > Agent > Profile phone calls. Select the eligible assigned
    Twilio line and enable Show Call by phone in my Profile chat. Save.
    Publication defaults to off. The selected number becomes public; personal
    callback details remain private. Number reassignment revokes publication,
    even if the line later returns to the same owner.
-6. The public chat's Call by phone action opens the visitor's phone app using
+9. The public chat's Call by phone action opens the visitor's phone app using
    the approved number. This is a native dialer handoff, not anonymous Twilio
    browser media inside the widget. Existing Profile browser audio/video stays
    in the separate native call system. A changed number requires another click.
-7. A click is not evidence that a call connected. Existing Profile call totals
+10. A click is not evidence that a call connected. Existing Profile call totals
    measure native profile_calls_pa3c records; Twilio activity/recording reports
    remain in Phone. Do not add a successful call to reports merely from a click.
 
 ACCEPTANCE
-8. From a separate visitor browser, open the Profile, send a message, and check
+11. From a separate visitor browser, open the Profile, send a message, and check
    the owner Inbox and Main Chat visitor card. Check an anonymous return after
    logout and confirm a relevant visit/announcement without duplicate entries.
    Test Available, Away and DND with the intended speech settings. A running
    HomeServer alone does not establish owner availability.
-9. Test live owner pickup within the offer window, missed-offer Agent fallback,
+12. Test live owner pickup within the offer window, missed-offer Agent fallback,
    and Inbox Take over / Let Agent handle / Resolve. Confirm owner takeover
    prevents a late competing Agent answer in the same conversation.
-10. In Messages, verify two-account exchange, pending request acceptance, new
+13. Test both response modes with known and unknown information. For User
+    responses, verify no Agent answer precedes the waiting receipt. For Automated,
+    verify a supported answer and an actual submitted request for missing facts.
+    Send two questions while the Agent is running; every handed-off question
+    must have its own request. Reply to an earlier question and confirm newer
+    pending questions remain. Changing modes or taking over must suppress an
+    obsolete running Agent reply. Signed external callers follow the same rules.
+14. Save an answered request into an existing Knowledge folder. Confirm one
+    ordinary note, no duplicate after a lost-response retry, no automatic save
+    from the reply alone, and no changes to Knowledge Access. Check retrieval
+    under the intended Allow/audience and after revoking it. Save an older answer
+    while a newer question waits; select the correct question when one reply
+    covers several requests. No visitor should receive owner Knowledge actions.
+15. In Messages, verify two-account exchange, pending request acceptance, new
     replies in a thread longer than 120 messages, Load earlier, exact deep links,
     and phone-width navigation. Switch accounts in another tab: the old Messages
     page must clear and require reload, including its Shares actions.
-11. In Profile image settings, approve a free reference collection. Test subject
+16. In Profile image settings, approve a free reference collection. Test subject
     upload, edit, download and a revision with the configured image provider.
     Verify private owner preview separately. Provider calls consume the existing
     allowances; the source audit used controlled provider responses only.
-12. Open the Profile specialist report, select a completed local period, and
+    Check free renders remaining before/after an edit and revision, zero at the
+    limit, UTC-day reset information, and unknown when allowance cannot be read.
+    A returning guest must keep the existing allowance rather than see a fresh
+    full balance. Failed/cancelled admissions retain the existing counting rule.
+17. Open the Profile specialist report, select a completed local period, and
     inspect visit/chat/call/commerce/image measures and coverage. Keep unavailable
     evidence distinct from zero, and recorded conversion value distinct from
     verified payment receipts. Refresh stalled reads rather than assuming zero.
-13. With an explicitly enabled test phone line, place a real call from the chat
+18. With an explicitly enabled test phone line, place a real call from the chat
     link and verify configured incoming routing, voicemail and recording behavior.
     Disable publication and confirm the next chat read/click removes the action.
 
 RECOVERY
-14. Read failures expose retry/reload controls. After an uncertain settings or
+19. Read failures expose retry/reload controls. After an uncertain settings or
     other mutation response, reload and inspect saved state before resubmitting.
     A stale account page must reload; it cannot reuse old conversation authority.
-15. Disabling Profile phone publication is sufficient to remove the new public
+20. Disabling Profile phone publication is sufficient to remove the new public
     action. Existing phone assignments and historical calls/messages are retained.
     Do not delete the table or provider records as a routine rollback.
 

@@ -466,6 +466,7 @@ $profileDoorbellRuntime=$profileActivityRuntime!==''
             'ownerEndpoint'=>url('/api/profile-agent.php'),
             'csrf'=>csrf_token(),'userId'=>(int)$user['id'],
         ],JSON_UNESCAPED_SLASHES|JSON_UNESCAPED_UNICODE).';</script>'
+        .'<script src="'.e(url('/profile-owner-knowledge-v1.js?v='.substr(hash_file('sha256',__DIR__.'/profile-owner-knowledge-v1.js'),0,12))).'"></script>'
         .'<script data-profile-doorbell-pa3 src="'.e(url('/profile-visitor-doorbell-pa3.js?v='.$profileDoorbellBuild)).'"></script>'
     : '';
 
