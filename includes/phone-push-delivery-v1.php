@@ -45,7 +45,7 @@ function vp3_phone_push_delivery_install_v1(PDO $pdo,string $options=''):void
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_push_outbox_v1 (
         event_ref CHAR(32) NOT NULL PRIMARY KEY,owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,
         source_type VARCHAR(16) NOT NULL,source_id VARCHAR(96) NOT NULL,source_revision BIGINT NOT NULL,
-        source_key CHAR(64) NOT NULL,credential_hash CHAR(64) NOT NULL,subscription_revision BIGINT NOT NULL,
+        source_key CHAR(64) NOT NULL,source_wake_revision BIGINT NOT NULL DEFAULT 0,source_grant_id CHAR(32) NULL,credential_hash CHAR(64) NOT NULL,subscription_revision BIGINT NOT NULL,
         key_id CHAR(64) NOT NULL,payload_hash CHAR(64) NOT NULL,config_revision BIGINT NOT NULL,
         receipt_hash CHAR(64) NOT NULL,state VARCHAR(16) NOT NULL,attempts SMALLINT NOT NULL DEFAULT 0,
         available_epoch BIGINT NOT NULL,expires_epoch BIGINT NOT NULL,created_epoch BIGINT NOT NULL,
@@ -57,6 +57,14 @@ function vp3_phone_push_delivery_install_v1(PDO $pdo,string $options=''):void
         UNIQUE(owner_user_id,device_id,source_key),
         FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_devices_v1(owner_user_id,id) ON DELETE CASCADE
     )".$options);
+    if(!schema_metadata_column_exists($pdo,'vp3_phone_push_outbox_v1','source_wake_revision')){
+        try{$pdo->exec('ALTER TABLE vp3_phone_push_outbox_v1 ADD COLUMN source_wake_revision BIGINT NOT NULL DEFAULT 0');}
+        catch(PDOException $e){if(!in_array((int)($e->errorInfo[1]??0),[1,1060],true)||!schema_metadata_column_exists($pdo,'vp3_phone_push_outbox_v1','source_wake_revision'))throw $e;}
+    }
+    if(!schema_metadata_column_exists($pdo,'vp3_phone_push_outbox_v1','source_grant_id')){
+        try{$pdo->exec('ALTER TABLE vp3_phone_push_outbox_v1 ADD COLUMN source_grant_id CHAR(32) NULL');}
+        catch(PDOException $e){if(!in_array((int)($e->errorInfo[1]??0),[1,1060],true)||!schema_metadata_column_exists($pdo,'vp3_phone_push_outbox_v1','source_grant_id'))throw $e;}
+    }
     foreach(['vp3_phone_push_dispatch_v1'=>'state,available_epoch,lease_expires_epoch,expires_epoch',
         'vp3_phone_push_device_events_v1'=>'owner_user_id,device_id,created_epoch'] as $name=>$columns){
         if(!$mysql){$pdo->exec('CREATE INDEX IF NOT EXISTS '.$name.' ON vp3_phone_push_outbox_v1('.$columns.')');continue;}
@@ -74,7 +82,7 @@ function vp3_phone_push_delivery_ready_v1(PDO $pdo):bool
 {
     try{
         $pdo->query('SELECT id,enabled,revision,subject,updated_epoch,worker_epoch,worker_runtime,worker_transport_ready,worker_code,capacity_skipped_count,last_skipped_epoch FROM vp3_phone_push_delivery_config_v1 WHERE 1=0');
-        $pdo->query('SELECT event_ref,owner_user_id,device_id,source_type,source_id,source_revision,source_key,credential_hash,subscription_revision,key_id,payload_hash,config_revision,receipt_hash,state,attempts,available_epoch,expires_epoch,created_epoch,updated_epoch,lease_token,lease_expires_epoch,send_started_epoch,provider_state,provider_http_status,provider_accepted_epoch,client_observed_epoch,opened_epoch,last_code FROM vp3_phone_push_outbox_v1 WHERE 1=0');
+        $pdo->query('SELECT event_ref,owner_user_id,device_id,source_type,source_id,source_revision,source_key,source_wake_revision,source_grant_id,credential_hash,subscription_revision,key_id,payload_hash,config_revision,receipt_hash,state,attempts,available_epoch,expires_epoch,created_epoch,updated_epoch,lease_token,lease_expires_epoch,send_started_epoch,provider_state,provider_http_status,provider_accepted_epoch,client_observed_epoch,opened_epoch,last_code FROM vp3_phone_push_outbox_v1 WHERE 1=0');
         return vp3_phone_push_ready_v1($pdo)&&vp3_phone_push_vapid_cache_ready_v1($pdo);
     }catch(PDOException){return false;}
 }
@@ -177,7 +185,7 @@ function vp3_phone_push_delivery_public_v1(array $e):array
 function vp3_phone_push_delivery_view_v1(PDO $pdo,array $d,int $now,?string $testKey=null):array
 {
     $s=vp3_phone_push_delivery_status_v1($pdo,$now,$testKey);
-    $out=['enabled'=>$s['enabled'],'ready'=>false,'worker'=>$s['worker'],'last_test'=>null];
+    $out=['state'=>$s['state'],'enabled'=>$s['enabled'],'ready'=>false,'worker'=>$s['worker'],'last_test'=>null];
     if(!vp3_phone_push_delivery_ready_v1($pdo))return $out;
     $subscription=vp3_phone_push_row_v1($pdo,$d);$push=vp3_phone_push_config_v1($pdo);
     $valid=$d['device_status']==='approved'&&(int)$d['expires_at']>$now&&$subscription&&$subscription['state']==='registered'
@@ -195,16 +203,22 @@ function vp3_phone_push_delivery_view_v1(PDO $pdo,array $d,int $now,?string $tes
 
 function vp3_phone_push_delivery_source_v1(array $source,int $now):array
 {
-    vp3_phone_push_delivery_need_v1(!array_diff(array_keys($source),['type','id','revision','expires_epoch'])
+    vp3_phone_push_delivery_need_v1(!array_diff(array_keys($source),['type','id','revision','expires_epoch','wake_revision','grant_id'])
+        &&(!array_key_exists('wake_revision',$source)||($source['type']??null)==='agent_item'&&is_int($source['wake_revision'])&&$source['wake_revision']>0&&$source['wake_revision']<=9007199254740990)
+        &&(!array_key_exists('grant_id',$source)||($source['type']??null)==='agent_item'&&is_string($source['grant_id'])&&preg_match('/^[a-f0-9]{32}$/D',$source['grant_id'])===1)
         &&in_array($source['type']??null,['test','private_chat','agent_request','agent_item','location_visit'],true)
         &&is_string($source['id']??null)&&preg_match('/^[A-Za-z0-9._:-]{1,96}$/D',$source['id'])===1
         &&is_int($source['revision']??null)&&$source['revision']>0&&$source['revision']<=9007199254740990
         &&is_int($source['expires_epoch']??null)&&$source['expires_epoch']>$now&&$source['expires_epoch']<=$now+86400);
-    return ['type'=>$source['type'],'id'=>$source['id'],'revision'=>$source['revision'],'expires_epoch'=>$source['expires_epoch']];
+    return ['type'=>$source['type'],'id'=>$source['id'],'revision'=>$source['revision'],'expires_epoch'=>$source['expires_epoch']]
+        +(isset($source['wake_revision'])?['wake_revision'=>$source['wake_revision']]:[])
+        +(isset($source['grant_id'])?['grant_id'=>$source['grant_id']]:[]);
 }
 
 function vp3_phone_push_delivery_event_source_v1(array $e):array
-{return ['type'=>$e['source_type'],'id'=>$e['source_id'],'revision'=>(int)$e['source_revision'],'expires_epoch'=>(int)$e['expires_epoch']];}
+{return ['type'=>$e['source_type'],'id'=>$e['source_id'],'revision'=>(int)$e['source_revision'],'expires_epoch'=>(int)$e['expires_epoch']]
+    +((int)($e['source_wake_revision']??0)>0?['wake_revision'=>(int)$e['source_wake_revision']]:[])
+    +(!empty($e['source_grant_id'])?['grant_id'=>$e['source_grant_id']]:[]);}
 
 /** Acquires the established account→device→subscription→configuration lock order.
  * A caller must already own a transaction. Returning a reason fails closed.
@@ -254,7 +268,10 @@ function vp3_phone_push_delivery_enqueue_v1(PDO $pdo,array $d,array $source,int 
         $ctx=vp3_phone_push_delivery_context_v1($pdo,(int)$d['owner_user_id'],$d['id'],$now,$testKey);
         vp3_phone_push_delivery_need_v1($ctx['reason']==='',503);
         vp3_phone_push_delivery_need_v1(isset($d['token_hash'])&&hash_equals($ctx['device']['token_hash'],$d['token_hash']),403);
-        $sourceKey=hash('sha256',json_encode([$source['type'],$source['id'],$source['revision']],JSON_THROW_ON_ERROR));
+        $identity=[$source['type'],$source['id'],$source['revision']];
+        if(isset($source['grant_id']))$identity[]=$source['grant_id'];
+        if(isset($source['wake_revision']))$identity[]=$source['wake_revision'];
+        $sourceKey=hash('sha256',json_encode($identity,JSON_THROW_ON_ERROR));
         $q=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_push_outbox_v1 WHERE owner_user_id=? AND device_id=? AND source_key=?'.vp3_phone_lock_v1($pdo),
             [(int)$d['owner_user_id'],$d['id'],$sourceKey]);
         $old=$q->fetch(PDO::FETCH_ASSOC);$q->closeCursor();
@@ -274,7 +291,7 @@ function vp3_phone_push_delivery_enqueue_v1(PDO $pdo,array $d,array $source,int 
             [(int)$d['owner_user_id'],$d['id'],$now])->fetchColumn();
         vp3_phone_push_delivery_need_v1((int)$count<64,429);
         $e=['event_ref'=>bin2hex(random_bytes(16)),'owner_user_id'=>(int)$d['owner_user_id'],'device_id'=>$d['id'],
-            'source_type'=>$source['type'],'source_id'=>$source['id'],'source_revision'=>$source['revision'],'source_key'=>$sourceKey,
+            'source_type'=>$source['type'],'source_id'=>$source['id'],'source_revision'=>$source['revision'],'source_key'=>$sourceKey,'source_wake_revision'=>$source['wake_revision']??0,'source_grant_id'=>$source['grant_id']??null,
             'credential_hash'=>$ctx['device']['token_hash'],'subscription_revision'=>(int)$ctx['subscription']['revision'],
             'key_id'=>$ctx['subscription']['key_id'],'payload_hash'=>$ctx['subscription']['payload_hash'],'config_revision'=>(int)$ctx['config']['revision'],
             'state'=>'queued','attempts'=>0,'available_epoch'=>$now,'expires_epoch'=>$source['expires_epoch'],'created_epoch'=>$now,'updated_epoch'=>$now,

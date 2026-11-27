@@ -383,7 +383,8 @@ function homeserver_shared_v210_exchange_once(
               $changes>0
                 ? 'HomeServer reconnected and reconciled '.$changes.' continuity change'.($changes===1?'':'s').'. Agent Brain context and approved HomeServer capabilities are current again.'
                 : 'HomeServer reconnected and reconciliation completed with no continuity changes. Agent Brain context and approved HomeServer capabilities are current again.',
-              url('/settings-homeserver.php'),'homeserver_reconciliation',(string)($summary['run_id']??'')
+              // UUID retained in native reconciliation metadata; notification IDs are integers.
+              url('/settings-homeserver.php'),'homeserver_reconciliation',null
             );
         }
     }

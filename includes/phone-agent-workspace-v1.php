@@ -211,6 +211,7 @@ function vp3_phone_agent_workspace_receipt_v1(PDO $pdo,array $scope,array $row,b
         .($lock?vp3_phone_lock_v1($pdo):''),[(int)$e['owner_user_id'],$e['device_id'],$e['grant_id'],$row['item_ref']])->fetch(PDO::FETCH_ASSOC)?:['revision'=>0];
     if (($receipt['source_revision']??null)!==$row['source_revision']) {
         foreach (['seen_epoch','read_epoch','acknowledged_epoch','snoozed_until'] as $key) $receipt[$key]=null;
+        $receipt['wake_revision']=0;$receipt['wake_requested_epoch']=0;
     }
     return $receipt;
 }
@@ -423,12 +424,16 @@ function vp3_phone_agent_workspace_mutate_v1(PDO $pdo,array $scope,array $input)
     $new=in_array($operation,['snooze','unsnooze'],true)?$value:($receipt[$column]??$now);
     if (($receipt[$column]??null)===$new) return ['item'=>$current['item']];
     $receipt[$column]=$new;
+    if(in_array($operation,['snooze','unsnooze'],true)){
+        vp3_phone_agent_workspace_need_v1((int)($receipt['wake_revision']??0)<9007199254740990,409);
+        $receipt['wake_revision']=(int)($receipt['wake_revision']??0)+1;$receipt['wake_requested_epoch']=$now;
+    }
     $params=[(int)$e['owner_user_id'],$e['device_id'],$e['grant_id'],$row['item_ref'],$row['source_revision'],(int)$receipt['revision']+1,
-        $receipt['seen_epoch']??null,$receipt['read_epoch']??null,$receipt['acknowledged_epoch']??null,$receipt['snoozed_until']??null,$now];
+        $receipt['seen_epoch']??null,$receipt['read_epoch']??null,$receipt['acknowledged_epoch']??null,$receipt['snoozed_until']??null,$now,(int)($receipt['wake_revision']??0),(int)($receipt['wake_requested_epoch']??0)];
     $exists=vp3_phone_sql_v1($pdo,'SELECT 1 FROM vp3_phone_agent_receipts_v1 WHERE owner_user_id=? AND device_id=? AND grant_id=? AND item_ref=?',array_slice($params,0,4))->fetchColumn();
-    if ($exists) vp3_phone_sql_v1($pdo,'UPDATE vp3_phone_agent_receipts_v1 SET source_revision=?,revision=?,seen_epoch=?,read_epoch=?,acknowledged_epoch=?,snoozed_until=?,updated_epoch=? WHERE owner_user_id=? AND device_id=? AND grant_id=? AND item_ref=?',
+    if ($exists) vp3_phone_sql_v1($pdo,'UPDATE vp3_phone_agent_receipts_v1 SET source_revision=?,revision=?,seen_epoch=?,read_epoch=?,acknowledged_epoch=?,snoozed_until=?,updated_epoch=?,wake_revision=?,wake_requested_epoch=? WHERE owner_user_id=? AND device_id=? AND grant_id=? AND item_ref=?',
         [...array_slice($params,4),...array_slice($params,0,4)]);
-    else vp3_phone_sql_v1($pdo,'INSERT INTO vp3_phone_agent_receipts_v1(owner_user_id,device_id,grant_id,item_ref,source_revision,revision,seen_epoch,read_epoch,acknowledged_epoch,snoozed_until,updated_epoch) VALUES(?,?,?,?,?,?,?,?,?,?,?)',$params);
+    else vp3_phone_sql_v1($pdo,'INSERT INTO vp3_phone_agent_receipts_v1(owner_user_id,device_id,grant_id,item_ref,source_revision,revision,seen_epoch,read_epoch,acknowledged_epoch,snoozed_until,updated_epoch,wake_revision,wake_requested_epoch) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)',$params);
     return ['item'=>vp3_phone_agent_workspace_item_v1($pdo,$scope,$row['item_ref'])['item']];
 }
 
@@ -515,6 +520,7 @@ function vp3_phone_agent_workspace_push_current_v1(PDO $pdo,array $device,array 
         if (!$live||$live['device_status']!=='approved'||(int)$live['expires_at']<=$now||!hash_equals($live['token_hash'],$device['token_hash'])
             ||!$e||!(int)$e['enabled']||!(int)$e['notifications_enabled']||!hash_equals($e['credential_hash'],$live['token_hash'])
             ||!hash_equals($e['owner_fingerprint'],hash('sha256',$owner.':'.(string)($user['password_hash']??'')))) return false;
+        if(isset($source['grant_id'])&&$source['grant_id']!==$e['grant_id'])return false;
         $agent=vp3_phone_agent_workspace_agent_v1($pdo,$owner,(int)$e['selected_agent_id']);
         vp3_phone_agent_workspace_chat_v1($pdo,$owner,$agent['id'],(int)$e['conversation_id']);
         $row=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_agent_items_v1 WHERE owner_user_id=? AND agent_id=? AND item_ref=?',[$owner,$agent['id'],$source['id']])->fetch(PDO::FETCH_ASSOC);
@@ -523,7 +529,8 @@ function vp3_phone_agent_workspace_push_current_v1(PDO $pdo,array $device,array 
         if (!$native||!hash_equals($row['source_revision'],$native['source_revision'])||$native['conversation_id']!==(int)$row['conversation_id']
             ||!in_array($native['state'],['ready','needs_review'],true)||($native['notification_eligible']??true)===false) return false;
         $receipt=vp3_phone_agent_workspace_receipt_v1($pdo,['enrollment'=>$e],$row);
-        return ($receipt['read_epoch']??null)===null&&($receipt['acknowledged_epoch']??null)===null&&(int)($receipt['snoozed_until']??0)<=$now;
+        return (int)($source['wake_revision']??0)===(int)($receipt['wake_revision']??0)
+            &&($receipt['read_epoch']??null)===null&&($receipt['acknowledged_epoch']??null)===null&&(int)($receipt['snoozed_until']??0)<=$now;
     } catch (RuntimeException|DomainException $error) {
         if ($error instanceof PDOException) throw $error;
         return false;

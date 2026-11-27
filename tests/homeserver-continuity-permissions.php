@@ -36,7 +36,7 @@ function homeserver_https_v1300_wait(string $requestId,int $timeout=24000): arra
     return ['homeserver_snapshot'=>$GLOBALS['legacy'],
         'reconciliation'=>['cloud_to_homeserver'=>['status'=>'completed','snapshot_mode'=>'full']]];
 }
-function create_notification(...$args): void {$GLOBALS['notifications'][]=$args;}
+require dirname(__DIR__).'/includes/notifications.php';
 require dirname(__DIR__).'/includes/homeserver-federated-data-v240.php';
 require dirname(__DIR__).'/includes/homeserver-reconciliation-v246.php';
 require dirname(__DIR__).'/includes/homeserver-shared-agent-v210.php';
@@ -44,6 +44,8 @@ require dirname(__DIR__).'/includes/homeserver-shared-agent-v210.php';
 foreach(['homeserver_agent_events','homeserver_agent_state','homeserver_reconciliation_runs_v246','homeserver_reconciliation_state_v246','homeserver_federated_cursors','homeserver_federated_records'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 if(!table_exists('users'))$pdo->exec($mysql?'CREATE TABLE users(id INT UNSIGNED PRIMARY KEY,is_active TINYINT NOT NULL DEFAULT 1) ENGINE=InnoDB':'CREATE TABLE users(id INTEGER PRIMARY KEY,is_active INTEGER NOT NULL DEFAULT 1)');
 $pdo->exec('INSERT INTO users(id) VALUES(91)');
+$pdo->exec($mysql?"CREATE TABLE IF NOT EXISTS notifications(id BIGINT AUTO_INCREMENT PRIMARY KEY,user_id INT,type VARCHAR(50),title VARCHAR(190),body TEXT,target_url TEXT,source_type VARCHAR(80),source_id BIGINT NULL,is_read INT DEFAULT 0,read_at DATETIME NULL,created_at DATETIME DEFAULT CURRENT_TIMESTAMP) ENGINE=InnoDB":"CREATE TABLE notifications(id INTEGER PRIMARY KEY AUTOINCREMENT,user_id INTEGER,type TEXT,title TEXT,body TEXT,target_url TEXT,source_type TEXT,source_id INTEGER,is_read INTEGER DEFAULT 0,read_at TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP)");
+if(!$mysql)$pdo->sqliteCreateFunction('NOW',static fn():string=>gmdate('Y-m-d H:i:s'));
 if(!$mysql){
     $pdo->exec("CREATE TABLE homeserver_federated_records(user_id INTEGER,authority_source TEXT,dataset TEXT,authority_key TEXT,canonical_id TEXT,observed_source TEXT,record_hash TEXT,source_updated_at TEXT,tombstoned INTEGER,last_seen_at TEXT,UNIQUE(user_id,authority_source,dataset,authority_key,observed_source))");
     $pdo->exec("CREATE TABLE homeserver_federated_cursors(user_id INTEGER,peer_source TEXT,dataset TEXT,revision TEXT,sync_cursor TEXT,last_sync_at TEXT,last_success_at TEXT,last_error TEXT,UNIQUE(user_id,peer_source,dataset))");
@@ -90,6 +92,8 @@ check($queued===2,'Eligible retry must run once');
 check(!$status['reconciliation']['needs_reconciliation'],'Successful authorized sync must restore current context');
 check($status['agent_brain_status']['priority']==='watch','Ungranted file coverage must be a visible warning');
 check($status['diagnostics']['last_shared_sync_at']!==null,'Successful sync timestamp must be recorded');
+check((int)$pdo->query("SELECT COUNT(*) FROM notifications WHERE user_id=91 AND type='homeserver_connection_update' AND source_type='homeserver_reconciliation' AND source_id IS NULL")->fetchColumn()===1,'Real typed notifier records reconnect without treating its UUID as an integer');
+check(!empty($status['reconciliation']['last_run_id']),'Native reconciliation retains its UUID identity');
 echo "PASS automatic recovery, successful timestamp and visible file permission warning\n";
 
 $restored=$initial;$restored['revision']='files-authorized';$restored['datasets']['files']=[];
