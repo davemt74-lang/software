@@ -45,6 +45,14 @@ An unreadable review provides no facts or reply wording.
 
 There is no automatic attachment analysis or general conversation retrieval.
 This version exposes summaries and suggested wording in the private review UI.
+Completed, source-bound reviews can also supply historical context to the linked
+Curiosity specialist, under the current Gmail grant and exact owner/Agent/Chat.
+Curiosity can select an existing missing-detail question for its native thread
+flow; it never starts an attachment analysis from a scan or status view. Source
+links reopen the existing review and recheck the original file. Older summaries
+gain source provenance when explicitly reopened, without another model call.
+See docs/agent-ob1-brainstorm-development.md, section 6, for the answer and OB1
+handoff contract. This does not enable general conversation retrieval.
 The model has no tools and receives no unrelated Chat history. Files, filenames,
 email content and Email Soul are reference data, not execution authority.
 

@@ -94,6 +94,8 @@ jobs:
           test -f _deploy/includes/agent-curiosity-email-activity-v1.php
           test -f _deploy/includes/agent-curiosity-screen-v1.php
           test -f _deploy/includes/agent-initiative-curiosity-analysis-v1.php
+          test -f _deploy/includes/agent-curiosity-documents-v1.php
+          test -f _deploy/includes/agent-curiosity-analysis-threads-v1.php
           test -f _deploy/includes/agent-initiative-creative-feedback-v1.php
           test -f _deploy/includes/music-song-metadata-v1.php
           test -f _deploy/includes/music-song-metadata-form-v1.php

@@ -13,7 +13,7 @@ const errors=[],requests=[];page.on('pageerror',e=>errors.push(e.message));
 const id='a'.repeat(32),ref='c'.repeat(200),result={coverage:'readable',summary:'Quote Q-104 totals $265.00 for ten custom shirts and setup.',
   facts:[{text:'The total is $265.00.',page:1},{text:'Five medium and five large shirts.',page:2}],
   questions:['What delivery date is available?','Which shipping address should be used?'],reply_body:'Thanks for the quote. Could you confirm the delivery date and shipping address?'};
-let saved=null,denied=false,gate=null,getGate=null,failAnalysis=false;
+let saved=null,denied=false,gate=null,getGate=null,reopenGate=null,failAnalysis=false;
 const draft={id:'d'.repeat(32),status:'prepared',from:'owner@example.test',to:'sender@example.test',subject:'Re: Quote Q-104',body:'Previously reviewed wording.',
   attachments:[],is_reply:true,can_open_source:true,can_edit:true,can_send:true,review_token:'native-review',watch_review_token:'native-watch',edit_revision:'e'.repeat(64),saved_at:new Date().toISOString()};
 const publicDraft=()=>structuredClone(draft);
@@ -34,8 +34,14 @@ await page.route('https://documents.test/api/**',async route=>{
     assert.fail('Unexpected composer action '+input.action);
   }
   assert.ok(url.pathname.endsWith('/gmail-documents-v1.php')||url.searchParams.get('workspace_documents')==='1');
-  assert.equal(input.source_ref,ref);assert.ok(!('data' in input)&&!('bytes' in input)&&!('url' in input));
+  assert.ok(!('data' in input)&&!('bytes' in input)&&!('url' in input));
   if(denied)return fail(403,'Private attachment access changed.');
+  if(input.action==='reopen'){
+    assert.equal(input.review_id,id);assert.ok(!('source_ref' in input));
+    if(reopenGate){const g=reopenGate;reopenGate=null;g.start();await g.promise;}
+    return ok({documents:{source_ref:ref,count:3,max_bytes:2097152},part:'0.1'});
+  }
+  assert.equal(input.source_ref,ref);
   if(input.action==='list')return ok({installed:true,parts:[{part:'0.1',name:'Quote Q-104.pdf',mime:'application/pdf',size:pdf.length,supported:true,reason:null},
     {part:'0.2',name:'<img src=x onerror=alert(1)>.zip',mime:'application/zip',size:1024,supported:false,reason:'unsupported'},
     {part:'0.3',name:'oversized.pdf',mime:'application/pdf',size:2097153,supported:false,reason:'over_limit'}]});
@@ -125,6 +131,25 @@ try{
   saved={id,state:'ready',reason:null,result:{...result,coverage:'partial'}};await mount();await expand();await summary().getByText('Some document content could not be read confidently.',{exact:true}).waitFor();
   failAnalysis=true;await summary().getByRole('button',{name:'Analyze again',exact:true}).click();await summary().getByRole('button',{name:'Check saved review',exact:true}).waitFor();
   const failedCount=count('analyze');await summary().getByRole('button',{name:'Check saved review',exact:true}).click();await summary().getByText(result.summary,{exact:true}).waitFor();assert.equal(count('analyze'),failedCount,'An uncertain request offers a read-only status check.');failAnalysis=false;
+  // Curiosity's source link uses the existing attachment review, not another analysis or workspace.
+  saved={id,state:'ready',reason:null,result:structuredClone(result)};
+  await mount();await page.evaluate(id=>{
+    const button=document.createElement('button');button.textContent='View saved attachment review';button.id='curiosity-attachment-source';
+    button.addEventListener('click',event=>void window.VP3GmailDocumentsV1.openSavedReview(id,event));document.getElementById('host').prepend(button);
+  },id);
+  const previousAnalysis=count('analyze');
+  for(const width of [1280,390,320]){
+    await page.setViewportSize({width,height:900});await page.locator('#curiosity-attachment-source').click();
+    const dialog=page.getByRole('dialog',{name:'Saved attachment review'});await dialog.getByText(result.summary,{exact:true}).waitFor();
+    assert.equal(count('analyze'),previousAnalysis);assert.equal(await dialog.locator('details[data-attachment-part="0.1"]').getAttribute('open'),'');
+    assert.ok(await dialog.evaluate(el=>el.getBoundingClientRect().width<=innerWidth&&el.scrollWidth<=el.clientWidth+1),'Saved review fits phone and desktop.');
+    await screenshot('curiosity-attachment-source-'+width+'.png');await dialog.getByRole('button',{name:'Close',exact:true}).click();
+    assert.equal(await page.getByRole('dialog',{name:'Saved attachment review'}).count(),0);
+  }
+  const sourceDelay=hold();reopenGate=sourceDelay;await page.locator('#curiosity-attachment-source').click();await sourceDelay.started;
+  await page.evaluate(()=>{window.currentChat=43;window.dispatchEvent(new Event('stonefellow:chat-context-changing'));});sourceDelay.release();await page.waitForTimeout(100);
+  assert.equal(await page.getByRole('dialog',{name:'Saved attachment review'}).count(),0,'Late source responses cannot reopen another Chat.');
+  await page.evaluate(()=>window.currentChat=42);
   // A response arriving after account/Chat navigation never revives private UI.
   saved=null;await mount();const delayed=hold();getGate=delayed;await expand();await delayed.started;
   await page.evaluate(()=>{window.currentChat=43;window.dispatchEvent(new Event('stonefellow:chat-context-changing'));});delayed.release();await page.waitForTimeout(100);

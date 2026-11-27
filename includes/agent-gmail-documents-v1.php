@@ -177,6 +177,49 @@ function agent_gmail_document_saved_v1(array $row,array $read,array $part,?calla
     return $saved;
 }
 
+/** Bind a verified saved review to its origin without copying attachment bytes into memory. */
+function agent_gmail_document_bind_review_v1(PDO $pdo,array $row,array $source,array $part,array $saved): void
+{
+    $provenance=['source'=>$source,'part'=>$part];
+    // The short-lived browser token is never a durable permission grant.
+    unset($provenance['source']['expires']);
+    if(($saved['provenance']??null)===$provenance)return;
+    $saved['provenance']=$provenance;
+    $pdo->prepare("UPDATE agent_gmail_document_reviews_v1 SET result_enc=? WHERE id=? AND owner_user_id=? AND agent_id=? AND conversation_id=? AND state='ready' AND result_enc=?")
+        ->execute([ai_encrypt_secret(json_encode($saved,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)),$row['id'],$row['owner_user_id'],$row['agent_id'],$row['conversation_id'],$row['result_enc']]);
+}
+
+/** Internal stored provenance only. Reuse the foreground validator, then recheck live read authority. */
+function agent_gmail_document_origin_v1(PDO $pdo,array $user,array $principal,int $chat,array $row): ?array
+{
+    if($row['state']!=='ready')return null;
+    $saved=json_decode(ai_decrypt_secret($row['result_enc']),true,16,JSON_THROW_ON_ERROR);
+    $origin=$saved['provenance']??null;
+    if(!is_array($origin)||array_keys($origin)!==['source','part']||!is_array($origin['source'])||!is_array($origin['part']))return null;
+    $source=$origin['source']+['expires'=>time()+900];
+    $source=agent_gmail_document_source_open_v1($user,bin2hex(ai_encrypt_secret(json_encode($source,JSON_THROW_ON_ERROR))));
+    $part=$origin['part'];
+    $hash=agent_gmail_document_hash_v1([(int)$user['id'],(int)($principal['agent_id']??0),$chat,$source['connection'],$source['grant'],$source['fingerprint'],$source['account'],$source['message'],$source['revision'],$part]);
+    if(!hash_equals($row['source_hash'],$hash)||!is_string($part['part']??null)||!is_string($part['mime']??null))return null;
+    agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,static fn():bool=>true);
+    if(!is_string($saved['bytes_sha256']??null)||!preg_match('/\A[a-f0-9]{64}\z/D',$saved['bytes_sha256']))return null;
+    return ['source'=>$source,'part'=>$part,'review'=>$saved['review'],'bytes_sha256'=>$saved['bytes_sha256']];
+}
+
+/** An explicit source-link click reopens the exact current file through the existing attachment UI. */
+function agent_gmail_document_reopen_v1(PDO $pdo,array $user,array $principal,int $chat,string $id,Closure $current,?callable $http=null): array
+{
+    if(!preg_match('/\A[a-f0-9]{32}\z/D',$id))throw new DomainException('Choose a saved attachment review.',422);
+    $row=agent_gmail_document_row_v1($pdo,(int)$user['id'],(int)($principal['agent_id']??0),$chat,$id);
+    $origin=$row===null?null:agent_gmail_document_origin_v1($pdo,$user,$principal,$chat,$row);
+    if($origin===null)throw new DomainException('Reopen the original email to view this attachment review.',409);
+    $source=$origin['source'];$read=agent_gmail_document_read_v1($pdo,$user,$principal,$chat,$source,$current,$http);
+    agent_gmail_document_saved_v1($row,$read,$origin['part'],$http);
+    agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
+    return ['documents'=>['source_ref'=>bin2hex(ai_encrypt_secret(json_encode($source,JSON_THROW_ON_ERROR))),
+        'count'=>count($read['parts']),'max_bytes'=>AGENT_GMAIL_DOCUMENT_MAX_BYTES_V1],'part'=>$origin['part']['part']];
+}
+
 /** A foreground owner action. A persisted claim is consumed once at the metered provider boundary. */
 function agent_gmail_document_action_v1(PDO $pdo,array $user,array $principal,int $chat,array $input,Closure $current,?callable $http=null,?callable $model=null): array
 {
@@ -203,8 +246,9 @@ function agent_gmail_document_action_v1(PDO $pdo,array $user,array $principal,in
     }
     if ($action==='get') {
         if ($row!==null&&$row['state']==='ready') {
-            agent_gmail_document_saved_v1($row,$read,$part,$http);
+            $saved=agent_gmail_document_saved_v1($row,$read,$part,$http);
             agent_gmail_document_read_v1($pdo,$user,$principal,$chat,$source,$current,$http);
+            agent_gmail_document_bind_review_v1($pdo,$row,$source,$part,$saved);
         }
         return ['review'=>agent_gmail_document_public_v1($row)];
     }
@@ -244,7 +288,11 @@ function agent_gmail_document_action_v1(PDO $pdo,array $user,array $principal,in
     });
     if (!$claim) {
         $old=agent_gmail_document_row_v1($pdo,$owner,$agent,$chat,$id);
-        if ($old['state']==='ready') agent_gmail_document_saved_v1($old,$read,$part,$http);
+        if ($old['state']==='ready') {
+            $saved=agent_gmail_document_saved_v1($old,$read,$part,$http);
+            agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
+            agent_gmail_document_bind_review_v1($pdo,$old,$source,$part,$saved);
+        }
         agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
         return ['review'=>agent_gmail_document_public_v1($old)];
     }
@@ -283,7 +331,9 @@ function agent_gmail_document_action_v1(PDO $pdo,array $user,array $principal,in
         $liveRead=agent_gmail_document_read_v1($pdo,$user,$principal,$chat,$source,$current,$http);
         if (!hash_equals($byteHash,hash('sha256',agent_gmail_document_bytes_v1($liveRead,$part,$http)))) throw new DomainException('The attachment changed during analysis.',409);
         agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
-        $result=['review'=>$review,'bytes_sha256'=>$byteHash,'soul'=>['version'=>$soul['version'],'revision'=>$soul['revision']]];
+        $origin=$source;unset($origin['expires']);
+        $result=['review'=>$review,'bytes_sha256'=>$byteHash,'soul'=>['version'=>$soul['version'],'revision'=>$soul['revision']],
+            'provenance'=>['source'=>$origin,'part'=>$part]];
         $pdo->prepare("UPDATE agent_gmail_document_reviews_v1 SET state='ready',result_enc=?,lease_epoch=0,updated_epoch=? WHERE id=? AND state='dispatched'")
             ->execute([ai_encrypt_secret(json_encode($result,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)),time(),$id]);
     } catch (Throwable $error) {

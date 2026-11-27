@@ -5,6 +5,7 @@ require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
 require_once __DIR__.'/agent-curiosity-email-activity-v1.php';
 require_once __DIR__.'/agent-curiosity-screen-v1.php';
 require_once __DIR__.'/phone-tracking-v1.php';
+require_once __DIR__.'/agent-curiosity-analysis-threads-v1.php';
 
 function vp3_curiosity_analysis_ref_v1(array $user,array $binding): string
 {
@@ -20,19 +21,28 @@ function vp3_curiosity_analysis_snapshot_v1(PDO $pdo,array $user,array $binding)
     $screens=vp3_curiosity_screen_briefs_v1($pdo,$user,vp3_initiative_binding_agent_v1($binding));
     $liveScreen=vp3_curiosity_live_screen_v1($pdo,$user,$binding);
     $locations=vp3_location_specialist_checkin_context_v1($pdo,$user);
+    $documents=vp3_curiosity_document_reports_v1($pdo,$user,$binding);
+    $answers=vp3_curiosity_analysis_answers_v1($pdo,$user,$binding,$documents);
+    // Proposed questions and our own reports are output, not a reason to pay for another pass.
+    $base['evidence']=array_filter($base['evidence'],static fn(array $row):bool=>
+        !str_starts_with($row['ref']??'','curiosity:')&&($row['specialist']??null)!=='curiosity');
+    $base['reports']=array_values(array_filter($base['reports'],static fn(array $row):bool=>($row['specialist']??null)!=='curiosity'));
+    unset($base['briefs']['curiosity']);
     $meaningful=array_filter($base['evidence'],static fn(array $row):bool=>!in_array($row['kind']??null,
         ['creative_starter','chat_history','account_readiness','scheduling_readiness','calendar_readiness','product_readiness','business_readiness'],true));
     $inputs=array_keys(array_filter($base['briefs'],static fn(array $brief):bool=>$brief['state']==='current_context'));
-    if(($activity||$mail)&&!in_array('gmail',$inputs,true))$inputs[]='gmail';
+    if(($activity||$mail||$documents)&&!in_array('gmail',$inputs,true))$inputs[]='gmail';
     if(($screens||$liveScreen)&&!in_array('eyes',$inputs,true))$inputs[]='eyes';
     if($locations&&!in_array('location',$inputs,true))$inputs[]='location';
     sort($inputs);
     return ['revision'=>vp3_initiative_brainstorm_semantic_v1(['binding'=>$binding,
         'sources'=>array_column($base['evidence'],'revision','ref'),
-        'reports'=>vp3_initiative_brainstorm_report_keys_v1($base['reports']),'email_activity'=>$activity,'email_candidates'=>$mail,'screens'=>$screens,'live_screen'=>$liveScreen,'location_checkins'=>$locations,'feedback'=>$base['feedback']]),
-        'ready'=>(bool)($meaningful||$mail||$activity||$screens||$liveScreen||$locations),
+        'reports'=>vp3_initiative_brainstorm_report_keys_v1($base['reports']),'email_activity'=>$activity,'email_candidates'=>$mail,'screens'=>$screens,'live_screen'=>$liveScreen,
+        'attachment_reviews'=>$documents,'owner_answers'=>$answers,'location_checkins'=>$locations,'feedback'=>$base['feedback']]),
+        'ready'=>(bool)($meaningful||$mail||$activity||$screens||$liveScreen||$documents||$locations),
         'evidence'=>$base['evidence'],'briefs'=>$base['briefs'],'reports'=>$base['reports'],
         'email_activity'=>$activity,'email_candidates'=>$mail,'screen_findings'=>$screens,'live_screen'=>$liveScreen,
+        'attachment_reviews'=>$documents,'owner_answers'=>$answers,
         'location_checkins'=>$locations,'input_specialists'=>$inputs,'feedback'=>$base['feedback']];
 }
 
@@ -60,7 +70,8 @@ function vp3_curiosity_analysis_tool_result_v1(array $value): ?array
 {
     $out=$value['output']??null;
     if(array_keys($value)!==['draft','output']||!is_array($out)
-        ||array_keys($out)!==['type','status','context_ref','context_revision','input_specialists','email_actions','preferences_confirmed']
+        ||!in_array(array_keys($out),[['type','status','context_ref','context_revision','input_specialists','email_actions','preferences_confirmed'],
+            ['type','status','context_ref','context_revision','input_specialists','email_actions','preferences_confirmed','questions']],true)
         ||$out['type']!=='initiative_curiosity_analysis'||$out['status']!=='analysis_ready'
         ||!is_string($out['context_ref'])||!preg_match('/\Acuriosity-context:[1-9][0-9]{0,15}:[0-9]{1,16}\z/D',$out['context_ref'])
         ||!is_string($out['context_revision'])||!preg_match('/\A[a-f0-9]{64}\z/D',$out['context_revision'])
@@ -71,6 +82,7 @@ function vp3_curiosity_analysis_tool_result_v1(array $value): ?array
         ||vp3_initiative_brainstorm_text_v1($value['draft'],2000)!==$value['draft'])return null;
     foreach($out['input_specialists'] as $id)if(!is_string($id)||!isset(vp3_initiative_specialist_catalog_v1([])[$id]))return null;
     foreach($out['email_actions'] as $count)if(!is_int($count)||$count<0||$count>12)return null;
+    if(array_key_exists('questions',$out)&&vp3_curiosity_analysis_questions_v1($out['questions'])===null)return null;
     return $value;
 }
 
@@ -115,7 +127,11 @@ function vp3_curiosity_analysis_prepare_v1(PDO $pdo,array $user,array $binding,a
         .'Current shared-screen descriptions are provisional visual observations. Retained screen findings are historical at captured_at. '
         .'Neither establishes a preference, a verified business fact, hidden-page access or permission to act. '
         .'Location check-in counts are opt-in observations from the owner’s paired phone. Work, school and other place purposes remain tentative until explicitly labeled. Never infer sensitive traits or turn a guess into a confirmed place. Suggest one useful clarification for a repeat pattern. '
-        .'Return a concise private analysis in draft, at most 2000 characters. Include a useful next question only when supported; do not fill a quota.',
+        .'Saved attachment reviews are historical model interpretations, not freshly rechecked files; preserve partial coverage and uncertainty. '
+        .'Owner answers, skips and deferrals close their exact gap. Do not repeat it or infer a preference from a factual answer. '
+        .'Return a concise private analysis in draft, at most 2000 characters. Optionally return questions as at most two selections '
+        .'with exactly source_ref and zero-based question_index from attachment_reviews. Select only important unresolved gaps that the combined context does not answer. '
+        .'Do not invent a question, source, action or quota. These selections create private Curiosity threads and use existing delivery spacing, never send an email.',
         'specialists'=>$snapshot['briefs'],'specialist_reports'=>$snapshot['reports'],'creative_feedback'=>$snapshot['feedback'],
         'screen_findings'=>$snapshot['screen_findings'],
         'current_shared_screen'=>$snapshot['live_screen'],
@@ -123,13 +139,17 @@ function vp3_curiosity_analysis_prepare_v1(PDO $pdo,array $user,array $binding,a
         'evidence'=>array_map(static fn(array $row):array=>array_diff_key($row,array_flip(['url','revision','canonical_source_revision'])),array_values($snapshot['evidence'])),
         'email_activity'=>array_map(static fn(array $row):array=>array_diff_key($row,['item_ref'=>true]),$snapshot['email_activity']),
         'email_samples'=>$mail,'budget'=>['max_jobs'=>0,'max_emails'=>3]];
+    $input['attachment_reviews']=array_map(static fn(array $row):array=>array_diff_key($row,array_flip(['document_key','revision','href'])),array_values($snapshot['attachment_reviews']));
+    $input['owner_answers']=$snapshot['owner_answers'];
     $authorize();
     $answer=$infer(json_encode($input,JSON_THROW_ON_ERROR),'vp3.initiative-draft.v1');
-    $draft=vp3_tool_json_object_v1($answer,['draft'],12000)['draft']??null;
+    $response=vp3_tool_json_object_v1($answer,['draft','questions'],12000);$draft=$response['draft']??null;
+    $questions=vp3_curiosity_analysis_questions_v1($response['questions']??[],$snapshot['attachment_reviews']);
+    if($questions===null)throw new InvalidArgumentException('Invalid Curiosity source question.');
     $authorize();
     $result=['draft'=>$draft,'output'=>['type'=>'initiative_curiosity_analysis','status'=>'analysis_ready',
         'context_ref'=>$job['primary'],'context_revision'=>$source['revision'],'input_specialists'=>$snapshot['input_specialists'],
-        'email_actions'=>vp3_curiosity_analysis_email_counts_v1($snapshot['email_activity']),'preferences_confirmed'=>false]];
+        'email_actions'=>vp3_curiosity_analysis_email_counts_v1($snapshot['email_activity']),'preferences_confirmed'=>false,'questions'=>$questions]];
     return vp3_curiosity_analysis_tool_result_v1($result)??throw new InvalidArgumentException('Invalid Curiosity analysis.');
 }
 
@@ -141,6 +161,7 @@ function vp3_curiosity_analysis_result_current_v1(PDO $pdo,array $user,array $bi
     $snapshot=vp3_curiosity_analysis_snapshot_v1($pdo,$user,$binding);
     if(!hash_equals($snapshot['revision'],$out['context_revision'])||$snapshot['input_specialists']!==$out['input_specialists']
         ||vp3_curiosity_analysis_email_counts_v1($snapshot['email_activity'])!==$out['email_actions'])throw new Vp3InitiativeSourcesChangedV1();
+    if(vp3_curiosity_analysis_questions_v1($out['questions']??[],$snapshot['attachment_reviews'])===null)throw new Vp3InitiativeSourcesChangedV1();
     return $normalized;
 }
 

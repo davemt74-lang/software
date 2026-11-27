@@ -211,3 +211,66 @@ headless browser gates exercise trusted link gestures, window reuse, tab sharing
 share limits, account isolation and the actual imported-mail link renderer. All
 provider transports are synthetic. Native sharing-picker behavior and paid model
 output still require installation acceptance. No new workspace is introduced.
+
+## Section 6: saved attachment reviews become Curiosity threads
+
+Curiosity now reads up to six already-completed Gmail attachment reviews from the
+last 30 days in the exact linked owner/Agent/Chat. This is a read-only projection of
+the encrypted review store. It does not fetch an attachment, dispatch another
+document analysis, or treat a saved interpretation as a freshly verified file.
+Partial coverage and page references retain their original uncertainty;
+unreadable reviews do not supply facts. The latest completed review for a given
+file supersedes earlier input. Current native Gmail grants, connected-account
+identity, the Email Agent destination and private Chat access are rechecked.
+
+New explicit attachment analyses retain encrypted source provenance and byte
+identity alongside their existing result. Older reviews gain that provenance only
+when the owner reopens the exact original review and its bytes are verified. No
+new inference or automatic reanalysis is needed for that upgrade. Neither the
+short-lived browser reference nor provider credentials are copied into threads.
+
+The metered Curiosity pass considers those reports together with permitted email,
+Eyes and other specialist context. It may select at most two supplied unresolved
+attachment questions by opaque review reference and question index. It cannot
+invent a source or arbitrary new question in this bridge. Selection is optional;
+the model should return none when an owner answer or related source already
+settles the gap. The server validates each selection against the current review.
+
+Selections join the existing native Curiosity thread store atomically with the
+canonical worker receipt. Exact owner/Agent/Chat binding, matching completed
+action/receipt and current source revision are required to offer or recall a
+question. Thread identity follows the file and normalized gap, so retries and a
+new review ID cannot reopen the same answered, skipped or deferred question.
+An open question justified by a superseded review cannot remain actionable; a
+new selection can update it under a new source revision. Earlier posts remain
+history. The existing Ask/Watch setting, delivery gate, owner activity checks and
+question spacing still control Chat delivery.
+
+Owner responses use the existing saved-Chat reply anchor and follow-through
+transaction. A factual answer closes the gap without inventing a permanent
+preference or a supplier commitment. Actual answers, skips and deferrals become
+revision-bound input for the next analysis. An authenticated historical answer
+survives a later review of that file while its original citation and current
+Gmail access remain valid. Source withdrawal removes that derived context. A
+clear owner request can also become the existing confirmed-goal evidence for
+Brainstorming and OB1; it does not grant sending permission.
+
+Source actions in Curiosity's current and answered threads reopen the existing
+attachment review UI. An explicit click rechecks the original MIME revision and
+bytes before minting a new short-lived reference. Cross-Chat references and
+changed files are rejected. The review appears before optional analysis controls,
+fits desktop and narrow phones, and closes when account or Chat context changes.
+
+Acceptance: an explicitly reviewed quote lacks a delivery date; Curiosity uses the
+combined context to select that gap; the native Ask route posts it; the owner's
+authenticated reply supplies the date they want to request; Brainstorming returns
+an idea; OB1 alone admits private reply-wording preparation. The canonical receipt
+proves wording was prepared for review, not that an email was sent or the supplier
+agreed. Reanalysis cannot repeat the same closed gap. Receipt mismatch, unknown
+model sources, sibling Chats, source supersession and access withdrawal during
+inference are covered. The new pipeline runs on SQLite and native MySQL; the
+native attachment suite covers older-review binding and exact-file reopening.
+Actual browser gates cover the specialist source action, private navigation races
+and attachment review at 1280, 390 and 320 pixels. All provider/model transports in
+these gates are synthetic; live account quality and installation scheduling still
+require deployment acceptance.

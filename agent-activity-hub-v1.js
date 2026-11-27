@@ -2378,6 +2378,13 @@
     const actions = node('div','','vp3-agent-activity-actions');
     const seen = new Set();
     for (const row of Array.isArray(rows) ? rows.slice(0,4) : []) {
+      if(/^[a-f0-9]{32}$/.test(row?.attachment_review_id||'')&&row.agent_id===current.agent&&row.conversation_id===current.cid){
+        const reviewKey='attachment:'+row.attachment_review_id;if(seen.has(reviewKey))continue;seen.add(reviewKey);
+        const link=button(curiosityText(row.label,240)||'View saved attachment review',event=>{
+          if(signature(current)!==signature(scope()))return;
+          void window.VP3GmailDocumentsV1?.openSavedReview(row.attachment_review_id,event);
+        });link.dataset.curiosityFocus=focusKey+':'+reviewKey;actions.append(link);continue;
+      }
       if (!positive(row?.conversation_id) || !positive(row?.message_id)) continue;
       const action = specialistResult({...row,result_url:row.href},current);
       const key = officeChatKey(action);
@@ -2398,6 +2405,7 @@
   function curiosityQuestionLinks(question,current,focusKey) {
     const {conversation_id,message_id,href} = question;
     return curiositySources([
+      ...(Array.isArray(question.sources)?question.sources:[]),
       {conversation_id,message_id,href,label:'View question in Chat'},
       {conversation_id,message_id:question.reply_message_id,href:question.reply_href,
         label:question.state === 'answered' ? 'View answer in Chat' : 'View response in Chat'}
@@ -2821,7 +2829,7 @@
             const item = node('li');
             item.append(node('p',questionText));
             if (question.state !== 'open') {
-              item.append(node('small',curiosityStates[question.state]));
+              item.append(node('small',question.reason==='source_changed'?'Source review updated':curiosityStates[question.state]));
               const answer = curiosityText(question.answer,700);
               if (question.state === 'answered' && answer) item.append(node('p',answer));
             }

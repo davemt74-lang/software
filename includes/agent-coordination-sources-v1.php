@@ -139,6 +139,8 @@ function vp3_coordination_curiosity_sources_v1(PDO $pdo,array $scope,?array $ref
         $ref='curiosity:'.$question['thread_id'].':'.$question['id'];
         if(!vp3_coordination_source_ref_valid_v1($ref))continue;
         $revision=[$question['title'],$question['question']];
+        // Attachment threads carry the exact verified review that justified this question.
+        if(isset($question['analysis_revision']))$revision[]=$question['analysis_revision'];
         $source=$question['sources'][0]??null;
         if(($source['label']??null)==='View previous answer')$revision[]=[$source['conversation_id'],$source['message_id']];
         $item=vp3_coordination_source_item_v1($ref,'curiosity',$question['title'],

@@ -52,6 +52,14 @@ await page.route('https://activity.test/api/hub**',async route => {
     ]
   };
   const collection = url.searchParams.get('collection');
+  if(url.searchParams.get('view')==='curiosity'){
+    const source={attachment_review_id:'a'.repeat(32),agent_id:7,conversation_id:cid,label:'Saved attachment review: Quote Q-104.pdf',href:'/chat.php?agent=7&conversation_id='+cid+'&attachment_review='+'a'.repeat(32)};
+    state.curiosity_report={source_coverage:'ready',themes:[],attention:null,pending_question:null,
+      next_question:{id:'b'.repeat(32),thread_id:'c'.repeat(32),title:'Quote Q-104.pdf',question:'What delivery date should we ask about?',state:'open',conversation_id:cid,message_id:0,
+        sources:[source,{...source,agent_id:8,label:'Foreign private review'}]},
+      threads:[{id:'d'.repeat(32),title:'Earlier quote question',state:'answered',progress:{answered:1,total:1},questions:[
+        {id:'e'.repeat(32),question:'Which delivery window should we request?',state:'answered',answer:'Please ask for the afternoon.',conversation_id:cid,message_id:0,sources:[source]}]}]};
+  }
   if (url.searchParams.get('view') === 'location') {
     state.sections = [];
     state.specialists = [{id:'location',state:cid ? 'armed' : 'idle',progress:null,conversation_id:cid,
@@ -193,6 +201,18 @@ try {
   await specialist.getByText('No saved tasks.',{exact:true}).waitFor();
   await specialist.getByRole('button',{name:'Close',exact:true}).click();
   await specialist.waitFor({state:'detached'});
+  await page.evaluate(()=>{
+    window.attachmentSourceClicks=[];
+    window.VP3GmailDocumentsV1={openSavedReview:(id,event)=>{window.attachmentSourceClicks.push([id,event.isTrusted,window.currentChat]);return true;}};
+    window.VP3AgentActivityHub.openSpecialist('curiosity',document.getElementById('chatInput'),{fullReport:true,label:'Curiosity'});
+  });
+  const sourceLinks=specialist.getByRole('button',{name:'Saved attachment review: Quote Q-104.pdf',exact:true});
+  await sourceLinks.first().waitFor();assert.equal(await sourceLinks.count(),2,'Current and answered threads retain their saved-review source action.');
+  assert.equal(await specialist.getByRole('button',{name:'Foreign private review',exact:true}).count(),0,'Another Agent source is not opened.');
+  await sourceLinks.first().click();await sourceLinks.last().click();
+  assert.deepEqual(await page.evaluate(()=>window.attachmentSourceClicks),[['a'.repeat(32),true,42],['a'.repeat(32),true,42]]);
+  await specialist.getByRole('button',{name:'Close',exact:true}).click();await specialist.waitFor({state:'detached'});
+  await page.evaluate(()=>delete window.VP3GmailDocumentsV1);
   await page.evaluate(() => {
     const rail=window.VP3ChatSpecialists;
     for (const [id,label,state,status] of [

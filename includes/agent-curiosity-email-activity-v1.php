@@ -58,7 +58,7 @@ function vp3_curiosity_email_activity_v1(PDO $pdo,array $user,array $binding): a
 {
     if(!agent_brain_schema_ready()||!table_exists('agent_connection_gmail_inbox_v1'))return [];
     require_once __DIR__.'/agent-curiosity-gmail-v1.php';
-    $agent=vp3_initiative_binding_agent_v1($binding);$cid=(int)$binding['conversation_id'];
+    $agent=vp3_initiative_binding_agent_v1($binding);$cid=(int)($binding['conversation_id']??0);
     vp3_curiosity_private_scope_v1($pdo,$user,$agent,$cid);
     $scope=agent_connection_gmail_inbox_bound_scope_v1($pdo,$user);
     if(($scope['state']??null)!=='ready'||empty($scope['provider_ready']))return [];

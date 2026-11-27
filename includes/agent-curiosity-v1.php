@@ -234,6 +234,7 @@ function vp3_curiosity_question_view_v1(array $scope,array $thread,array $questi
     $linked=$question['conversation_id']??0;$mid=$question['message_id']??0;
     $row=$question+['thread_id'=>$thread['id'],'title'=>$thread['title'],'sources'=>$thread['sources']??[]];
     $row['conversation_id']=$linked>0?$linked:$cid;
+    if(isset($thread['analysis_origin']['revision']))$row['analysis_revision']=$thread['analysis_origin']['revision'];
     unset($row['reply_hash'],$row['parent_question_id'],$row['reply_message_id']);
     if($answerSource!==null)$row['sources']=[$answerSource];
     if($linked>0&&$mid>0)$row['href']=vp3_curiosity_href_v1($scope,$linked,$mid);
@@ -302,7 +303,22 @@ function vp3_curiosity_thread_view_v1(PDO $pdo,array $scope,array $thread): arra
     $state=$thread['state']==='open'?($last['state']??'open'):$thread['state'];
     return ['id'=>$thread['id'],'theme_id'=>$thread['theme_id'],'title'=>$thread['title'],'state'=>$state,
         'progress'=>['answered'=>count(array_filter($questions,static fn(array $q):bool=>$q['state']==='answered')),
-            'total'=>($thread['focused']??false)&&$state==='open'?3:count($questions)],'questions'=>$questions];
+            'total'=>!isset($thread['analysis_origin'])&&($thread['focused']??false)&&$state==='open'?3:count($questions)],'questions'=>$questions];
+}
+
+function vp3_curiosity_thread_source_current_v1(PDO $pdo,array $scope,array $thread,?array $documents=null): bool
+{
+    if(!isset($thread['analysis_origin']))return true;
+    require_once __DIR__.'/agent-initiative-curiosity-analysis-v1.php';
+    return vp3_curiosity_analysis_thread_current_v1($pdo,$scope,$thread,$documents);
+}
+
+/** Share one current document projection inside a read; never cache it across authority checks. */
+function vp3_curiosity_thread_documents_v1(PDO $pdo,array $scope,array $threads): array
+{
+    if(!array_filter($threads,static fn(array $thread):bool=>isset($thread['analysis_origin'])))return [];
+    require_once __DIR__.'/agent-initiative-curiosity-analysis-v1.php';
+    return vp3_curiosity_document_reports_v1($pdo,$scope['user'],vp3_initiative_policy_v1($scope['user'],$scope['agent_id']));
 }
 
 /** Keep earlier questions replyable without letting them block later check-ins. */
@@ -314,7 +330,7 @@ function vp3_curiosity_pending_today_v1(array $thread,array $question,DateTimeIm
     return !isset($thread['local_day'])||$thread['local_day']===$day;
 }
 
-function vp3_curiosity_select_v1(PDO $pdo,array $scope,array $themes,array $threads,int $now,bool $includeEarlierTopics=false): array
+function vp3_curiosity_select_v1(PDO $pdo,array $scope,array $themes,array $threads,int $now,bool $includeEarlierTopics=false,?array $documents=null): array
 {
     $cid=$scope['conversation_id'];
     if($cid<1)return [null,null,null,null];
@@ -324,6 +340,7 @@ function vp3_curiosity_select_v1(PDO $pdo,array $scope,array $themes,array $thre
     $continuation=null;$pending=null;
     foreach($threads as $thread){
         if($thread['state']!=='open')continue;
+        if(!vp3_curiosity_thread_source_current_v1($pdo,$scope,$thread,$documents))continue;
         $last=end($thread['questions']);
         if(($last['state']??null)!=='open')continue;
         $source=isset($last['parent_question_id'])?vp3_curiosity_parent_source_v1($pdo,$scope,$thread,$last):null;
@@ -366,11 +383,12 @@ function vp3_curiosity_report_v1(PDO $pdo,array $user,int $agentId,int $conversa
     $empty=['themes'=>[],'threads'=>[],'next_question'=>null,'pending_question'=>null,'source_coverage'=>'unavailable','attention'=>null];
     try{
         $threads=vp3_curiosity_read_threads_v1($pdo,$scope);
+        $documents=vp3_curiosity_thread_documents_v1($pdo,$scope,$threads);
         $themes=vp3_curiosity_observed_v1($pdo,$scope,$now);
-        [$proposed,$attention,$pending,$source]=vp3_curiosity_select_v1($pdo,$scope,$themes,$threads,$now,$includeEarlierTopics);
+        [$proposed,$attention,$pending,$source]=vp3_curiosity_select_v1($pdo,$scope,$themes,$threads,$now,$includeEarlierTopics,$documents);
         foreach($threads as $thread){
             foreach(['goal','taste'] as $kind){
-                $confirmed=vp3_curiosity_confirmed_row_v1($pdo,$scope,$thread,$kind,false);
+                $confirmed=vp3_curiosity_confirmed_row_v1($pdo,$scope,$thread,$kind,false,$documents);
                 if($confirmed===null)continue;
                 $key=$thread['theme_id'];
                 $themes[$key]??=['id'=>$key,'title'=>$thread['title'],'occurrences'=>0,'sources'=>[]];
@@ -382,7 +400,11 @@ function vp3_curiosity_report_v1(PDO $pdo,array $user,int $agentId,int $conversa
             }
         }
         $visible=[];
-        foreach(array_slice($threads,0,12) as $thread)$visible[]=vp3_curiosity_thread_view_v1($pdo,$scope,$thread);
+        foreach($threads as $thread){
+            if(!vp3_curiosity_thread_source_current_v1($pdo,$scope,$thread,$documents))continue;
+            $visible[]=vp3_curiosity_thread_view_v1($pdo,$scope,$thread);
+            if(count($visible)>=12)break;
+        }
         return ['themes'=>array_values($themes),'threads'=>$visible,'source_coverage'=>'ready','attention'=>$attention,'pending_question'=>$pending,
             'next_question'=>$proposed===null?null:vp3_curiosity_question_view_v1($scope,$proposed,end($proposed['questions']),$conversationId,$source)];
     }catch(RuntimeException|JsonException $error){
@@ -396,7 +418,9 @@ function vp3_curiosity_status_v1(PDO $pdo,array $user,int $agentId,int $conversa
         $scope=vp3_curiosity_private_scope_v1($pdo,$user,$agentId,$conversationId);
         require_once __DIR__.'/agent-morning-brief-v1.php';
         $local=vp3_morning_brief_local_v1($pdo,$scope['user'],new DateTimeImmutable());
-        foreach(vp3_curiosity_read_threads_v1($pdo,$scope) as $thread){
+        $threads=vp3_curiosity_read_threads_v1($pdo,$scope);$documents=vp3_curiosity_thread_documents_v1($pdo,$scope,$threads);
+        foreach($threads as $thread){
+            if(!vp3_curiosity_thread_source_current_v1($pdo,$scope,$thread,$documents))continue;
             $last=end($thread['questions']);
             if($thread['state']==='open'&&($last['state']??null)==='open'&&vp3_curiosity_pending_today_v1($thread,$last,$local)
                 &&vp3_curiosity_live_question_post_v1($pdo,$scope,$last)
@@ -417,6 +441,7 @@ function vp3_curiosity_question_v1(PDO $pdo,array $user,int $agentId,int $conver
     $now??=time();$scope=vp3_curiosity_private_scope_v1($pdo,$user,$agentId,$conversationId);
     $stored=vp3_curiosity_read_threads_v1($pdo,$scope,[$threadId])[$threadId]??null;
     if($stored!==null){
+        if(!vp3_curiosity_thread_source_current_v1($pdo,$scope,$stored))return null;
         foreach($stored['questions'] as $question){
             if($question['id']!==$questionId)continue;
             $linked=$question['conversation_id'];
@@ -473,6 +498,7 @@ function vp3_curiosity_taste_v1(string $text): bool
 
 function vp3_curiosity_followup_prompt_v1(array $thread,int $position,string $answer,bool $actionable): ?string
 {
+    if(isset($thread['analysis_origin']))return null;
     if($position>=3)return null;
     if($position===2){
         if(!$actionable&&!preg_match('/\b(?:checklist|example|option|plan|first step|next step|ideas)\b/iu',$answer))return null;
@@ -513,6 +539,7 @@ function vp3_curiosity_apply_reply_v1(PDO $pdo,array $user,int $agentId,int $con
         $scope=vp3_curiosity_private_scope_v1($pdo,$user,$agentId,$conversationId);
         $thread=vp3_curiosity_read_threads_v1($pdo,$scope,[$threadId])[$threadId]??null;
         if($thread===null)throw new RuntimeException('The Curiosity thread is unavailable.',404);
+        if(!vp3_curiosity_thread_source_current_v1($pdo,$scope,$thread))throw new RuntimeException('The source for this Curiosity question changed.',409);
         $index=array_search($questionId,array_column($thread['questions'],'id'),true);
         if($index===false)throw new RuntimeException('The Curiosity question is unavailable.',404);
         $question=$thread['questions'][$index];
@@ -535,7 +562,8 @@ function vp3_curiosity_apply_reply_v1(PDO $pdo,array $user,int $agentId,int $con
         $question['state']=$disposition;$question['reply_message_id']=$replyMessageId;$question['reply_hash']=hash('sha256',$raw);
         $thread['questions'][$index]=$question;$thread['updated_at']=$now;$thread['state']=$disposition;
         $actionable=$disposition==='answered'&&vp3_curiosity_answer_is_actionable_v1($answer);
-        if($actionable||($disposition==='answered'&&vp3_curiosity_taste_v1($answer))){
+        // An attachment answer describes this file/order, never a standing personal preference.
+        if($actionable||(!isset($thread['analysis_origin'])&&$disposition==='answered'&&vp3_curiosity_taste_v1($answer))){
             $thread['confirmed'][$actionable?'goal':'taste']=['conversation_id'=>$conversationId,'message_id'=>$replyMessageId,
                 'question_id'=>$questionId,'answer_hash'=>$question['reply_hash']];
         }
@@ -571,8 +599,10 @@ function vp3_curiosity_reply_source_v1(PDO $pdo,array $scope,int $cid,int $mid,s
     return $row;
 }
 
-function vp3_curiosity_confirmed_row_v1(PDO $pdo,array $scope,array $thread,string $kind='goal',bool $honorStop=true): ?array
+function vp3_curiosity_confirmed_row_v1(PDO $pdo,array $scope,array $thread,string $kind='goal',bool $honorStop=true,?array $documents=null): ?array
 {
+    if($kind==='taste'&&isset($thread['analysis_origin']))return null;
+    if(!vp3_curiosity_thread_source_current_v1($pdo,$scope,$thread,$documents))return null;
     $proof=$thread['confirmed'][$kind]??null;
     if(!is_array($proof)||($honorStop&&in_array($thread['state'],['skipped','deferred'],true)))return null;
     $cid=$proof['conversation_id'];$mid=$proof['message_id'];
@@ -596,8 +626,9 @@ function vp3_curiosity_confirmed_v1(PDO $pdo,array $user,int $agentId,int $conve
 {
     if(!in_array($kind,['goal','taste'],true))throw new InvalidArgumentException('Choose a Curiosity finding type.');
     $scope=vp3_curiosity_private_scope_v1($pdo,$user,$agentId,$conversationId);$out=[];
-    foreach(vp3_curiosity_read_threads_v1($pdo,$scope,$threadIds) as $id=>$thread){
-        $row=vp3_curiosity_confirmed_row_v1($pdo,$scope,$thread,$kind);
+    $threads=vp3_curiosity_read_threads_v1($pdo,$scope,$threadIds);$documents=vp3_curiosity_thread_documents_v1($pdo,$scope,$threads);
+    foreach($threads as $id=>$thread){
+        $row=vp3_curiosity_confirmed_row_v1($pdo,$scope,$thread,$kind,true,$documents);
         if($row!==null)$out[$id]=$row;
         if($threadIds===null&&count($out)>=8)break;
     }
