@@ -72,6 +72,10 @@ function vp3_initiative_jobs_v1(string $answer,array $evidence,array $allowedToo
         }
         $primary=$job['primary'];
         foreach($job['refs'] as $sourceRef){
+            if(($evidence[$sourceRef]['kind']??null)==='curiosity_context'
+                &&($job['tool']!=='curiosity.analyze'||$job['report']!==false||$job['refs']!==[$primary])){
+                throw new Vp3InitiativePlanValidationV1('invalid_job_sources','Specialist analysis context is private Curiosity input only.');
+            }
             if(($evidence[$sourceRef]['kind']??null)==='brainstorm_context'
                 &&($job['tool']!=='brainstorm.explore'||$job['report']!==false||$job['refs']!==[$primary])){
                 throw new Vp3InitiativePlanValidationV1('invalid_job_sources','Specialist briefs are private Brainstorming input only.');
@@ -245,6 +249,10 @@ function vp3_initiative_evidence_scoped_v1(PDO $pdo,array $user,DateTimeImmutabl
     }
     require_once __DIR__.'/agent-initiative-creative-starters-v1.php';
     $evidence+=vp3_creative_starter_evidence_v1($pdo,$user,$binding,$selectedRefs,$evidence);
+    if($selectedRefs!==null&&array_filter($selectedRefs,static fn(string $ref):bool=>str_starts_with($ref,'curiosity-context:'))){
+        require_once __DIR__.'/agent-initiative-curiosity-analysis-v1.php';
+        $evidence+=vp3_curiosity_analysis_evidence_v1($pdo,$user,$binding,$selectedRefs);
+    }
     if($includeBrainstorm&&$selectedRefs!==null
         &&array_filter($selectedRefs,static fn(string $ref):bool=>str_starts_with($ref,'brainstorm-context:'))){
         require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
@@ -440,6 +448,7 @@ function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array
         };
     }
     if(($payload['tool']??null)==='brainstorm.explore')$label='Explore ideas across specialist briefs';
+    if(($payload['tool']??null)==='curiosity.analyze')$label='Analyze specialist data and email activity';
     if($transcriptResearch)$label='Research a saved transcript question';
     if($capability==='initiative.prepare'&&($payload['tool']??null)==='canvas.prepare'
         &&is_string($payload['primary']??null)&&str_starts_with($payload['primary'],'canvas-feedback:')){
@@ -473,6 +482,7 @@ function vp3_initiative_enqueue_v1(PDO $pdo,array $user,string $capability,array
         if(in_array($payload['coordination_route']['specialist']??null,['casual','curiosity'],true))$priority=1;
         if(($payload['tool']??null)==='connected-sites.scan')$priority=6;
         if(($payload['tool']??null)==='brainstorm.explore')$priority=0;
+        if(($payload['tool']??null)==='curiosity.analyze')$priority=0;
         $pdo->prepare('UPDATE agent_workflow_runs SET work_priority=? WHERE id=? AND owner_user_id=?')->execute([$priority,$run,$uid]);
     }
     $pdo->prepare("INSERT INTO agent_workflow_actions
@@ -1793,13 +1803,14 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 $row['research']=array_intersect_key($row['research'],array_flip(['question','next_step','kind']));
                 if($folders)$row['research']['knowledge_folders']=array_values($folders);
             }
-            return array_diff_key($row,['url'=>true,'revision'=>true,'canonical_source_revision'=>true,'brainstorm_context'=>true]);
+            return array_diff_key($row,['url'=>true,'revision'=>true,'canonical_source_revision'=>true,'brainstorm_context'=>true,'curiosity_context'=>true]);
         },array_values($evidence));
         $checkLease=static function()use($pdo,&$live,$claim):void{
             if(!agent_worker_cloud_active_row_v1910($pdo,$live,$claim))throw new RuntimeException('Initiative lease changed.',409);
         };
-        $transientContext=(bool)array_filter($evidence,static fn(array $row):bool=>in_array($row['kind']??null,['live_context','eyes_visit'],true));
-        $verifyBeforeInference=($payload['tool']??null)==='brainstorm.explore'||$coordination||$officeReview||$transientContext||$activityOmitted>0||(bool)array_filter($evidence,
+        $transientContext=(bool)array_filter($evidence,static fn(array $row):bool=>in_array($row['kind']??null,['live_context','eyes_visit'],true)
+            ||(($row['kind']??null)==='curiosity_context'&&!empty($row['curiosity_context']['live_screen'])));
+        $verifyBeforeInference=in_array($payload['tool']??null,['brainstorm.explore','curiosity.analyze'],true)||$coordination||$officeReview||$transientContext||$activityOmitted>0||(bool)array_filter($evidence,
             static fn(array $row):bool=>in_array($row['kind']??'',['transcript_research','curiosity_finding','specialist_finding','specialist_result'],true));
         $verifySources=static function()use($pdo,&$live,$binding,$sources,$payload,$checkLease):void{
             $currentUser=vp3_initiative_access_v1($pdo,$live,$binding);
@@ -1807,15 +1818,23 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             $checkLease();
         };
         $preparationHistory=[];
+        $creativeFeedback=[];
+        if($planning){
+            require_once __DIR__.'/agent-initiative-creative-feedback-v1.php';
+            $creativeFeedback=vp3_creative_feedback_v1($pdo,$live,$binding,$evidence);
+        }
         if(!$planning&&($payload['tool']??null)==='work.prepare_private'&&$continuation===null&&$revisit===null){
             require_once __DIR__.'/agent-initiative-engagement-memory-v1.php';
             $preparationHistory=vp3_initiative_preparation_history_v1($pdo,$live,$binding,$evidence);
         }
-        $beforeInference=$verifyBeforeInference||$specialistReports||$preparationHistory
+        $beforeInference=$planning||$verifyBeforeInference||$specialistReports||$preparationHistory
             ?static function()use($verifySources,$specialistReports,$pdo,&$live,$binding,$specialistAuthority,$reportOnly,$checkLease,
-                $preparationHistory,$evidence,&$sourcePreflightPassed,&$sourcePreflightBlocked):void{
+                $preparationHistory,$evidence,$planning,$creativeFeedback,&$sourcePreflightPassed,&$sourcePreflightBlocked):void{
                 try{
                     $verifySources();
+                    if($planning&&vp3_creative_feedback_v1($pdo,$live,$binding,$evidence)!==$creativeFeedback){
+                        throw new Vp3InitiativeSourcesChangedV1();
+                    }
                     if($preparationHistory&&vp3_initiative_preparation_history_v1($pdo,$live,$binding,$evidence)!==$preparationHistory){
                         throw new Vp3InitiativeSourcesChangedV1();
                     }
@@ -1837,6 +1856,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             'artist.research','topic.research'=>'Researching the selected source.',
             'canvas.prepare'=>'Brainstorming a private Canvas concept.',
             'brainstorm.explore'=>'Exploring ideas across specialist briefs.',
+            'curiosity.analyze'=>'Analyzing specialist data and observed email activity.',
             'playlist.prepare'=>'Preparing a verified starter playlist.',
             'image.prepare'=>'Preparing an image concept.',
             'coordination.review'=>'Coordinating specialist findings.',
@@ -1881,6 +1901,7 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             require_once __DIR__.'/agent-inference-budget-v1.php';
             $budget=$reportOnly===null?$limits+['max_opportunities'=>8]:array_replace($limits,['max_jobs'=>0,'max_opportunities'=>0]);
             $request=['evidence'=>$modelEvidence,'tools'=>$tools,'budget'=>$budget,
+                'creative_feedback'=>$creativeFeedback,
                 'canvas_feedback'=>vp3_initiative_canvas_feedback_v1($pdo,$live,$agentId,$evidence),
                 'owner_context'=>vp3_initiative_owner_context_v1($pdo,$live,$binding)];
             $request['specialists']=vp3_initiative_specialist_plan_context_v1($pdo,$live,$binding,$tools,$evidence);
@@ -1901,9 +1922,10 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                     .'Include at most one job, for the strongest idea worth preparing for owner review now, with the exact same primary and refs and report set to true.';
             }
             $allowed=array_keys(array_filter($tools,static fn(array $entry):bool=>!empty($entry['ready'])));
-            $assessment=vp3_ai_with_budget_v1(55,static function()use($request,$infer,$verifySources,$evidence,$allowed,$tools,$canvasDiscovery):array{
-                $assess=static function(array $input)use($infer,$evidence,$allowed,$tools,$canvasDiscovery):array{
+            $assessment=vp3_ai_with_budget_v1(55,static function()use($request,$infer,$verifySources,$evidence,$allowed,$tools,$canvasDiscovery,$creativeFeedback):array{
+                $assess=static function(array $input)use($infer,$evidence,$allowed,$tools,$canvasDiscovery,$creativeFeedback):array{
                     $answer=$infer(json_encode($input,JSON_THROW_ON_ERROR),'vp3.initiative-plan.v1');
+                    $answer=vp3_creative_feedback_response_v1($answer,$creativeFeedback,$evidence);
                     try{
                         $plan=vp3_initiative_assessment_v1($answer,$evidence,$allowed,$tools,$input['specialist_reports']??[]);
                         return $canvasDiscovery?vp3_initiative_canvas_assessment_v1($plan):$plan;
@@ -1924,6 +1946,8 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 }
             });
             $jobs=$assessment['jobs'];$opportunities=$assessment['opportunities'];
+            $jobs=array_values(array_filter($jobs,static fn(array $job):bool=>vp3_creative_feedback_allows_v1($job,$creativeFeedback,$evidence)));
+            $opportunities=array_values(array_filter($opportunities,static fn(array $idea):bool=>vp3_creative_feedback_allows_v1($idea,$creativeFeedback,$evidence)));
             $discarded=$assessment['opportunities_discarded']??0;
             $finding=$assessment['finding']??null;
             $stage('Checking the plan and assigning eligible next steps.');
@@ -2004,11 +2028,14 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
             &&vp3_initiative_can_report_v1($pdo,$live,(int)$binding['conversation_id'])){
             $stage('Presenting the verified result.');
         }
-        $commit=static function()use($pdo,$live,$binding,$sources,$canonicalSources,$planning,$canvasDiscovery,$jobs,$opportunities,$discarded,$activityOmitted,$finding,$ob1Inputs,$claim,$payload,$toolResult,$draft,$run,$agentId,$youtubePlaylist,$topicRefs,$reportOnly,$specialistAuthority,$officeEntry,$officeTask,$coordination,$gmailReplyDraft,$allowDelivery,&$failurePhase):array{
+        $commit=static function()use($pdo,$live,$binding,$sources,$canonicalSources,$planning,$canvasDiscovery,$jobs,$opportunities,$discarded,$activityOmitted,$finding,$ob1Inputs,$claim,$payload,$toolResult,$draft,$run,$agentId,$youtubePlaylist,$topicRefs,$reportOnly,$specialistAuthority,$officeEntry,$officeTask,$coordination,$gmailReplyDraft,$allowDelivery,$creativeFeedback,&$failurePhase):array{
         vp3_initiative_owner_lock_v1($pdo,$live);
         $live=vp3_initiative_access_v1($pdo,$live,$binding);
         $evidence=$reportOnly===null
             ?vp3_initiative_work_sources_v1($pdo,$live,$binding,$payload):[];
+        if($planning&&vp3_creative_feedback_v1($pdo,$live,$binding,$evidence)!==$creativeFeedback){
+            throw new Vp3InitiativeSourcesChangedV1();
+        }
         if($reportOnly!==null)vp3_initiative_specialist_report_only_v1($pdo,$live,$binding,$reportOnly);
         elseif($finding!==null)vp3_initiative_specialist_reports_current_v1($pdo,$live,$binding,$specialistAuthority);
         $failurePhase='commit';

@@ -162,6 +162,8 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
         'ready'=>true,'reason'=>'ready','description'=>'Prepare a substantive private analysis or next step using the verified situation sources. Do not claim an external action was performed.']];
     require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
     $catalog+=vp3_brainstorm_catalog_v1($evidence);
+    require_once __DIR__.'/agent-initiative-curiosity-analysis-v1.php';
+    $catalog+=vp3_curiosity_analysis_catalog_v1($evidence);
     require_once __DIR__.'/agent-initiative-creative-starters-v1.php';
     $catalog+=vp3_starter_playlist_catalog_v1($evidence);
     $checkinReady=table_exists('chat_messages');
@@ -421,6 +423,10 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
             vp3_brainstorm_result_current_v1($pdo,$scope['user'],$binding,$goal,$toolResult);
             return;
         }
+        if($tool==='curiosity.analyze'){
+            vp3_curiosity_analysis_result_current_v1($pdo,$scope['user'],$binding,$goal,$toolResult);
+            return;
+        }
         if($tool==='image.prepare'){
             vp3_initiative_image_result_current_v1($goal,$toolResult);
             return;
@@ -571,6 +577,15 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
             if($model===null)throw new RuntimeException('Brainstorming inference is unavailable.',503);
             if($checkLease)$checkLease();
             return vp3_brainstorm_prepare_v1($job,$evidence,$model);
+        }
+        if($tool==='curiosity.analyze'){
+            if($model===null)throw new RuntimeException('Curiosity inference is unavailable.',503);
+            $authorize=static function()use($pdo,$user,$binding,$evidence,$checkLease):void{
+                if($checkLease)$checkLease();
+                vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence);
+            };
+            return vp3_curiosity_analysis_prepare_v1($pdo,$scope['user'],$binding,$job,$evidence,$model,$authorize,
+                $researchTransport['gmail_http']??null);
         }
         if($tool==='image.prepare'){
             if($checkLease)$checkLease();

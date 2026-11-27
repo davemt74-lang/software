@@ -49,7 +49,7 @@ that a specialist worked or that the owner has a preference.
 The private aggregate reference is accepted only by Brainstorming. Its job stores
 hashes, and its model receives the bounded current briefs. It may return up to
 three ideas and zero assignments. Dedicated mailbox and call-content boundaries
-remain intact; transient sensing and recursive creative reports are excluded.
+remain intact; raw transient sensing and recursive creative reports are excluded.
 OB1 receives the verified ideas under their original source references, and makes
 its own governed assignment decision. Existing source-change wakeups prompt a
 bounded reassessment. Top of Mind and the debugger distinguish creative work from
@@ -117,6 +117,11 @@ Top of Mind shows preparation progress and work that needs review. A completed
 preparation does not assert owner approval or completion of a real-world objective.
 All next actions still require current sources and the existing tool admission.
 
+Private Brainstorming and Curiosity aggregate jobs report through specialist
+status and do not consume the six actionable owner-agenda slots before source
+verification. Independent analysis cannot hide a completed Research result that
+is still awaiting its verified Chat delivery.
+
 Automatic general scheduling waits while an assessment is already running for the
 exact owner/Agent/Chat/policy. Unchanged queued snapshots retain their canonical
 dedupe; a fresh owner decision may queue a source-bound review behind existing
@@ -142,3 +147,67 @@ regression gates. GitHub checks certify each published revision before merging.
 
 Repository tests do not prove a particular live installation's scheduler,
 provider credentials, paid provider output quality or physical device behavior.
+
+## Section 5: Curiosity analysis, email activity and creative feedback
+
+Curiosity independently runs `curiosity.analyze` through the existing low-priority
+Initiative queue. Its bounded input includes permitted specialist briefs and
+current reports, observed owner email opens and link clicks, recent native Inbox
+Review candidates, and authorized screen descriptions. Its own output and
+Brainstorming output cannot manufacture new input. Unchanged context deduplicates;
+the existing server sweep can queue analysis with a stale browser heartbeat.
+
+Only successful explicit owner opens create email-open memory. The activity store
+uses the existing private Agent memory namespace, retains bounded opaque source
+references and counts, deduplicates retries, and prunes inactive records after 30
+days. Named Chat activity remains private to that Agent and conversation; ordinary
+mailbox activity belongs to the owner's global mailbox scope. Signed link receipts
+authenticate mailbox clicks without inventing a Chat post. Private or action URLs
+are represented by opaque HMAC identity, never retained as raw targets or tokens
+and never fetched by the background analyst. A click does not establish approval,
+interest, or a confirmed preference.
+
+The leased analyst can read up to three current emails through the native Gmail
+reader, including unopened Inbox Review candidates. Background reads never count
+as owner opens. Current spam, trash and drafts are excluded. Bounded body excerpts
+are untrusted analysis input, not action authority. Only a typed private finding
+with exact source revision and a byte-matched canonical action/receipt reaches
+Brainstorming and OB1. Neither receives copied email bodies, capture pixels or a
+second findings store. Changed or revoked sources withdraw the old finding.
+
+Clicking a signed link in an opened imported email synchronously activates the
+existing Agent Eyes screen-sharing flow in the trusted browser gesture. A shared
+window or monitor is reused; a tab share cannot claim to cover a newly opened
+tab. Otherwise the native sharing picker opens without stopping current shares,
+up to the existing three-share limit. Camera and tab audio are not started. The
+browser still requires the owner to select and authorize a screen source. After
+sharing, existing automatic changed-frame analysis and capture retention apply;
+the user can stop sharing through the existing controls. A reused surface must
+change before the email-following analysis runs, under the shared model budget.
+
+Fresh descriptions are available to Curiosity only while the existing Supply
+scene context permission, source freshness and transient compute routing allow
+them. Literal screen text, tab audio, camera and microphone signals are excluded
+from this bridge. Stopping context or changing a source during inference fences
+the late result. Existing captures become historical Curiosity input only after
+they have explicitly been retained in this Agent's Brain, remain current and
+active, and satisfy the existing My Knowledge permission. Capture alone does not
+enable Brain recall. See `docs/agent-screen-sessions-v1.md` for capture retention.
+
+Creative feedback is projected from canonical owner-decision events and verified
+preparation receipts, rather than a short tail of Chat history. Brainstorming and
+OB1 receive the same current projection. Deferring, declining or closing a specific
+proposal suppresses the unchanged source/tool combination even if the model tries
+to repeat it. Other approaches remain eligible. A newer explicit owner request or
+materially changed native source is evaluated through the existing permission and
+follow-through path. Preparation completion and owner objective completion remain
+distinct, and feedback does not create a permanent inferred preference.
+
+Acceptance adds native email-read and activity tests, an actual Curiosity to
+Brainstorming to OB1 handoff, source revocation and inference-race checks, retained
+capture and fresh screen context tests, and durable decision feedback beyond the
+latest 64 Chat messages. SQLite and native MySQL cover persisted data and receipts;
+headless browser gates exercise trusted link gestures, window reuse, tab sharing,
+share limits, account isolation and the actual imported-mail link renderer. All
+provider transports are synthetic. Native sharing-picker behavior and paid model
+output still require installation acceptance. No new workspace is introduced.

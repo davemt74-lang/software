@@ -14,6 +14,9 @@ const startToken = 'b'.repeat(64);
 const privateSubject = 'Urgent private budget <img src=x onerror=alert(1)>';
 const privateSummary = 'The sampled subjects suggest billing <b>follow-up</b>.';
 const privateBody = 'Exact saved message body <img src=x onerror=alert(1)>.';
+const mailboxLink={url:origin+'/curiosity-article',label:'Read workshop notes',token:'8'.repeat(64)};
+const mailboxClick=deferredMailboxClick();
+function deferredMailboxClick() { let resolve; const promise=new Promise(done=>{resolve=done;}); return {promise,resolve}; }
 const firstRef = 'c'.repeat(64);
 const latestRef = 'd'.repeat(64);
 const reportRef = 'e'.repeat(64);
@@ -138,6 +141,14 @@ const browser = await chromium.launch({headless:true,args:['--no-sandbox'],
 const fixtureDir = await fs.mkdtemp(join(tmpdir(),'vp3-connection-settings-'));
 try {
   const context = await browser.newContext({viewport:{width:1280,height:900}});
+  await context.addInitScript(()=>{
+    window.emailEyesActivations=[];
+    window.VP3AgentScreenShare={context:()=>null,contextForPrompt:()=>null,liveContext:()=>null,isActive:()=>false,
+      hasLiveContext:()=>false,stop:()=>{},activateFromEmailLink:(event,scope)=>{
+        window.emailEyesActivations.push({trusted:event.isTrusted,active:navigator.userActivation.isActive,scope});
+        return {ok:true,state:'permission_requested'};
+      }};
+  });
   const page = await context.newPage();
   page.setDefaultTimeout(15000);
   const errors = [];
@@ -156,6 +167,7 @@ try {
     const request = route.request();
     const url = new URL(request.url());
     const file = url.pathname.slice(1);
+    if(url.pathname==='/curiosity-article')return route.fulfill({contentType:'text/html',body:'<p>Fixture article.</p>'});
     if (assets.has(file)) {
       return route.fulfill({contentType:file.endsWith('.css')?'text/css':'text/javascript',
         body:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
@@ -273,13 +285,19 @@ try {
     assert.equal(request.method(),'POST');
     const body = request.postDataJSON();
     const surface = new URL(request.frame().url()).pathname;
+    if(body.action==='record_mailbox_link_open'){
+      assert.deepEqual(body,{action:'record_mailbox_link_open',owner_key:'1',csrf_token:'fixture',item_ref:firstRef,
+        url:mailboxLink.url,link_token:mailboxLink.token,link_label:mailboxLink.label});
+      requests.push({...body,surface});mailboxClick.resolve();
+      return route.fulfill({json:{ok:true,recorded:true}});
+    }
     if (body.action === 'open_item') {
       assert.deepEqual(body,{action:'open_item',owner_key:'1',csrf_token:'fixture',item_ref:body.item_ref});
       const item = [firstItem,latestItem,repeatedSender,...review.report?.items || [],...batchPosts.flatMap(batch => batch.review.items)]
         .find(candidate => candidate.item_ref === body.item_ref);
       assert.ok(item);
       requests.push({...body,surface});
-      return route.fulfill({json:{ok:true,item:{subject:item.subject,from:item.from,body:privateBody,
+      return route.fulfill({json:{ok:true,item:{subject:item.subject,from:item.from,body:privateBody,links:[mailboxLink],
         auto_reply:body.item_ref===firstRef,...(body.item_ref===firstRef?{auto_reply_to:'approved@example.test'}:{}),
         ...(item.answered_in_gmail?{answered_in_gmail:true}:{})}}});
     }
@@ -493,6 +511,14 @@ try {
   assert.equal(await report.getByRole('button',{name:/Auto reply/}).count(),0);
   assert.equal(await report.getByRole('checkbox').count(),0,'Watching a sender belongs to its notification Chat.');
   assert.equal(count('open_item','/connections.php'),1);
+  assert.equal(count('record_mailbox_link_open'),0,'Displaying an email does not fabricate a link click.');
+  const popup=context.waitForEvent('page');
+  await report.getByRole('link',{name:mailboxLink.label,exact:true}).click();
+  await waitForGate(mailboxClick,'the actual owner mailbox link click');
+  await (await popup).close();
+  assert.equal(count('record_mailbox_link_open','/connections.php'),1,'A trusted main-mailbox click records its exact signed source once.');
+  assert.deepEqual(await page.evaluate(()=>emailEyesActivations),[{trusted:true,active:true,scope:{ownerKey:'1'}}],
+    'The actual email link activates Eyes inside the trusted gesture without passing its URL or token.');
   await page.reload();
   await report.getByText(privateSubject,{exact:true}).waitFor();
   const latestConnectionRow = page.locator('[data-gmail-review-latest-item]').filter({hasText:latestItem.subject});

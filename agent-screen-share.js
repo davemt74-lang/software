@@ -10,6 +10,7 @@
   let updateLayoutControls=()=>{};
   const setupUnavailable=()=>({ok:false,message:'Open Agent Eyes to load a tab setup.'});
   let loadLocalSetup=setupUnavailable;
+  let activateEmailShare=()=>({ok:false,reason:'unavailable'});
   const supported=()=>isSecureContext&&navigator.mediaDevices?.getDisplayMedia&&adapter.screenRequest;
   const syncControls=()=>{shares.forEach(share=>share.controls());updateLayoutControls();};
   const audioTarget=()=>pinnedAudio||selected;
@@ -93,6 +94,7 @@
     let stream=null,starting=false,generation=0,timer=0,controller=null,latest=null,observation=null,lastAnalyzedFrame=null,lastAnalysis=0,analyzedFingerprint=null,liveBinding=null;
     let root,video,preview,status,startButton,stopButton,captureButton,postReportButton,automatic,transcribe,pinAudioButton,watchZone,urlInput,openUrl;
     let tabName='';
+    let emailNavigation=null;
     const clean=value=>String(value||'').slice(0,2000);
     let sessionId=null,selectedSession=null,historyEpoch=0,audioRun=null,recentAudio=[];
     let timelineSession=null,timelineEpoch=0,timelineBefore=null,timelineLoading=false;
@@ -418,6 +420,7 @@
     }
     function distance(a,b){if(!a||!b)return 1;let sum=0;for(let i=0;i<a.length;i++)sum+=Math.abs(a[i]-b[i]);return sum/(a.length*255);}
     function stop(message='Screen sharing is off.',publishReport=root?.querySelector('[data-screen-chat-context]')?.checked===true){
+      emailNavigation=null;
       if(!stream&&!starting)return;
       const sid=sessionId;sessionId=null;const audioDone=finishAudio(true);
       if(sid&&adapter.screenHistory)void audioDone.catch(()=>{}).then(()=>historyApi({action:'end',session_id:sid,publish_report:publishReport})).then(data=>{
@@ -477,7 +480,15 @@
       if(token!==generation||!stream||selected!==source)return;clearTimeout(timer);timer=0;
       try{
         const frame=capture();if(!frame){observation=null;say('Sharing screen · waiting for a current frame.');}
-        else if((automatic.checked||frame.annotationLogging)&&!sharedAnalysis&&(lastAnalysisOwner===source||Date.now()-lastSharedAnalysis>=15000)&&Date.now()-lastAnalysis>=30000&&(distance(frame.fingerprint,analyzedFingerprint)>.08||Date.now()-lastAnalysis>=60000))void analyze(frame,token);
+        else{
+          const emailDue=emailNavigation&&Date.now()>=emailNavigation.after&&
+            (!emailNavigation.fingerprint||distance(frame.fingerprint,emailNavigation.fingerprint)>.08);
+          if(emailDue&&!sharedAnalysis&&Date.now()-lastSharedAnalysis>=15000&&Date.now()-lastAnalysis>=15000){
+            emailNavigation=null;void analyze(frame,token);
+          }else if(emailNavigation&&Date.now()>emailNavigation.expires){
+            emailNavigation=null;say('The shared surface did not change. Share the opened page to analyze it.');
+          }else if((automatic.checked||frame.annotationLogging)&&!sharedAnalysis&&(lastAnalysisOwner===source||Date.now()-lastSharedAnalysis>=15000)&&Date.now()-lastAnalysis>=30000&&(distance(frame.fingerprint,analyzedFingerprint)>.08||Date.now()-lastAnalysis>=60000))void analyze(frame,token);
+        }
       }catch(error){observation=null;say(error.message);}
       updateTab();
       if(token===generation&&stream&&selected===source)timer=setTimeout(()=>void tick(token),5000);
@@ -658,6 +669,18 @@
     }
     const source={
       controls,context,liveContext,contextAllowedActive,stop,session:()=>sessionId,active:()=>!!stream,
+      surface:()=>stream?.getVideoTracks()[0]?.getSettings?.().displaySurface||null,
+      followEmailLink:()=>{
+        if(stream){
+          emailNavigation={after:Date.now()+1500,expires:Date.now()+30000,fingerprint:latest?.fingerprint||null};
+          const token=generation;setTimeout(()=>void tick(token),1600);
+          say('Watching the shared surface for the opened email page.');
+          return {ok:true,state:'watching_shared_surface'};
+        }
+        automatic.checked=true;transcribe.checked=false;
+        if(!root.querySelector('[data-screen-session-title]').value.trim())root.querySelector('[data-screen-session-title]').value='Email link';
+        void start();return {ok:true,state:'permission_requested'};
+      },
       busy:()=>starting||!!stream,
       name:()=>tabName?label+' · '+tabName:label,alias:()=>tabName,
       validPageUrl:syncPageUrl,
@@ -791,7 +814,7 @@
   }
 
   function mountSources(){
-    if(embedded)return;
+    if(embedded||shares.length)return;
     const host=document.querySelector('.vp3-eyes-content');if(!host)return;
     const bar=document.createElement('div');bar.className='vp3-screen-source-bar';
     const tabs=document.createElement('div');tabs.setAttribute('role','tablist');tabs.setAttribute('aria-label','Screen shares');
@@ -905,6 +928,15 @@
       add.disabled=shares.length>=maxSources||!supported();
     }
     add.addEventListener('click',()=>{addShare();selected?.tab.focus();});
+    activateEmailShare=()=>{
+      if(pickerOwner)return {ok:false,reason:'picker_active'};
+      const covering=[selected,...shares].find(share=>share?.active()&&['window','monitor'].includes(share.surface()));
+      if(covering){select(covering);return covering.followEmailLink();}
+      let target=shares.find(share=>!share.busy());
+      if(!target&&shares.length<maxSources){addShare();target=selected;}
+      if(!target){setupSay('All sharing tabs are active. Choose a shared window or stop one share before following another email link.');return {ok:false,reason:'share_limit'};}
+      select(target);return target.followEmailLink();
+    };
     function saveCurrentSetup(update){
       if(!setupKey)return;
       const intended=selectedSetup();
@@ -1057,7 +1089,21 @@
     if(result.ok&&document.querySelector('.vp3-eyes-panel')?.hidden)window.VP3AgentEyes?.toggle?.();
     return result;
   }
-  window.VP3AgentScreenShare=Object.freeze({context,contextForPrompt,liveContext,hasLiveContext:()=>shares.some(share=>share.contextAllowedActive()),loadSetupCommand,stop:stopAll,isActive:()=>shares.some(share=>share.active())});
+  function activateFromEmailLink(event,scope){
+    if(!event?.isTrusted||event.defaultPrevented||!['click','auxclick'].includes(event.type)
+        ||event.button!==(event.type==='auxclick'?1:0)||String(scope?.ownerKey)!==owner
+        ||String(adapter.ownerKey)!==owner||navigator.userActivation?.isActive===false)return {ok:false,reason:'owner_gesture_required'};
+    if(embedded){
+      try{if(parent.location.origin===location.origin&&String(parent.VP3_ORB_ADAPTER?.ownerKey)===owner)
+        return parent.VP3AgentScreenShare?.activateFromEmailLink?.(event,scope)||{ok:false,reason:'unavailable'};}catch{}
+      return {ok:false,reason:'unavailable'};
+    }
+    if(!supported())return {ok:false,reason:'unavailable'};
+    const panel=document.querySelector('.vp3-eyes-panel');
+    if(panel?.hidden)window.VP3AgentEyes?.toggle?.();
+    mountSources();return activateEmailShare();
+  }
+  window.VP3AgentScreenShare=Object.freeze({context,contextForPrompt,liveContext,activateFromEmailLink,hasLiveContext:()=>shares.some(share=>share.contextAllowedActive()),loadSetupCommand,stop:stopAll,isActive:()=>shares.some(share=>share.active())});
   window.addEventListener('vp3:screen-observation-reviewed',event=>{for(const share of shares)share.review(event.detail?.sessionId);});
   window.addEventListener('pagehide',stopAll);
   window.addEventListener('stonefellow:chat-context-changing',stopAll);

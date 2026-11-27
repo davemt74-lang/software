@@ -32,12 +32,13 @@ try {
     if (!is_array($body) || array_is_list($body)) throw new RuntimeException('Request object required.', 422);
 
     $action = $body['action'] ?? null;
-    $linkClick = $action === 'record_link_open';
+    $mailboxLink=$action==='record_mailbox_link_open';
+    $linkClick = $action === 'record_link_open'||$mailboxLink;
     if (!$linkClick && strlen($raw) > 2048) throw new RuntimeException('Request is too large.', 413);
     $triage = in_array($action,['triage_group','triage_correct','triage_open'],true);
     $digestAction = in_array($action,['routine_open','prioritize_item'],true);
     $chatOpen = $action === 'open_item' && array_key_exists('chat_message_id',$body);
-    $exactPost = $digestAction || $linkClick || $chatOpen;
+    $exactPost = $digestAction || ($linkClick&&!$mailboxLink) || $chatOpen;
     $fields = ['action', 'owner_key', 'csrf_token'];
     if (in_array($action,['status','start','advance'],true)) $fields[] = 'include_report';
     if ($action === 'start') $fields = [...$fields, 'days', 'start_token'];
@@ -56,7 +57,7 @@ try {
     if ($action === 'open_item' || $action === 'triage_open' || $digestAction) $fields[] = 'item_ref';
     if (in_array($action,['find_matches','open_match'],true)) $fields[] = 'legacy_ref';
     if ($action === 'open_match') $fields = [...$fields,'message_id','match_token'];
-    if ((!$triage && !$exactPost && !in_array($action, ['status', 'start', 'advance', 'open_item', 'deliver', 'deliver_updates', 'analyze_recent', 'check_overdue', 'find_matches', 'open_match', 'matter_update'], true))
+    if ((!$triage && !$exactPost && !in_array($action, ['status', 'start', 'advance', 'open_item', 'deliver', 'deliver_updates', 'analyze_recent', 'check_overdue', 'find_matches', 'open_match', 'matter_update','record_mailbox_link_open'], true))
         || array_diff(array_keys($body), $fields)
         || (array_key_exists('include_report', $body) && !is_bool($body['include_report']))
         || (array_key_exists('include_chat_result', $body) && !is_bool($body['include_chat_result']))
@@ -109,6 +110,7 @@ try {
         throw new RuntimeException('Invalid review item.', 422);
     }
     $digestMessageId = $body['chat_message_id'] ?? null;
+    if($mailboxLink){$agentId=0;$conversationId=0;$digestMessageId=0;}
     if ($exactPost && (!is_int($digestMessageId) || $digestMessageId < 1 || $digestMessageId > 9007199254740991)) {
         throw new RuntimeException('Choose an exact Gmail post.',422);
     }
@@ -134,6 +136,7 @@ try {
         $url = $body['url'] ?? null;
         $proof = $body['link_token'] ?? null;
         $label = $body['link_label'] ?? '';
+        if($mailboxLink&&($itemRef===null||$proof===null))throw new RuntimeException('Choose a signed mailbox link.',422);
         if (!is_string($url) || $url==='' || strlen($url)>1800
             || !is_string($label) || mb_strlen($label)>160
             || ($proof!==null && (!is_string($proof) || !preg_match('/\A[a-f0-9]{64}\z/D',$proof) || $itemRef===null))
@@ -159,6 +162,8 @@ try {
         }
         $result=['ok'=>true,'item'=>vp3_gmail_chat_link_tokens_v1($item+['item_ref'=>$itemRef],
             $live['scope'],$agentId,$conversationId,$digestMessageId,$itemRef)];
+        require_once dirname(__DIR__).'/includes/agent-curiosity-email-activity-v1.php';
+        vp3_curiosity_email_open_observe_v1($pdo,$user,$itemRef,$item,$agentId,$conversationId);
         if($action==='routine_open')$result['priority']=agent_connection_gmail_digest_prioritize_v1($pdo,$user,$agentId,$conversationId,$digestMessageId,$itemRef);
         echo json_encode($result,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
         return;
@@ -226,6 +231,12 @@ try {
         if ($current['state'] !== 'ready' || empty($current['provider_ready']) || $current['generation'] !== $generation) {
             throw new RuntimeException('Gmail review access changed.',403);
         }
+        if($action==='triage_open'){
+            require_once dirname(__DIR__).'/includes/agent-connection-gmail-link-engagement-v1.php';
+            $result['item']=vp3_gmail_chat_link_tokens_v1($result['item'],$current,0,0,0,$itemRef);
+            require_once dirname(__DIR__).'/includes/agent-curiosity-email-activity-v1.php';
+            vp3_curiosity_email_open_observe_v1($pdo,$user,$itemRef,$opened,$agentId,$conversationId);
+        }
         echo json_encode(['ok'=>true]+$result,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
         return;
     }
@@ -262,7 +273,12 @@ try {
     }
 
     if ($action === 'open_item') {
-        echo json_encode(['ok'=>true,'item'=>agent_connection_gmail_inbox_open_item_v1($pdo,$user,$itemRef,includeLinks:true)],
+        $opened=agent_connection_gmail_inbox_open_item_v1($pdo,$user,$itemRef,includeLinks:true);
+        require_once dirname(__DIR__).'/includes/agent-connection-gmail-link-engagement-v1.php';
+        $opened=vp3_gmail_chat_link_tokens_v1($opened,agent_connection_gmail_inbox_bound_scope_v1($pdo,$user),0,0,0,$itemRef);
+        require_once dirname(__DIR__).'/includes/agent-curiosity-email-activity-v1.php';
+        vp3_curiosity_email_open_observe_v1($pdo,$user,$itemRef,$opened);
+        echo json_encode(['ok'=>true,'item'=>$opened],
             JSON_THROW_ON_ERROR | JSON_INVALID_UTF8_SUBSTITUTE);
         return;
     }

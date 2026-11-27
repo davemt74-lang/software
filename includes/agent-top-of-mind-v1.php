@@ -360,6 +360,10 @@ function vp3_top_of_mind_v1(PDO $pdo,array $user,int $agentId,int $conversationI
         $visible=[];
         foreach($runs as $run){
             if(str_starts_with((string)($run['source_key']??''),'coordination:'))continue;
+            // Private aggregate analyses are projected by specialist status. They
+            // cannot consume owner-agenda slots before native source verification.
+            $goal=json_decode((string)($run['goal']??''),true);
+            if(in_array($goal['tool']??null,['brainstorm.explore','curiosity.analyze'],true))continue;
             $visible[($run['capability_key']??'')==='initiative.plan'?'assessment':(int)$run['id']]??=$run;
         }
         $runs=array_slice($visible,0,6);

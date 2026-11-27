@@ -126,11 +126,11 @@ function vp3_initiative_engagement_specialist_jobs_v1(array $engagement,array $h
     $scanAt=strtotime((string)($scans['at']??''))?:0;
     $assessment=$health['latest_assessment_run']??[];
     $verifiedAssessment=$health['last_assessment']??[];
-    $lanes=['app-suggestions'=>'app_suggestions','image-generator'=>'media_images','brainstorm'=>'brainstorm'];
+    $lanes=['app-suggestions'=>'app_suggestions','image-generator'=>'media_images','brainstorm'=>'brainstorm','curiosity'=>'curiosity_analysis'];
     $monitors=['gmail'=>'Monitoring Gmail findings','planning'=>'Monitoring planning changes','tasks'=>'Monitoring tasks and reminders',
         'media'=>'Monitoring new watch and listen findings','profile'=>'Monitoring verified visitor conversations and follow-ups'];
     $jobs=[];
-    foreach(['gmail','planning','tasks','media','profile','ob1','brainstorm','app-suggestions','coding','image-generator'] as $family){
+    foreach(['gmail','planning','tasks','media','profile','ob1','brainstorm','curiosity','app-suggestions','coding','image-generator'] as $family){
         $own=$assignments[$family]??null;
         $lane=isset($lanes[$family])?($engagement['opportunity_checks'][$lanes[$family]]['assignment']??null):null;
         $work=$own??$lane??[];

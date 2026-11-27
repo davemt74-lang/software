@@ -7,7 +7,7 @@ const script=fs.readFileSync(fs.existsSync('agent-screen-share.js')?'agent-scree
 const server=http.createServer((req,res)=>{
  if(req.url.startsWith('/agent-screen-share.js')){res.setHeader('Content-Type','text/javascript');res.end(script);return;}
  const owner=new URL(req.url,'http://fixture').searchParams.has('foreign')?'2':'1';
- res.setHeader('Content-Type','text/html');res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font:14px system-ui}.vp3-eyes-content{max-width:360px;padding:12px}img{max-width:100%}</style><div class="vp3-eyes-content"></div><script>
+ res.setHeader('Content-Type','text/html');res.end(`<!doctype html><meta name="viewport" content="width=device-width,initial-scale=1"><style>body{margin:0;font:14px system-ui}.vp3-eyes-content{max-width:360px;padding:12px}img{max-width:100%}</style><button id="email-link">Open verified email link</button><div class="vp3-eyes-content"></div><script>
  window.displayCalls=[];window.cameraCalls=0;window.analysisCalls=[];window.label='Product A';
  window.VP3_ORB_ADAPTER={ownerKey:${JSON.stringify(owner)},screenRequest:async(body,{signal})=>{
   analysisCalls.push({body,signal});const result=()=>({observation:{contract:'vp3.screen-observation.v1',owner_key:window.wrongOwner?'2':${JSON.stringify(owner)},summary:label+' is visible',visible_text:label,site_hint:'Example store',page_title:label}});
@@ -16,14 +16,18 @@ const server=http.createServer((req,res)=>{
  }};
  const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;
  window.paint=(color=window.paintColor||'#fff')=>{window.paintColor=color;const ctx=canvas.getContext('2d');ctx.fillStyle=color;ctx.fillRect(0,0,640,360);ctx.fillStyle='#000';ctx.font='36px sans-serif';ctx.fillText(label,30,90);window.displayTrack?.requestFrame?.();};paint();
- const acquire=()=>{const s=canvas.captureStream(10);window.displayStream=s;window.displayTrack=s.getVideoTracks()[0];const settings=displayTrack.getSettings.bind(displayTrack);displayTrack.getSettings=()=>({...settings(),displaySurface:'window'});paint();setInterval(()=>paint(),100);return s;};
+ const acquire=()=>{const s=canvas.captureStream(10);window.displayStream=s;window.displayTrack=s.getVideoTracks()[0];const settings=displayTrack.getSettings.bind(displayTrack);displayTrack.getSettings=()=>({...settings(),displaySurface:window.sharedSurface||'window'});paint();setInterval(()=>paint(),100);return s;};
  Object.defineProperty(navigator,'mediaDevices',{configurable:true,value:{getUserMedia:async()=>{cameraCalls++;throw Error('No camera should be requested');},getDisplayMedia:options=>{
    displayCalls.push({options,gesture:navigator.userActivation.isActive});
    if(window.denyPicker)return Promise.reject(new DOMException('Denied','NotAllowedError'));
    if(window.deferPicker)return new Promise(resolve=>window.releasePicker=()=>resolve(acquire()));
    return Promise.resolve(acquire());
  }}});
- </script><script src="/agent-screen-share.js"></script>`);
+ </script><script src="/agent-screen-share.js"></script><script>
+ document.getElementById('email-link').addEventListener('click',event=>{
+   window.emailActivation=VP3AgentScreenShare.activateFromEmailLink(event,{ownerKey:window.emailOwner||${JSON.stringify(owner)}});
+ });
+ </script>`);
 });await new Promise(r=>server.listen(0,'127.0.0.1',r));const url=`http://127.0.0.1:${server.address().port}`;
 const browser=await chromium.launch({headless:true,args:['--no-sandbox']});let checks=0;
 const check=async(name,fn)=>{await fn();checks++;console.log('PASS '+name);};
@@ -78,5 +82,35 @@ try{
  await check('provider failure leaves sharing active but supplies no invented context',async()=>{await failure.evaluate(()=>{denyPicker=false;window.failAnalysis=true;});await failure.getByRole('button',{name:'Share screen',exact:true}).click();await failure.getByText('Sharing continues. Configured model unavailable.').waitFor();assert.equal(await failure.evaluate(()=>VP3AgentScreenShare.isActive()),true);assert.equal(await failure.evaluate(()=>VP3AgentScreenShare.context()),null);});
  await check('manual analysis works with automatic analysis disabled',async()=>{await failure.locator('[data-screen-auto]').uncheck();await failure.evaluate(()=>window.failAnalysis=false);await failure.getByRole('button',{name:'Capture and analyze',exact:true}).click();await failure.waitForFunction(()=>VP3AgentScreenShare.context());});
  await check('browser Stop Sharing and page unload release capture',async()=>{await failure.evaluate(()=>{displayTrack.stop();displayTrack.dispatchEvent(new Event('ended'));});assert.equal(await failure.evaluate(()=>VP3AgentScreenShare.isActive()),false);await failure.getByRole('button',{name:'Share screen',exact:true}).click();await failure.waitForFunction(()=>VP3AgentScreenShare.isActive());await failure.evaluate(()=>window.dispatchEvent(new Event('pagehide')));assert.equal(await failure.evaluate(()=>displayTrack.readyState),'ended');});
- await failure.close();assert.deepEqual(errors,[]);console.log(`AGENT_SCREEN_SHARE_BROWSER=PASS (${checks} cases)`);
+ await failure.close();
+ const email=await browser.newPage();await email.goto(url);await email.clock.install();
+ await check('a trusted email click requests display sharing in its original gesture and never starts the camera',async()=>{
+  await email.locator('#email-link').click();await email.waitForFunction(()=>VP3AgentScreenShare.context());
+  assert.equal(await email.evaluate(()=>displayCalls.length),1);assert.equal(await email.evaluate(()=>displayCalls[0].gesture),true);
+  assert.equal(await email.evaluate(()=>displayCalls[0].options.audio),false);assert.equal(await email.evaluate(()=>cameraCalls),0);
+  assert.equal(await email.locator('[data-screen-auto]').isChecked(),true);
+ });
+ await check('an active shared window is reused and a changed email page is analyzed within existing rate limits',async()=>{
+  const before=await email.evaluate(()=>analysisCalls.length);
+  await email.locator('#email-link').click();assert.equal(await email.evaluate(()=>emailActivation.state),'watching_shared_surface');
+  await email.evaluate(()=>{label='Opened email page';paint('#000');});await email.clock.runFor(17000);
+  await email.waitForFunction(count=>analysisCalls.length>count,before);
+  assert.equal(await email.evaluate(()=>displayCalls.length),1);
+ });
+ await check('scripted and foreign-account activations cannot start a display picker',async()=>{
+  await email.evaluate(()=>{VP3AgentScreenShare.stop();document.getElementById('email-link').click();});
+  assert.equal(await email.evaluate(()=>emailActivation.reason),'owner_gesture_required');
+  assert.equal(await email.evaluate(()=>displayCalls.length),1);
+  await email.evaluate(()=>window.emailOwner='2');await email.locator('#email-link').click();
+  assert.equal(await email.evaluate(()=>displayCalls.length),1);
+ });await email.close();
+ const tabs=await browser.newPage();await tabs.goto(url);await tabs.evaluate(()=>window.sharedSurface='browser');
+ await check('a tab-bound share is not mistaken for a newly opened email tab and active shares are preserved',async()=>{
+  await tabs.locator('#email-link').click();await tabs.waitForFunction(()=>VP3AgentScreenShare.isActive());
+  await tabs.locator('#email-link').click();await tabs.waitForFunction(()=>displayCalls.length===2&&document.querySelectorAll('[data-screen-stop]:not([disabled])').length===2);
+  await tabs.locator('#email-link').click();await tabs.waitForFunction(()=>displayCalls.length===3&&document.querySelectorAll('[data-screen-stop]:not([disabled])').length===3);
+  await tabs.locator('#email-link').click();assert.equal(await tabs.evaluate(()=>emailActivation.reason),'share_limit');
+  assert.equal(await tabs.evaluate(()=>displayCalls.length),3);assert.equal(await tabs.evaluate(()=>cameraCalls),0);
+ });await tabs.close();
+ assert.deepEqual(errors,[]);console.log(`AGENT_SCREEN_SHARE_BROWSER=PASS (${checks} cases)`);
 }finally{await browser.close();await new Promise(r=>server.close(r));}

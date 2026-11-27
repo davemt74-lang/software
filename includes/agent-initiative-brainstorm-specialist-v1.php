@@ -58,7 +58,7 @@ function vp3_brainstorm_completed_reports_v1(PDO $pdo,array $user,array $binding
         $goal=json_decode((string)$row['goal'],true,16);$saved=json_decode((string)$row['result_json'],true,32);
         if(!is_array($goal)||($goal['binding']??null)!==$binding||($saved['effect_state']??null)!=='private_draft_ready')continue;
         $id=vp3_initiative_goal_specialist_v1($goal);
-        if($id===null||in_array($id,['ob1','brainstorm','operator','gmail'],true)||($counts[$id]??0)>=2
+        if($id===null||($goal['tool']??null)==='curiosity.analyze'||in_array($id,['ob1','brainstorm','operator','gmail'],true)||($counts[$id]??0)>=2
             ||empty($goal['sources'])||!is_array($goal['sources'])||!is_array($saved['initiative_tool_result']??null))continue;
         foreach($goal['sources'] as $ref=>$revision)if(($evidence[$ref]['revision']??null)!==$revision)continue 2;
         if(($saved['initiative_draft']??null)!==($saved['initiative_tool_result']['draft']??null))continue;
@@ -97,7 +97,7 @@ function vp3_brainstorm_sources_v1(array $base,array $binding): array
 }
 
 /** Reuse authorized adapters. No raw sensing, mailbox content, call data, or self-generated report loop. */
-function vp3_brainstorm_snapshot_v1(PDO $pdo,array $user,array $binding,?array $base=null,array $coverage=[]): array
+function vp3_brainstorm_snapshot_v1(PDO $pdo,array $user,array $binding,?array $base=null,array $coverage=[],bool $includeCuriosity=true): array
 {
     $live=vp3_initiative_access_v1($pdo,$user,$binding);
     if($base===null)$base=vp3_initiative_evidence_v1($pdo,$live,new DateTimeImmutable('now',new DateTimeZone('UTC')),
@@ -106,7 +106,14 @@ function vp3_brainstorm_snapshot_v1(PDO $pdo,array $user,array $binding,?array $
     $authority=[];
     $reports=vp3_initiative_specialist_reports_v1($pdo,$live,$binding,$evidence,$authority,false,false);
     $reports=array_merge($reports,vp3_brainstorm_completed_reports_v1($pdo,$live,$binding,$evidence));
+    if($includeCuriosity){
+        require_once __DIR__.'/agent-initiative-curiosity-analysis-v1.php';
+        $analysis=vp3_curiosity_analysis_report_v1($pdo,$live,$binding);
+        if($analysis!==null)$reports[]=$analysis['report'];
+    }
     $tools=vp3_initiative_tools_catalog_v1($pdo,$live,$binding,$evidence);
+    require_once __DIR__.'/agent-initiative-creative-feedback-v1.php';
+    $feedback=vp3_creative_feedback_v1($pdo,$live,$binding,$evidence);
     unset($tools['brainstorm.explore']);
     $briefs=vp3_brainstorm_briefs_v1(vp3_initiative_specialist_catalog_v1($tools),$evidence,$reports,$coverage);
     $toolState=[];
@@ -116,12 +123,12 @@ function vp3_brainstorm_snapshot_v1(PDO $pdo,array $user,array $binding,?array $
     // Volatile scan timestamps and our own pending/completed work do not invent novelty.
     $revision=vp3_initiative_brainstorm_semantic_v1(['binding'=>$binding,
         'sources'=>array_column($evidence,'revision','ref'),
-        'reports'=>vp3_initiative_brainstorm_report_keys_v1($reports),'tools'=>$toolState,
+        'reports'=>vp3_initiative_brainstorm_report_keys_v1($reports),'tools'=>$toolState,'feedback'=>$feedback,
         'coverage'=>array_map(static fn(array $brief):array=>array_intersect_key($brief,array_flip(['state','sources','ready_tools'])),$briefs)]);
     $contextCount=count(array_filter($evidence,static fn(array $source):bool=>!in_array($source['kind']??null,
         ['creative_starter','account_readiness','scheduling_readiness','calendar_readiness','product_readiness','business_readiness'],true)));
     return ['revision'=>$revision,'context_mode'=>$contextCount===0?'starter':($contextCount<=3?'light_context':'contextual'),
-        'evidence'=>$evidence,'reports'=>$reports,'briefs'=>$briefs,'tools'=>$tools];
+        'evidence'=>$evidence,'reports'=>$reports,'briefs'=>$briefs,'tools'=>$tools,'feedback'=>$feedback];
 }
 
 /** A private aggregate reference authorizes only the creative worker, never a downstream tool. */
@@ -196,16 +203,23 @@ function vp3_brainstorm_prepare_v1(array $job,array $evidence,callable $infer): 
     $input=['role'=>'brainstorm','context_mode'=>$snapshot['context_mode'],
         'creative_guidance'=>'With little context, favor immediately useful image, playlist or small functional Canvas possibilities from ready tools. A generic starter is an optional general idea, not an inferred personal preference. Never invent history or ready capabilities.',
         'evidence'=>$rows,'tools'=>$tools,'specialists'=>$snapshot['briefs'],
-        'specialist_reports'=>$snapshot['reports'],'budget'=>['max_jobs'=>0,'max_opportunities'=>3,'max_refs'=>5],
+        'specialist_reports'=>$snapshot['reports'],'creative_feedback'=>$snapshot['feedback'],
+        'quality_guidance'=>'Prefer a small number of useful, distinct ideas supported by the current sources. Connect specialists when their facts complement each other. '
+            .'Honor exact declined, deferred or owner-closed situations. A prepared continuation is not a completed owner objective. '
+            .'Treat failed or unverified preparation as a reason to reassess, not as success or permission to retry automatically. Return no ideas when nothing useful is supported.',
+        'budget'=>['max_jobs'=>0,'max_opportunities'=>3,'max_refs'=>5],
         'objective'=>$job['focus']];
     $answer=$infer(json_encode($input,JSON_THROW_ON_ERROR),'vp3.initiative-plan.v1');
+    $answer=vp3_creative_feedback_response_v1($answer,$snapshot['feedback'],$snapshot['evidence'],true);
     $plan=vp3_initiative_assessment_v1($answer,$snapshot['evidence'],$allowed,$tools,$snapshot['reports']);
     if($plan['jobs']||count($plan['opportunities'])>3||!empty($plan['opportunities_discarded'])){
         throw new InvalidArgumentException('Brainstorming may return only verified ideas, not assignments.');
     }
-    $result=['draft'=>vp3_brainstorm_draft_v1($plan['opportunities']),'output'=>[
-        'type'=>'initiative_brainstorm_report','status'=>$plan['opportunities']?'ideas_ready':'no_opportunity',
-        'context_ref'=>$primary,'context_revision'=>$source['revision'],'ideas'=>$plan['opportunities'],
+    $ideas=array_values(array_filter($plan['opportunities'],static fn(array $idea):bool=>
+        vp3_creative_feedback_allows_v1($idea,$snapshot['feedback'],$snapshot['evidence'])));
+    $result=['draft'=>vp3_brainstorm_draft_v1($ideas),'output'=>[
+        'type'=>'initiative_brainstorm_report','status'=>$ideas?'ideas_ready':'no_opportunity',
+        'context_ref'=>$primary,'context_revision'=>$source['revision'],'ideas'=>$ideas,
         'input_specialists'=>array_keys(array_filter($snapshot['briefs'],static fn(array $brief):bool=>$brief['state']==='current_context'))]];
     return vp3_brainstorm_tool_result_v1($result)??throw new InvalidArgumentException('Invalid Brainstorming report.');
 }
@@ -222,7 +236,8 @@ function vp3_brainstorm_result_current_v1(PDO $pdo,array $user,array $binding,ar
     $ideas=vp3_initiative_brainstorm_opportunities_v1(array_map(static fn(array $idea):object=>(object)$idea,$out['ideas']),
         $snapshot['evidence'],array_keys(array_filter($tools,static fn(array $entry):bool=>($entry['ready']??null)===true)),$tools,$discarded);
     $inputs=array_keys(array_filter($snapshot['briefs'],static fn(array $brief):bool=>$brief['state']==='current_context'));
-    if($discarded||$ideas!==$out['ideas']||$inputs!==$out['input_specialists'])throw new Vp3InitiativeSourcesChangedV1();
+    if($discarded||$ideas!==$out['ideas']||$inputs!==$out['input_specialists']
+        ||array_filter($ideas,static fn(array $idea):bool=>!vp3_creative_feedback_allows_v1($idea,$snapshot['feedback'],$snapshot['evidence'])))throw new Vp3InitiativeSourcesChangedV1();
     return $normalized;
 }
 

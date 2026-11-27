@@ -12,6 +12,20 @@ let logs = '';
 try {
   mkdirSync(join(root, 'api'));
   mkdirSync(join(root, 'includes'));
+  writeFileSync(join(root, 'includes', 'agent-connection-gmail-link-engagement-v1.php'), `<?php
+function vp3_gmail_chat_link_tokens_v1(array $item,array $scope,int $agent,int $cid,int $mid,string $ref): array { return $item; }
+function vp3_gmail_curiosity_record_link_v1(PDO $pdo,array $user,int $agent,int $cid,int $mid,?string $ref,string $url,?string $proof,string $label=''): bool {
+    if($user['id']!==1)throw new RuntimeException('Foreign mailbox.',403);
+    if($agent!==0||$cid!==0||$mid!==0||$ref!==str_repeat('c',64)||$proof!==str_repeat('b',64))throw new RuntimeException('Bad mailbox source.',404);
+    header('X-Fixture-Mailbox-Link: verified');return true;
+}
+`);
+  writeFileSync(join(root, 'includes', 'agent-curiosity-email-activity-v1.php'), `<?php
+function vp3_curiosity_email_open_observe_v1(PDO $pdo,array $user,string $ref,array $opened,int $agent=0,int $cid=0): void {
+    if ($ref!==str_repeat('c',64) || ($opened['subject']??null)!=='Fixture subject') throw new LogicException('Wrong owner open.');
+    header('X-Fixture-Curiosity-Open: '.$user['id'].'-'.$agent.'-'.$cid);
+}
+`);
   copyFileSync(new URL('../api/gmail-inbox-initial-v1.php', import.meta.url), join(root, 'api', 'gmail-inbox-initial-v1.php'));
   writeFileSync(join(root, 'includes', 'bootstrap.php'), `<?php
 session_start();
@@ -223,6 +237,13 @@ function agent_connection_gmail_inbox_open_match_v1(PDO $pdo, array $user, strin
   assert.deepEqual(advance.data.review.calls, [['advance', 1, runId], ['status', 1, false]]);
   const itemRef = 'c'.repeat(64);
   const open = await request({body:{action:'open_item',item_ref:itemRef}});
+  assert.equal(open.headers.get('x-fixture-curiosity-open'),'1-0-0');
+  const clicked = await request({body:{action:'record_mailbox_link_open',item_ref:itemRef,url:'https://example.com/article',link_token:'b'.repeat(64),link_label:'Article'}});
+  assert.equal(clicked.status,200);
+  assert.equal(clicked.headers.get('x-fixture-mailbox-link'),'verified');
+  assert.deepEqual(clicked.data,{ok:true,recorded:true});
+  const unsignedClick = await request({body:{action:'record_mailbox_link_open',item_ref:itemRef,url:'https://example.com/article'}});
+  assert.equal(unsignedClick.status,422);
   assert.equal(open.headers.get('x-fixture-dispatch'),'open_item');
   assert.deepEqual(open.data,{ok:true,item:{subject:'Fixture subject',from:'sender@example.test',
     body:'Exact fixture body.',auto_reply:false}});

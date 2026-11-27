@@ -408,7 +408,7 @@ function agent_connection_gmail_inbox_open_match_v1(PDO $pdo, array $user, strin
         + (isset($answered[$id]) ? ['answered_in_gmail'=>true] : []);
 }
 
-function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string $ref, ?callable $http=null, bool $includeLinks=false): array
+function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string $ref, ?callable $http=null, bool $includeLinks=false, bool $includeSource=false): array
 {
     $item = agent_connection_gmail_inbox_item_v1($pdo,$user,$ref);
     $access = agent_connections_access_v1((int)$user['id'],$item['connection_id'],'read',$http,$item['authorization_key']);
@@ -418,6 +418,7 @@ function agent_connection_gmail_inbox_open_item_v1(PDO $pdo, array $user, string
     if ($item !== agent_connection_gmail_inbox_item_v1($pdo,$user,$ref)) throw new DomainException('Gmail review changed.',409);
     $result = ['subject'=>$message['subject'],'from'=>$message['from'],'body'=>mb_substr($message['body'],0,6000)]
         + (isset($message['display']) ? ['display'=>$message['display']] : []);
+    if($includeSource)$result['source_labels']=$message['labels'];
     if ($includeLinks) {
         require_once __DIR__.'/agent-connection-gmail-link-source-v1.php';
         $result['links'] = agent_connection_gmail_link_message_urls_v1($raw);
