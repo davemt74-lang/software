@@ -167,6 +167,11 @@
       }
     }
   }
+  function observedPlaybackState(selection, state) {
+    // A delayed pause from a rejected resume must preserve its failure message.
+    if (state === 'paused' && ['blocked', 'unavailable'].includes(selection.state)) return;
+    playbackState(selection, state);
+  }
   function updateTransport(record) {
     const selection = active?.record === record ? active : null;
     const queue = selection?.queueState || (!active && queueState?.hostRecord === record ? queueState : null);
@@ -282,7 +287,7 @@
             audio.dataset.musicChatToken = selection.token;
             const signal = selection.cancel.signal;
             for (const event of ['playing', 'pause', 'ended', 'error']) audio.addEventListener(event, () => {
-              playbackState(selection, event === 'pause' ? 'paused' : event === 'error' ? 'unavailable' : event);
+              observedPlaybackState(selection, event === 'pause' ? 'paused' : event === 'error' ? 'unavailable' : event);
             }, {signal});
             selection.handle = {pause:() => audio.pause(), resume:() => audio.play(), stop:() => {
               audio.pause();
@@ -290,7 +295,7 @@
             }};
             claimSource('vp3', audio);
           },
-          onState:state => playbackState(selection, state)
+          onState:state => observedPlaybackState(selection, state)
         });
         if (!accepted) {
           if (active === selection) playbackState(selection, 'unavailable');
@@ -301,7 +306,7 @@
         if (typeof adapter !== 'function' || !result.youtube_results) throw new Error('The YouTube player is unavailable.');
         const row = record.rows[index];
         selection.handle = adapter(row.player, row.play, result, {
-          token:selection.token, onState:state => playbackState(selection, state)
+          token:selection.token, onState:state => observedPlaybackState(selection, state)
         });
         if (!selection.handle) throw new Error('The YouTube selection could not be opened.');
       }

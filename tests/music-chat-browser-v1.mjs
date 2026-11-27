@@ -66,6 +66,21 @@ function mockedYouTubeIframeApi() {
 async function pageFor(viewport = {width:1280, height:900}) {
   const context = await browser.newContext({viewport, hasTouch:viewport.width < 600, extraHTTPHeaders:{'X-User':'11'}});
   await context.addInitScript(mockedYouTubeIframeApi);
+  await context.addInitScript(() => {
+    const audioIds = new WeakMap(); let nextAudioId = 0;
+    window.__musicNativeEvents = [];
+    for (const type of ['loadedmetadata','play','playing','pause','seeking','seeked','ended','emptied','error']) {
+      document.addEventListener(type, event => {
+        const audio = event.target;
+        if (!(audio instanceof HTMLMediaElement) || !audio.matches('.chat-audio-player')) return;
+        if (!audioIds.has(audio)) audioIds.set(audio, ++nextAudioId);
+        window.__musicNativeEvents.push({event:type, at:Math.round(performance.now()), audio:audioIds.get(audio),
+          trackId:audio.dataset.trackId, paused:audio.paused, seeking:audio.seeking, ended:audio.ended,
+          readyState:audio.readyState, currentTime:audio.currentTime});
+        if (window.__musicNativeEvents.length > 200) window.__musicNativeEvents.shift();
+      }, true);
+    }
+  });
   const page = await context.newPage();
   openedPages.push(page);
   page.on('pageerror', error => errors.push(error.message));
@@ -467,9 +482,10 @@ try {
       conversationId:window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.(),
       cards:document.querySelectorAll('.vp3-music-chat').length,
       audio:[...document.querySelectorAll('audio')].map(audio => ({
-        paused:audio.paused, ended:audio.ended, readyState:audio.readyState,
+        trackId:audio.dataset.trackId, paused:audio.paused, seeking:audio.seeking, ended:audio.ended, readyState:audio.readyState,
         currentTime:audio.currentTime, duration:audio.duration
-      }))
+      })),
+      nativeEvents:window.__musicNativeEvents
     })).catch(reason => ({error:String(reason)}));
     pages.push(state);
     await Promise.allSettled([
@@ -477,9 +493,13 @@ try {
       page.content().then(html => fs.writeFile(path.join(artifactDir, `failure-page-${index}.html`), html))
     ]);
   }
+  let nativeSessions;
+  try {
+    nativeSessions = fixture.readDb('SELECT session_id,requested_track_id,state,last_seq,created_ms FROM music_listening_sessions_v1 ORDER BY session_id');
+  } catch (reason) { nativeSessions = {error:String(reason)}; }
   await Promise.allSettled([
     fs.writeFile(path.join(artifactDir, 'failure.json'), JSON.stringify({engine:engineName, checks,
-      error:String(error.stack || error), errors, pages}, null, 2)),
+      error:String(error.stack || error), errors, pages, nativeSessions}, null, 2)),
     fs.writeFile(path.join(artifactDir, 'php.log'), fixture.logs)
   ]);
   throw error;

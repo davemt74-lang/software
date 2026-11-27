@@ -6780,7 +6780,7 @@
         stopMediaQueue();
         const host=listeningHost();
         const fromOffer=Number.isSafeInteger(action.offer_message_id)&&action.offer_message_id>0;
-        renderListeningContinuation(host,{...track,last_position_seconds:position},fromOffer);
+        renderListeningContinuation(host,{...track,last_position_seconds:position},fromOffer||options.musicChat===true);
         const audio=host?.querySelector('audio');
         if(!audio)return false;
         if(options.musicChat===true&&typeof options.onReady==='function')options.onReady(audio,{
