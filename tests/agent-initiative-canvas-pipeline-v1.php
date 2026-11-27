@@ -251,7 +251,19 @@ function canvas_pipeline_prepare(int $task, bool $execute=true): int
     $id=(int)end($rows)['id'];
     canvas_pipeline_check(vp3_initiative_execute_v1(db(),$user,canvas_pipeline_claim($id))['ok'], 'the actual planner completes through the governed inference wrapper');
     $jobs=canvas_pipeline_runs('initiative.prepare');$job=(int)end($jobs)['id'];
-    if ($execute) canvas_pipeline_check(vp3_initiative_execute_v1(db(),$user,canvas_pipeline_claim($job))['ok'], 'the actual Canvas adapter commits with the canonical parent receipt');
+    if ($execute) {
+        $prepared=vp3_initiative_execute_v1(db(),$user,canvas_pipeline_claim($job));
+        $diagnostic='';
+        if (empty($prepared['ok'])) {
+            $receipt=db()->prepare('SELECT status,error_class,result_json FROM agent_workflow_receipts WHERE run_id=? ORDER BY id DESC LIMIT 1');
+            $receipt->execute([$job]);$row=$receipt->fetch()?:[];
+            $result=json_decode((string)($row['result_json']??''),true);
+            $diagnostic=' '.json_encode(['task'=>$task,'run'=>$job,'reason'=>$prepared['reason']??null,
+                'receipt_status'=>$row['status']??null,'error_class'=>$row['error_class']??null,
+                'failure_phase'=>$result['failure_phase']??null,'failure_cause'=>$result['failure_cause']??null],JSON_THROW_ON_ERROR);
+        }
+        canvas_pipeline_check($prepared['ok'], 'the actual Canvas adapter commits with the canonical parent receipt'.$diagnostic);
+    }
     return $job;
 }
 function canvas_pipeline_reply(int $messageId, string $intent): array

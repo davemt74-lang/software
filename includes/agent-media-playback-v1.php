@@ -280,6 +280,11 @@ function vp3_media_playback_verified_action_v1(array $user,array $action): bool
         if(!in_array($operation,['resume','play'],true)||!is_int($action['offer_message_id'])||$action['offer_message_id']<1)return false;
         $allowed[]='offer_message_id';
     }
+    if(array_key_exists('history_ref',$action)){
+        if(!in_array($operation,['resume','play'],true)||isset($action['offer_message_id'])||!is_string($action['history_ref'])
+            ||strlen($action['history_ref'])>240||!preg_match('/\Amh1\.[A-Za-z0-9_-]+\z/D',$action['history_ref']))return false;
+        $allowed[]='history_ref';
+    }
     if(count($action)!==count($allowed)||array_diff(array_keys($action),$allowed))return false;
     $proof=vp3_media_playback_proof_v1($action);
     return $proof!==null&&hash_equals($proof,$action['proof']);
@@ -292,6 +297,19 @@ function vp3_media_playback_resolve_v1(PDO $pdo,array $user,array $action): ?arr
     [$live,$principal]=vp3_media_playback_user_v1($pdo,$user,$agent,$cid);
     $result=['operation'=>$operation,'owner_user_id'=>$owner,'agent_id'=>$agent,'conversation_id'=>$cid,'tracks'=>[]];
     if($operation==='dj_stop')return $result;
+    if(isset($action['history_ref'])){
+        require_once __DIR__.'/music-history-v1.php';
+        try{$history=vp3_music_history_item_v1($pdo,$live,$agent,$cid,$action['history_ref']);}
+        catch(RuntimeException){return null;}
+        $item=$history['item'];
+        if($item['source']!=='vp3'||(int)$item['source_id']!==($action['track_id']??null)
+            ||!is_string($action['revision']??null)||!hash_equals($item['native_revision'],$action['revision']))return null;
+        if($operation==='resume'&&(empty($history['entry']['resume_available'])||!is_numeric($action['position_seconds']??null)
+            ||(float)$history['resume_seconds']!==(float)$action['position_seconds']))return null;
+        $track=vp3_media_playable_track_v1($pdo,$live,(int)$item['source_id'],true);
+        return $track===null?null:array_replace($result,['tracks'=>[track_media_payload($track)]]
+            +($operation==='resume'?['position_seconds'=>(float)$history['resume_seconds']]:[]));
+    }
     if($operation==='resume'){
         $source=vp3_media_resume_read_v1($pdo,$live,$principal,time());
         if($source===null||$source['track_id']!==$action['track_id']||!hash_equals($source['revision'],$action['revision'])
@@ -307,4 +325,16 @@ function vp3_media_playback_resolve_v1(PDO $pdo,array $user,array $action): ?arr
         $result['tracks'][]=track_media_payload($track);
     }
     return $result['tracks']?$result:null;
+}
+
+/** Both native receipt writers revalidate an explicitly supplied MC2 action before a start. */
+function vp3_media_history_start_authorized_v1(PDO $pdo,?array $user,int $trackId,string $source,array $action,float $position): bool
+{
+    if(!$user||!in_array($source,['agent_chat','agent_player'],true)||($action['track_id']??null)!==$trackId)return false;
+    $expected=($action['operation']??null)==='resume'?(float)($action['position_seconds']??-100):0.0;
+    // A playing event may arrive a few frames after the authorized seek. It may
+    // not claim an unrelated position under an otherwise valid signed action.
+    if(!is_finite($position)||abs($position-$expected)>1.0)return false;
+    try{return vp3_media_playback_resolve_v1($pdo,$user,$action)!==null;}
+    catch(RuntimeException){return false;}
 }

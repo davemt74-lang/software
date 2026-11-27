@@ -1,9 +1,18 @@
-name: Music Chat and Playlists
+name: Music Chat, History and Playlists
 
 on:
   pull_request:
     paths:
       - 'includes/music-chat-*.php'
+      - 'includes/music-history-*.php'
+      - 'api/music-history-*.php'
+      - 'assets/js/music-history-*.js'
+      - 'assets/css/music-history-*.css'
+      - 'tests/music-history-*'
+      - 'tests/fixtures/music-history-*'
+      - 'includes/player-v76.php'
+      - 'includes/music-listening-v1.php'
+      - 'api/playback.php'
       - 'api/music-chat-*.php'
       - 'assets/js/music-chat-*.js'
       - 'assets/css/music-chat-*.css'
@@ -27,6 +36,15 @@ on:
     branches: [main]
     paths:
       - 'includes/music-chat-*.php'
+      - 'includes/music-history-*.php'
+      - 'api/music-history-*.php'
+      - 'assets/js/music-history-*.js'
+      - 'assets/css/music-history-*.css'
+      - 'tests/music-history-*'
+      - 'tests/fixtures/music-history-*'
+      - 'includes/player-v76.php'
+      - 'includes/music-listening-v1.php'
+      - 'api/playback.php'
       - 'api/music-chat-*.php'
       - 'assets/js/music-chat-*.js'
       - 'assets/css/music-chat-*.css'
@@ -105,9 +123,25 @@ jobs:
           php tests/agent-connection-youtube-chat-v1.php
           php tests/agent-connection-youtube-playlists-v1.php
           php tests/agent-tool-receipts-v1.php
+      - name: Private history filters, local time and individual receipt pagination
+        run: |
+          php tests/music-history-intent-v1.php
+          php tests/music-history-v1.php
+      - name: Actual history HTTP, exact selections and typed voice restoration
+        run: |
+          node tests/music-history-api-v1.mjs
+          node tests/music-history-runtime-v1.mjs
+      - name: Native MySQL retained history and stable pagination
+        env:
+          MUSIC_HISTORY_RESET_TEST_DB: "1"
+          MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
+          MUSIC_TEST_MYSQL_USER: root
+          MUSIC_TEST_MYSQL_PASSWORD: music-test-only
+        run: php tests/music-history-mysql-v1.php
       - name: Production JavaScript syntax
         run: |
           node --check assets/js/music-chat-v1.js
+          node --check assets/js/music-history-v1.js
           node --check chat.js
           node --check chat-youtube-v1.js
           node --check chat-voice.js
@@ -126,6 +160,8 @@ jobs:
         run: |
           php tests/music-chat-intent-v1.php
           php tests/music-chat-library-v1.php
+          php tests/music-history-intent-v1.php
+          php tests/music-history-v1.php
 
   music-chat-browser:
     runs-on: ubuntu-latest
@@ -136,7 +172,9 @@ jobs:
         browser: [chromium, webkit]
     env:
       MUSIC_CHAT_BROWSER: ${{ matrix.browser }}
+      MUSIC_HISTORY_BROWSER: ${{ matrix.browser }}
       MUSIC_CHAT_ARTIFACT_DIR: artifacts/music-chat-v1/${{ matrix.browser }}
+      MUSIC_HISTORY_ARTIFACT_DIR: artifacts/music-history-v1/${{ matrix.browser }}
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -153,11 +191,21 @@ jobs:
           npx playwright install --with-deps "$MUSIC_CHAT_BROWSER"
       - name: Actual PHP and browser music requests, saved lists and source switching
         run: node tests/music-chat-browser-v1.mjs
+      - name: Actual PHP and browser history queries, exact replay and quiet restoration
+        run: node tests/music-history-browser-v1.mjs
       - name: Publish screenshots and assertion evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: music-chat-${{ matrix.browser }}
           path: artifacts/music-chat-v1/${{ matrix.browser }}/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Publish history screenshots and assertion evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-history-${{ matrix.browser }}
+          path: artifacts/music-history-v1/${{ matrix.browser }}/
           if-no-files-found: warn
           retention-days: 14

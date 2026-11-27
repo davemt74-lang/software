@@ -1,0 +1,42 @@
+.vp3-music-history{margin:12px 0;padding:16px;border:1px solid #d8e0e7;border-radius:14px;background:#fff;color:#17202c;max-width:100%;min-width:0;box-sizing:border-box;overflow-wrap:anywhere}
+.vp3-music-history [hidden]{display:none!important}
+.vp3-music-history *{box-sizing:border-box}
+.vp3-music-history-heading{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;margin-bottom:8px}
+.vp3-music-history-heading h3{font-size:1.05rem;line-height:1.35;margin:0;color:#17202c}
+.vp3-music-history-private,.vp3-music-history-source{display:inline-block;border-radius:99px;padding:3px 9px;background:#eef3f8;color:#3a5069;font-size:.76rem;line-height:1.5;font-weight:600}
+.vp3-music-history-private{background:#f0f6f1;color:#326344}
+.vp3-music-history-window,.vp3-music-history-summary,.vp3-music-history-status{font-size:.86rem;line-height:1.5;margin:8px 0;color:#465c74}
+.vp3-music-history-status[data-history-state=error]{color:#815514}
+.vp3-music-history-coverage{margin:12px 0;padding:10px 12px;background:#f6f8fa;border-radius:8px;font-size:.81rem;line-height:1.5;color:#465c74}
+.vp3-music-history-coverage p{margin:0}
+.vp3-music-history-coverage p+p{margin-top:6px}
+.vp3-music-history-coverage ul{margin:6px 0 0;padding-left:18px}
+.vp3-music-history-coverage summary{min-height:44px;padding:12px 0;cursor:pointer;font-weight:600}
+.vp3-music-history-coverage summary:focus-visible{outline:3px solid #91b8ed;outline-offset:2px}
+.vp3-music-history-filters{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;margin:14px 0}
+.vp3-music-history-filters label{display:grid;gap:6px;min-width:0;font-size:.85rem;line-height:1.4;color:#465c74}
+.vp3-music-history-title-filter,.vp3-music-history-filter-actions{grid-column:1/-1}
+.vp3-music-history input,.vp3-music-history select{width:100%;min-width:0;max-width:100%;min-height:44px;padding:9px 10px;border:1px solid #c6d2df;border-radius:8px;font:inherit;font-size:.88rem;background:#fff;color:#17202c}
+.vp3-music-history button{min-height:44px;min-width:44px;max-width:100%;padding:9px 13px;border:1px solid #c6d2df;border-radius:9px;background:#fff;color:#24384e;font:inherit;font-size:.88rem;font-weight:600;line-height:1.3;cursor:pointer}
+.vp3-music-history button:hover:not(:disabled){background:#edf3fa;border-color:#8fa9c7}
+.vp3-music-history button:disabled{opacity:.5;cursor:default}
+.vp3-music-history button:focus-visible,.vp3-music-history input:focus-visible,.vp3-music-history select:focus-visible{outline:3px solid #91b8ed;outline-offset:2px}
+.vp3-music-history .vp3-music-history-primary{color:#fff;background:#265ca0;border-color:#265ca0}
+.vp3-music-history .vp3-music-history-primary:hover:not(:disabled){background:#1e4b84}
+.vp3-music-history-actions,.vp3-music-history-filter-actions,.vp3-music-history-pages{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.vp3-music-history-items{list-style:none;margin:14px 0 0;padding:0}
+.vp3-music-history-item{border-top:1px solid #e5ebf0;padding:14px 0;min-width:0}
+.vp3-music-history-item-heading{display:flex;align-items:flex-start;gap:10px;min-width:0}
+.vp3-music-history-ordinal{flex:0 0 auto;min-width:24px;font-size:.85rem;color:#526174;line-height:1.6}
+.vp3-music-history-details{display:grid;gap:4px;min-width:0}
+.vp3-music-history-details strong{font-size:.98rem;line-height:1.4;color:#17202c}
+.vp3-music-history-artist,.vp3-music-history-time,.vp3-music-history-evidence{font-size:.85rem;line-height:1.45;color:#526174}
+.vp3-music-history-meta{display:flex;align-items:center;flex-wrap:wrap;gap:8px}
+.vp3-music-history-unavailable{font-size:.84rem;color:#815514}
+.vp3-music-history-actions{margin-top:10px}
+.vp3-music-history-pages{padding-top:12px;border-top:1px solid #d8e0e7}
+.vp3-music-history-pages span{font-size:.83rem;color:#526174}
+.vp3-music-history-launch{min-height:44px;max-width:100%;margin-top:10px;padding:9px 13px;border:1px solid #c6d2df;border-radius:9px;background:#fff;color:#24384e;font:inherit;font-size:.88rem;font-weight:600;line-height:1.3;cursor:pointer}
+.vp3-music-history-launch:hover{background:#edf3fa;border-color:#8fa9c7}
+.vp3-music-history-launch:focus-visible{outline:3px solid #91b8ed;outline-offset:2px}
+@media(max-width:520px){.vp3-music-history{padding:12px}.vp3-music-history-heading{align-items:flex-start}.vp3-music-history button{padding:9px 11px}.vp3-music-history-filters{grid-template-columns:1fr}.vp3-music-history-actions{gap:6px}.vp3-music-history-coverage{padding:10px}.vp3-music-history-title-filter,.vp3-music-history-filter-actions{grid-column:auto}}
