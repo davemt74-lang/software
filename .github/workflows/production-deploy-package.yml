@@ -67,6 +67,10 @@ jobs:
             "music_provider_protocol": "vp3_music_provider_v1",
             "music_provider_schema": "music-provider-v1-20261126",
             "music_provider_upgrade_note": "docs/MUSIC-PROVIDER-DEPLOY.txt",
+            "music_source_page_profile": "public_music_pages_v2",
+            "music_analytics_protocol": "vp3_music_analytics_v1",
+            "music_analytics_period_basis": "session_start_cohort_v1",
+            "music_analytics_upgrade_note": "docs/MUSIC-ANALYTICS-DEPLOY.txt",
             "music_upgrade_note": "docs/MUSIC-CATALOG-LISTENING-DEPLOY.txt",
             "phone_agent_email_calls": "owner-consented-v1",
             "phone_agent_email_call_delivery_default": "off",
@@ -120,6 +124,12 @@ jobs:
           test -f _deploy/assets/css/music-provider-sites-v1.css
           test -f _deploy/scripts/music-provider-v1.php
           test -f _deploy/docs/MUSIC-PROVIDER-DEPLOY.txt
+          test -f _deploy/includes/music-analytics-v1.php
+          test -f _deploy/api/music-analytics-v1.php
+          test -f _deploy/assets/js/music-analytics-v1.js
+          test -f _deploy/assets/css/music-analytics-v1.css
+          test -f _deploy/music-workspace.php
+          test -f _deploy/docs/MUSIC-ANALYTICS-DEPLOY.txt
           test -s _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/assets/twilio-voice-LICENSE.txt
           test -f _deploy/includes/phone-workspace-v1.php

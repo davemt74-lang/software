@@ -102,6 +102,7 @@ function provider_playback_test_run(): void
     provider_playback_test_equal($start['completed'],null,'Unknown duration created completion');
     provider_playback_test_equal($start['source']['url'],$site['origin'].'/music.php','Source query/fragment leaked');
     provider_playback_test_equal($start['source']['page_verified'],false,'Reported page promoted into independent proof');
+    provider_playback_test_equal($start['source_page_profile'],'public_music_pages_v2','New begin receipt lacks source policy marker');
     provider_playback_test_equal($start['coverage']['listener_identity'],'anonymous_session_only','Provider invented fan identity');
     $snapshot=music_listening_test_snapshot();
     provider_playback_test_equal(provider_playback_test_call($begin,$clock+10),$start,'Begin retry changed receipt');
@@ -239,8 +240,43 @@ function provider_playback_test_run(): void
     $newBegin=provider_playback_test_begin($site,$recordings[10]);$newPlay=provider_playback_test_call($newBegin,$clock+300002);provider_playback_test_equal($newPlay['asset_id'],$newAsset,'New playback ignored replacement');
     $newMedia=music_provider_v1_media($pdo,provider_playback_test_ticket($newPlay),['now_ms'=>$clock+300002]);provider_playback_test_equal(stream_get_contents($newMedia['handle']),$replacement,'New playback did not receive replacement bytes');fclose($newMedia['handle']);music_provider_v1_delivery_record($pdo,$newMedia,'GET',200,strlen($replacement),$clock+300002);
 
+    // Newly recognized Stoneward pages are still reported context, not proof.
+    foreach(['/track/public-song','/track/vp3_ABC-123/','/release/album-2026','/release/album/','/stonefellow-v120.php'] as $path){
+        $pageBegin=provider_playback_test_begin($site,$recordings[10],['source_url'=>$site['origin'].$path.'?token=PRIVATE-QUERY#PRIVATE-FRAGMENT']);
+        $pageReply=provider_playback_test_call($pageBegin,$clock+300010);
+        provider_playback_test_equal($pageReply['source']['url'],$site['origin'].$path,'Public catalog page unavailable');
+        provider_playback_test_equal($pageReply['source']['reason'],'details_redacted','Public page private details retained');
+        provider_playback_test_equal($pageReply['source']['page_verified'],false,'Public route became verified page');
+        provider_playback_test_equal(provider_playback_test_call($pageBegin,$clock+300011),$pageReply,'Public page exact replay changed receipt');
+        provider_playback_test_reject(static fn()=>provider_playback_test_call(array_replace($pageBegin,['source_url'=>$site['origin'].'/track/different-song']),$clock+300012),409,'Changed public page repurposed a play');
+    }
+    // An old provider's omitted-page receipt stays immutable across the
+    // additive route upgrade, including an acknowledgement lost at deployment.
+    $upgradeBegin=provider_playback_test_begin($site,$recordings[10],['source_url'=>$site['origin'].'/track/previously-omitted']);
+    $upgradeReceipt=provider_playback_test_call($upgradeBegin,$clock+300010);
+    $oldSource=$upgradeReceipt['source'];$oldSource['url']=null;$oldSource['reason']='restricted_path';
+    $oldReceipt=$upgradeReceipt;$oldReceipt['source']=$oldSource;unset($oldReceipt['source_page_profile']);
+    $oldHash=hash('sha256',music_provider_v1_json(['recording_id'=>$recordings[10],'position_ms'=>0,'playback_rate'=>1.0,'muted'=>false,'loop'=>false,'source'=>$oldSource]));
+    $pdo->prepare('UPDATE music_provider_sessions_v1 SET source_json=?,begin_hash=?,begin_receipt_json=? WHERE session_id=?')
+        ->execute([music_provider_v1_json($oldSource),$oldHash,music_provider_v1_json($oldReceipt),$upgradeReceipt['session_id']]);
+    $beforeUpgradeRetry=music_listening_test_snapshot();
+    provider_playback_test_equal(provider_playback_test_call($upgradeBegin,$clock+300011),$oldReceipt,'Upgrade broke old omitted-page receipt replay');
+    provider_playback_test_equal(music_listening_test_snapshot(),$beforeUpgradeRetry,'Upgrade replay rewrote historical source');
+    provider_playback_test_reject(static fn()=>provider_playback_test_call(array_replace($upgradeBegin,['position_ms'=>1]),$clock+300012),409,'Upgrade exception accepted changed position');
+    provider_playback_test_reject(static fn()=>provider_playback_test_call(array_replace($upgradeBegin,['playback_key'=>'mps1_'.str_repeat('f',64)]),$clock+300012),409,'Upgrade exception accepted a foreign visitor key');
+    provider_playback_test_reject(static fn()=>provider_playback_test_call(array_replace($upgradeBegin,['source_url'=>$site['origin'].'/music.php']),$clock+300012),409,'Upgrade exception accepted a previously supported page');
+    $newOmittedBegin=provider_playback_test_begin($site,$recordings[10],['source_url'=>$site['origin'].'/unsupported-page']);
+    $newOmitted=provider_playback_test_call($newOmittedBegin,$clock+300010);
+    provider_playback_test_equal($newOmitted['source_page_profile'],'public_music_pages_v2','New omitted-page receipt lacks policy marker');
+    provider_playback_test_equal($newOmitted['source']['reason'],'restricted_path','New unsupported page must remain omitted');
+    provider_playback_test_reject(static fn()=>provider_playback_test_call(array_replace($newOmittedBegin,['source_url'=>$site['origin'].'/track/new-public-page']),$clock+300012),409,'New v2 omitted-page session incorrectly used historical hash exception');
+
     // Provider snapshots do not expose unsafe paths, secrets, contacts or history.
-    foreach([$site['origin'].'/account/PRIVATE-PATH/token','https://person:PRIVATE-PASSWORD@artist.example.com/music.php',$site['origin'].'/%2e%2e/private/credential','https://foreign.example.com/music.php'] as $unsafe){
+    foreach([$site['origin'].'/account/PRIVATE-PATH/token','https://person:PRIVATE-PASSWORD@artist.example.com/music.php',$site['origin'].'/%2e%2e/private/credential','https://foreign.example.com/music.php',
+        $site['origin'].'/track/a%2fb',$site['origin'].'/track/%2e%2e/music',$site['origin'].'/track/../music',
+        $site['origin'].'/release/a.b',$site['origin'].'/track/a/secret',$site['origin'].'/track/'.str_repeat('a',161),
+        $site['origin'].'/track/',$site['origin'].'/release/',$site['origin'].'/private/../music',
+        $site['origin'].'/track/\\song',$site['origin'].'/track/song'."\n"] as $unsafe){
         $attempt=provider_playback_test_begin($site,$recordings[10],['source_url'=>$unsafe]);$reply=provider_playback_test_call($attempt,$clock+300010);
         provider_playback_test_equal($reply['source']['url'],null,'Unsafe source page retained');
         if(str_contains(json_encode($reply),'PRIVATE-'))throw new RuntimeException('Private source details leaked into receipt.');

@@ -162,7 +162,7 @@ require __DIR__ . '/_header.php';
 
   <div class="panel">
     <h2>How a “Play” is Counted</h2>
-    <p class="muted">Every playback start is recorded. A qualified play is a session with at least 10 seconds of actual listening. Completion is recorded when the track ends naturally or the listener accumulates at least 80% of the track duration.</p>
+    <p class="muted">This platform report includes native and legacy playback records. A qualified play has at least 10 accepted listening seconds. Versioned listening marks completion only after accepted listening reaches 80% of a usable duration; natural ending alone does not establish completion. Historical legacy flags retain their original meaning. Connected-site provider listening is available in the authorized Music Workspace report.</p>
   </div>
 </div>
 

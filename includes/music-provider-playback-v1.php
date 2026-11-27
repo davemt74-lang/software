@@ -98,6 +98,12 @@ function music_provider_v1_playback_origin(array $site,array $context): void
     if(!is_string($origin)||($origin!==''&&!hash_equals((string)$site['origin'],$origin)))music_provider_v1_error('origin_not_allowed',403,'This playback origin is not allowed.');
 }
 
+/** Stoneward's public Apache routes use one bounded catalog ID, never arbitrary paths. */
+function music_provider_v1_extended_public_page(string $path): bool
+{
+    return $path==='/stonefellow-v120.php'||preg_match('#^/(?:track|release)/[A-Za-z0-9_-]{1,160}/?$#D',$path)===1;
+}
+
 function music_provider_v1_playback_source(array $site,array $input): array
 {
     $surface=$input['source_surface']??'player';
@@ -114,10 +120,11 @@ function music_provider_v1_playback_source(array $site,array $input): array
     $origin='https://'.strtolower((string)$parts['host']).($port===443?'':':'.$port);
     if(!hash_equals((string)$site['origin'],$origin)){$result['reason']='foreign_origin';return $result;}
     $path=(string)($parts['path']??'/');
-    // Exact public route forms only: unknown slugs may contain account IDs or
-    // credentials. Keep the registered origin rather than a hidden raw fallback.
+    // Exact public route forms and the two bounded public catalog routes only.
+    // Do not decode/normalize paths: encoded separators or dot traversal must
+    // not become an accepted path. Keep unknown pages out of every projection.
     $routes=['/','/index.php','/music','/music/','/music.php','/listen','/listen/','/listen.php','/track.php','/song.php','/album.php','/albums.php','/discography.php'];
-    if(!in_array($path,$routes,true)){$result['reason']='restricted_path';return $result;}
+    if(!in_array($path,$routes,true)&&!music_provider_v1_extended_public_page($path)){$result['reason']='restricted_path';return $result;}
     $result['url']=$origin.$path;
     $result['reason']=isset($parts['query'])||isset($parts['fragment'])?'details_redacted':'available';
     return $result;
@@ -313,10 +320,25 @@ function music_provider_v1_playback_begin(PDO $pdo,array $input,array $context,i
         $site=music_provider_v1_authorize_site($pdo,$siteId,$now,true);music_provider_v1_playback_origin($site,$context);
         if((int)$site['workspace_id']!==$workspaceId)music_provider_v1_error('connection_inactive',403,'This music connection changed.');
         $public=music_provider_v1_public_recording($pdo,$site,$recordingId,true);$source=music_provider_v1_playback_source($site,$input);
-        $hash=hash('sha256',music_provider_v1_json(['recording_id'=>$recordingId,'position_ms'=>$position,'playback_rate'=>$rate,'muted'=>$input['muted']??false,'loop'=>$input['loop']??false,'source'=>$source]));
+        $beginIdentity=['recording_id'=>$recordingId,'position_ms'=>$position,'playback_rate'=>$rate,'muted'=>$input['muted']??false,'loop'=>$input['loop']??false,'source'=>$source];
+        $hash=hash('sha256',music_provider_v1_json($beginIdentity));
         $query=$pdo->prepare('SELECT * FROM music_provider_sessions_v1 WHERE site_id=? AND play_id=?'.($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?' FOR UPDATE':''));$query->execute([$siteId,$playId]);$existing=$query->fetch(PDO::FETCH_ASSOC);
         if($existing){
-            if(!hash_equals((string)$existing['playback_key_hash'],hash('sha256',$key))||!hash_equals((string)$existing['begin_hash'],$hash))music_provider_v1_error('play_conflict',409,'This playback identifier already describes a different attempt.');
+            $matches=hash_equals((string)$existing['begin_hash'],$hash);
+            // A provider upgrade can admit a formerly omitted public route
+            // while an exact begin acknowledgement is still being retried.
+            // Match that older canonical projection only; retain the original
+            // receipt/source and do not invent historical page attribution.
+            $oldSource=json_decode((string)$existing['source_json'],true);
+            $oldReceipt=json_decode((string)$existing['begin_receipt_json'],true);
+            if(!$matches&&is_array($oldReceipt)&&!array_key_exists('source_page_profile',$oldReceipt)
+                &&is_array($oldSource)&&($oldSource['url']??null)===null&&($oldSource['reason']??'')==='restricted_path'
+                &&is_string($source['url'])&&music_provider_v1_extended_public_page((string)parse_url($source['url'],PHP_URL_PATH))){
+                $legacySource=$source;$legacySource['url']=null;$legacySource['reason']='restricted_path';
+                $legacyIdentity=$beginIdentity;$legacyIdentity['source']=$legacySource;
+                $matches=hash_equals((string)$existing['begin_hash'],hash('sha256',music_provider_v1_json($legacyIdentity)));
+            }
+            if(!hash_equals((string)$existing['playback_key_hash'],hash('sha256',$key))||!$matches)music_provider_v1_error('play_conflict',409,'This playback identifier already describes a different attempt.');
             $authorized=music_provider_v1_playback_session($pdo,(string)$existing['session_id'],$now,$key,true,$context);
             return json_decode((string)$authorized['session']['begin_receipt_json'],true,24,JSON_THROW_ON_ERROR);
         }
@@ -342,7 +364,8 @@ function music_provider_v1_playback_begin(PDO $pdo,array $input,array $context,i
             'elapsed_ms'=>0,'reported_played_ms'=>0,'accepted_played_ms'=>0,'position_ms'=>$position,'max_position_ms'=>$position,'playback_rate'=>$rate,
             'last_seq'=>0,'natural_ended'=>0,'muted_seen'=>!empty($input['muted'])?1:0,'loop_seen'=>!empty($input['loop'])?1:0,'clipped'=>0,
             'media_requests'=>0,'reserved_bytes'=>0,'emitted_bytes'=>0];
-        $reply=music_provider_v1_playback_receipt($pdo,$session)+['media'=>music_provider_v1_playback_ticket($pdo,$session,$now)];
+        $reply=music_provider_v1_playback_receipt($pdo,$session)+['media'=>music_provider_v1_playback_ticket($pdo,$session,$now),
+            'source_page_profile'=>'public_music_pages_v2'];
         $session['begin_receipt_json']=music_provider_v1_json($reply);$fields=array_keys($session);
         $pdo->prepare('INSERT INTO music_provider_sessions_v1 ('.implode(',',$fields).') VALUES ('.implode(',',array_fill(0,count($fields),'?')).')')->execute(array_values($session));
         return $reply;
