@@ -32,6 +32,10 @@ window.STONEFELLOW_TRANSCRIPTION_CANVAS_V243=proof;
 
 function chatIdentity(){
   const chat=window.STONEFELLOW_CHAT;
+  if(!chat&&cfg.memberSurface===true){
+    const owner=Number(cfg.ownerUserId);return Number.isSafeInteger(owner)&&owner>0&&cfg.workingAttentionBinding&&cfg.csrf
+      ?JSON.stringify([owner,'member-library',String(cfg.workingAttentionBinding),String(cfg.csrf)]):'';
+  }
   const owner=Number(chat?.userId||0),agent=Number(chat?.agentId||0);
   if(!Number.isSafeInteger(owner)||owner<1||!Number.isSafeInteger(agent)||agent<0||!chat?.workingAttentionBinding||!chat?.csrf||!chat?.endpoint)return '';
   return JSON.stringify([owner,agent,String(chat.workingAttentionBinding),String(chat.csrf),String(chat.endpoint)]);
@@ -40,6 +44,9 @@ function pageIsCurrent(){return !!pageIdentity&&chatIdentity()===pageIdentity;}
 function chatRuntime(){return window.STONEFELLOW_CHAT_CONTINUITY_V87||window.STONEFELLOW_CHAT_CONTINUITY;}
 function chatScope(){
   if(!pageIsCurrent()||window.VP3ParticipantContinuity?.selectedContext?.())return null;
+  // A member may review their library without creating/pretending to be Chat.
+  // Conversation-dependent source and follow-up mutations remain unavailable.
+  if(!window.STONEFELLOW_CHAT&&cfg.memberSurface===true)return 0;
   const chat=chatRuntime();
   if(!chat||Number(chat.agentId?.()||0)!==Number(window.STONEFELLOW_CHAT.agentId||0))return null;
   const conversationId=Number(chat.conversationId?.());
@@ -164,7 +171,8 @@ function unseenItems(){return recordings.filter(item=>!seen.has(itemId(item)));}
 
 function ensureButton(){
   if(button?.isConnected)return;
-  const actions=document.querySelector('.chat-topbar-actions');
+  if(/(?:^|\/)admin(?:\/|$)/.test(location.pathname))return;
+  const actions=document.querySelector('.chat-topbar-actions,.site-header .header-right');
   if(!actions)return;
   button=document.createElement('button');
   button.type='button';
@@ -228,7 +236,7 @@ async function refreshRecordings(force=true){
 }
 async function refreshSessions(){
   const url=new URL(listeningEndpoint,location.href);url.searchParams.set('action','bootstrap');
-  const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+  const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json',...(cfg.memberSurface?{'X-VP3-Working-Attention':cfg.workingAttentionBinding}:{})}});
   const data=await response.json().catch(()=>null);
   if(!pageIsCurrent())return [];
   if(!response.ok||!data?.ok)throw new Error(clean(data?.error)||'Could not load your transcriptions.');
@@ -240,7 +248,7 @@ async function fetchIntelligence(sessionId,{force=false}={}){
   if(sessionId<1)return null;
   if(!force&&intelligenceCache.has(sessionId))return intelligenceCache.get(sessionId);
   const url=new URL(intelligenceEndpoint,location.href);url.searchParams.set('action','status');url.searchParams.set('session_id',String(sessionId));
-  const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json'}});
+  const response=await fetch(url,{credentials:'same-origin',cache:'no-store',headers:{Accept:'application/json',...(cfg.memberSurface?{'X-VP3-Working-Attention':cfg.workingAttentionBinding}:{})}});
   const data=await response.json().catch(()=>null);
   if(!response.ok||!data?.ok)throw new Error(clean(data?.error)||'Could not load transcription intelligence.');
   return data;
@@ -665,5 +673,7 @@ window.addEventListener('vp3:chat-message-persisted',event=>{
   }
 });
 window.addEventListener('pagehide',()=>{observer?.disconnect();invalidateSourceContext();},{once:true});
+window.addEventListener('stonefellow:session-expired',invalidateSourceContext);
+window.addEventListener('stonefellow:logout',invalidateSourceContext);
 if(document.readyState==='loading')document.addEventListener('DOMContentLoaded',()=>void bootstrap(),{once:true});else void bootstrap();
 })();

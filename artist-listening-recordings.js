@@ -117,7 +117,7 @@
     const options = {
       method,
       credentials:'same-origin',
-      headers:{Accept:'application/json'},
+      headers:{Accept:'application/json',...(chatCfg.memberSurface?{'X-VP3-Working-Attention':chatCfg.workingAttentionBinding}:{})},
     };
 
     if (method === 'GET') {

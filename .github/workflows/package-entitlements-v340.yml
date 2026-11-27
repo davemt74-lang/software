@@ -237,6 +237,8 @@ jobs:
           php tests/phone-subscription-access-v1.php
           php tests/phone-assigned-entrypoints-v1.php
           php tests/phone-browser-workspace-v1.php
+          php tests/phone-browser-workspace-v1.php global-context
+          php tests/phone-tracking-chat-v1.php global-activity
           php tests/operator-schedule-calendar-v1.php
           php tests/operator-outreach-v1.php
           php tests/operator-schedule-calendar-v1.php timeout
@@ -342,7 +344,9 @@ jobs:
       - name: Browser phone state and signed carrier lifecycle on MySQL
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_workspace_test;charset=utf8mb4
-        run: php tests/phone-browser-workspace-v1.php
+        run: |
+          php tests/phone-browser-workspace-v1.php
+          php tests/phone-browser-workspace-v1.php global-context
       - name: Consented Agent conversation and revocation on native MySQL
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_participation_test;charset=utf8mb4
@@ -403,6 +407,11 @@ jobs:
         env:
           PHP_BIN: php
         run: node tests/phone-workspace-release-v1.mjs
+      - name: Cross-page personal phone and member transcription review
+        run: |
+          node tests/agent-phone-shell-browser-v1.mjs
+          node tests/member-transcriptions-browser-v1.mjs
+          node tests/admin-standard-header-browser-v1.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

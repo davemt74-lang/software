@@ -56,16 +56,11 @@ $overall=$filesGood&&!empty($health['healthy']);
 function runtime_status_h(mixed $value): string{return htmlspecialchars((string)$value,ENT_QUOTES|ENT_SUBSTITUTE,'UTF-8');}
 function runtime_status_bytes(int $bytes): string{if($bytes<1024)return $bytes.' B';if($bytes<1048576)return number_format($bytes/1024,1).' KB';return number_format($bytes/1048576,1).' MB';}
 ?>
-<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Runtime Status | Stonefellow</title>
+<?php $adminTitle='Runtime status';$adminActive='runtime';require __DIR__.'/_header.php'; ?>
 <style>
-body{margin:0;background:#f5f5f4;color:#171717;font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.wrap{max-width:1220px;margin:auto;padding:28px}.card{background:#fff;border:1px solid #dededb;border-radius:14px;padding:20px;margin-bottom:18px;overflow:auto}.ok{color:#087a2f}.bad{color:#b42318}.warn{color:#9a6700}.muted{color:#6b6b67}h1,h2{margin:0 0 12px}.grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.metric{border:1px solid #e8e8e5;border-radius:10px;padding:12px}.metric strong{display:block;font-size:22px}.details{display:grid;grid-template-columns:190px 1fr;gap:8px 14px;margin-top:16px}table{border-collapse:collapse;width:100%;min-width:900px}th,td{text-align:left;vertical-align:top;padding:9px;border-bottom:1px solid #e7e7e7}code{font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}button{border:0;border-radius:8px;background:#111;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer;margin-right:8px}.marker{display:block}.actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.actions form{margin:0}@media(max-width:760px){.grid{grid-template-columns:1fr 1fr}.details{grid-template-columns:1fr}table{min-width:760px}}
+.runtime-status-workspace{margin:0;background:#f5f5f4;color:#171717;font:14px/1.45 system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.runtime-status-workspace.wrap{max-width:1220px;margin:auto;padding:28px}.runtime-status-workspace .card{background:#fff;border:1px solid #dededb;border-radius:14px;padding:20px;margin-bottom:18px;overflow:auto}.runtime-status-workspace .ok{color:#087a2f}.runtime-status-workspace .bad{color:#b42318}.runtime-status-workspace .warn{color:#9a6700}.runtime-status-workspace .muted{color:#6b6b67}.runtime-status-workspace h1,.runtime-status-workspace h2{margin:0 0 12px}.runtime-status-workspace .grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}.runtime-status-workspace .metric{border:1px solid #e8e8e5;border-radius:10px;padding:12px}.runtime-status-workspace .metric strong{display:block;font-size:22px}.runtime-status-workspace .details{display:grid;grid-template-columns:190px 1fr;gap:8px 14px;margin-top:16px}.runtime-status-workspace table{border-collapse:collapse;width:100%;min-width:900px}.runtime-status-workspace th,.runtime-status-workspace td{text-align:left;vertical-align:top;padding:9px;border-bottom:1px solid #e7e7e7}.runtime-status-workspace code{font:12px/1.4 ui-monospace,SFMono-Regular,Consolas,monospace;overflow-wrap:anywhere}.runtime-status-workspace button{border:0;border-radius:8px;background:#111;color:#fff;padding:10px 14px;font-weight:800;cursor:pointer;margin-right:8px}.runtime-status-workspace .marker{display:block}.runtime-status-workspace .actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:16px}.runtime-status-workspace .actions form{margin:0}@media(max-width:760px){.runtime-status-workspace .grid{grid-template-columns:1fr 1fr}.runtime-status-workspace .details{grid-template-columns:1fr}.runtime-status-workspace table{min-width:760px}}
 </style>
-</head>
-<body><div class="wrap">
+<div class="wrap runtime-status-workspace">
 <div class="card">
 <h1>Stonefellow Production Runtime</h1>
 <p class="<?= $overall?'ok':'warn' ?>"><strong><?= $overall?'Runtime checks are healthy.':'Runtime needs attention.' ?></strong></p>
@@ -113,4 +108,4 @@ fetch(<?= json_encode($teamProbeUrl) ?>,{credentials:'same-origin',cache:'no-sto
  .then(({r,d})=>{const e=document.getElementById('teamChatProbe');const ok=r.ok&&d.ok===true;e.className=ok?'ok':'bad';e.textContent=ok?`HTTP ${r.status} · ok · ${Array.isArray(d.users)?d.users.length:0} directory users`:`HTTP ${r.status} · ${String(d.error||'poll_failed')}`;})
  .catch(error=>{const e=document.getElementById('teamChatProbe');e.className='bad';e.textContent='Request failed · '+String(error?.message||error);});
 </script>
-</body></html>
+<?php require __DIR__.'/_footer.php'; ?>

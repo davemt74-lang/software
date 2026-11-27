@@ -81,6 +81,8 @@ function vp3_phone_workspace_ensure_schema_v1(PDO $pdo): void
     $pdo->exec('CREATE TABLE IF NOT EXISTS phone_browser_numbers_v1(phone_number_id BIGINT PRIMARY KEY,owner_user_id BIGINT NOT NULL,agent_id BIGINT NOT NULL,browser_enabled SMALLINT NOT NULL DEFAULT 0,recording_enabled SMALLINT NOT NULL DEFAULT 0)'.$suffix);
     $pdo->exec('CREATE TABLE IF NOT EXISTS phone_browser_presence_v1(owner_user_id BIGINT PRIMARY KEY,last_epoch BIGINT NOT NULL,conversation_id BIGINT NULL,chat_agent_id BIGINT NOT NULL DEFAULT 0)'.$suffix);
     $pdo->exec('CREATE TABLE IF NOT EXISTS phone_browser_deliveries_v1(owner_user_id BIGINT NOT NULL,event_key VARCHAR(150) NOT NULL,chat_message_id BIGINT NOT NULL,conversation_id BIGINT NOT NULL,chat_agent_id BIGINT NOT NULL,PRIMARY KEY(owner_user_id,event_key))'.$suffix);
+    require_once __DIR__.'/agent-phone-shell-v1.php';
+    vp3_agent_phone_shell_install_v1($pdo);
     foreach(['idx_phone_browser_owner_recent_v1'=>'owner_user_id,id','idx_phone_browser_owner_state_v1'=>'owner_user_id,state','idx_phone_browser_owner_created_v1'=>'owner_user_id,created_epoch','idx_phone_browser_connected_profile_v1'=>'owner_user_id,paired_profile_id,created_epoch'] as $name=>$columns){
         if($sqlite)$pdo->exec('CREATE INDEX IF NOT EXISTS '.$name.' ON phone_browser_calls_v1('.$columns.')');
         else{$q=$pdo->prepare('SHOW INDEX FROM phone_browser_calls_v1 WHERE Key_name=?');$q->execute([$name]);if(!$q->fetch())$pdo->exec('CREATE INDEX '.$name.' ON phone_browser_calls_v1('.$columns.')');}

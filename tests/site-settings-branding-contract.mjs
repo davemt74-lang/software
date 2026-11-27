@@ -61,7 +61,8 @@ assert.ok(
 );
 
 assert.match(adminHeader, /\$siteBrandName = 'VP3';/, 'Admin shell must use fixed VP3 application branding');
-assert.ok(adminHeader.includes('class="admin-mobile-brand"') && adminHeader.includes('aria-label="VP3">VP3</a>'), 'Admin mobile logo must be VP3');
+assert.ok(adminHeader.includes('data-admin-standard-header') && adminHeader.includes('e($siteBrandName) ?> Admin'), 'One standard mobile/desktop header uses fixed VP3 Admin branding');
+assert.ok(!adminHeader.includes('class="admin-mobile-bar"'), 'Admin does not restore a second mobile header');
 assert.ok(adminHeader.includes('class="admin-brand"') && adminHeader.includes('aria-label="VP3">VP3</a>'), 'Admin desktop logo must be VP3');
 assert.doesNotMatch(adminHeader, /class="site-brand-logo"/, 'legacy uploaded logo must not override the VP3 admin shell');
 assert.doesNotMatch(adminHeader, /url\('\/admin\/team\.php'\)/, 'Admin shell must never restore the legacy Admin Team destination');

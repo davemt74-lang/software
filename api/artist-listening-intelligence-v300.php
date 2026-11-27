@@ -68,6 +68,7 @@ function transcription_intelligence_meeting_policy_public_v1801(?array $policy):
 
 $user=current_user();
 if(!$user)transcription_intelligence_json_v300(false,['error'=>'Sign in to use transcription intelligence.'],401);
+if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])&&!hash_equals(vp3_catch_up_page_binding_v1($user),(string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION']))transcription_intelligence_json_v300(false,['error'=>'Your account changed. Refresh this page.'],403);
 if(!has_permission('artist_listening.access',$user))transcription_intelligence_json_v300(false,['error'=>'Transcription access is required.'],403);
 if(!artist_listening_v172_schema_ready()||!artist_listening_v237_schema_ready())transcription_intelligence_json_v300(false,['error'=>'Transcription intelligence is not ready. Run the transcript upgrades.'],503);
 $pdo=db();if(!$pdo)transcription_intelligence_json_v300(false,['error'=>'Database unavailable.'],503);

@@ -52,7 +52,8 @@ assert.match(chatApi, /array_reverse\(\$stmt->fetchAll\(\)\)/, 'loaded messages 
 assert.match(profileAgent, /require __DIR__ \. '\/includes\/member-header\.php'/, 'Profile Agent uses the universal member header');
 assert.doesNotMatch(profileAgent, /<header class="chat-topbar profile-agent-topbar">/, 'Profile Agent must not keep a second hand-built member topbar');
 assert.match(memberHeader, /chat-notifications-drawer-v240\.js/, 'universal member header loads tabbed Activity Center');
-assert.match(memberHeader, /chat-transcription-canvas\.js/, 'universal member header loads Transcription Activity');
+assert.match(memberHeader, /vp3_member_transcriptions_runtime_v1\(\$memberHeaderUser\)/, 'universal member header loads the shared Transcription Activity runtime');
+assert.match(read('includes/member-transcriptions-v1.php'), /chat-transcription-canvas\.js/, 'shared member runtime loads the native Transcription Activity script');
 assert.match(memberHeader, /STONEFELLOW_NOTIFICATION_DRAWER/, 'universal header configures notification UI');
 assert.match(memberHeader, /has_permission\('chat\.access',\s*\$memberHeaderUser\)/, 'Chat-only member-header runtimes remain capability gated');
 assert.doesNotMatch(transcriptionCanvas, /if\(!thread\)return/, 'Transcription Activity must work outside Main Feed');

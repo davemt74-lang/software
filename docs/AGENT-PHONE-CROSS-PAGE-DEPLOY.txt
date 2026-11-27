@@ -1,0 +1,100 @@
+VP3 personal Phone and member Agent shell — account-context-v1
+
+DEPLOYMENT
+
+Extract the complete merged Cloud archive and run authenticated Database Upgrade.
+The explicit upgrade creates phone_browser_contexts_v1. Page polling never runs
+DDL. Existing phone assignments, carrier credentials, calling permissions,
+recording consent, paired phones and native Chat history are preserved.
+
+PERSONAL PHONE
+
+Phone no longer needs a rendered main Chat page. An explicit Enable or Call
+action finds or creates an owner/Agent-scoped private Phone conversation. Its
+identity is saved on the server and validated again when reused. Missing,
+deleted or foreign references are never adopted as private owner history.
+Ordinary page views do not create conversations or place calls.
+
+The browser saves only the account/line enable choice, selected line and Agent
+identifier. No access token, phone audio or message text is stored in that
+preference. Reloading or navigating to another authorized page restores browser
+registration after fresh server authorization. Turning calling off persists too.
+The existing tab-scoped choice migrates when it is first encountered.
+
+Loading/registering the phone does not take the microphone. Accepting or
+initiating a call still claims the shared voice lease and uses the existing
+exact-call binding, carrier intent, subscription and recording checks. Off-page
+runtime assets include the same owner-scoped voice lease as main Chat.
+
+A Chat popup uses its embedding page's Phone runtime. It does not create another
+Twilio device or microphone owner. Existing native call cards remain backed by
+their saved Chat messages and authoritative call records.
+
+Browser audio belongs to its current document. Keep the calling tab open while
+talking; existing SDK close protection applies to navigation during a live call.
+This release restores the enabled choice across pages; it does not transfer a
+live WebRTC media session across a full page reload.
+
+USER PAGES AND ADMIN
+
+Member pages use the main Chat composer's shared styling and controls: tools,
+multiline message, voice and Send. The proxy submits through canonical Chat and
+keeps its existing draft-conflict checks and same-origin message boundaries.
+
+Admin retains its own Agent interface. It does not receive the public user
+chatbar, public Orb or Transcriptions controls. Personal Phone remains available
+according to the signed-in user's current calling access. All Admin pages,
+including fullscreen Studio and Runtime Status, use the shared header with
+Phone, notifications and a grouped, permission-aware account menu. Mobile uses
+one header rather than a second header row; fullscreen Studio retains the
+remaining viewport. Incoming calls show
+Answer/Decline and the existing slideout remains available.
+
+Connected-phone chats and information-request responses follow the owner into
+regular pages and Admin. A generic personal notification is saved atomically
+with native announcement receipts. Lost responses and page changes can replay
+the same unread notice without creating another Chat card. Spoken notices use
+the existing Agent Voice preference and speech queue, with no automatic reply.
+Private content and request answers remain in personal Chat/information exchange;
+they are not inserted into an Admin Agent conversation. Notification links open
+the exact private conversation and message. Session, owner, Agent and participant
+fences are checked again before collection and presentation.
+
+CONNECTED PHONE
+
+Chat is the paired phone's landing view. Inbox replaces the AGENT tab, with
+Requests beside it and Phone settings in the header gear. Help returns to Chat.
+A hidden Inbox polls only for counts. Its badge counts new Canvas items,
+independently of unread emails and pending approvals. Visiting Inbox marks
+Canvas arrival receipts as seen without marking work read or acknowledging it.
+Explicit delivery of that same Canvas makes it new again on that selected phone.
+Receipts stay scoped to the approved device grant and current native source.
+Sent Canvas views fill the app viewport with a Back to Inbox control, retaining
+the sandbox, native command permissions, source revision and dirty-close guards.
+Approved paired access continues without an owner login on the phone.
+
+TRANSCRIPTIONS
+
+The existing Transcription Intelligence slideout can browse saved sessions from
+member pages without a Chat conversation. Session/recording reads carry the
+account page binding. Conversation-dependent source/follow-up actions retain
+their original Chat guards. Browsing does not create a Chat, send a message, or
+start a new transcription/analysis. Admin and unauthenticated pages do not load
+this public user interface.
+
+VALIDATION
+
+Native tests cover context reuse, owner/Agent isolation, deleted/foreign records,
+revocation and no dialing during restoration; real paired chat and request
+responses; durable notices, failed-write rollback and unread replay. Browser
+tests exercise the member-to-Admin flow, real microphone lease, Answer/Decline,
+single embedded runtime, saved off/on state, account isolation, announcement
+deduplication and 320/390px layouts. Transcription review uses the actual member
+runtime markup and native slideout at desktop, 390px and 320px widths. Provider
+responses in these tests are isolated fixtures; no real calls or messages are
+sent by the test suite.
+
+Additional native tests cover Canvas arrivals, visits, exact receipt revisions,
+resends, no-login access and separate device counts. Browser tests cover Chat
+landing, Inbox visits, full viewport Canvas review and Admin header/menu at
+1280px, 390px and 320px, including fullscreen Studio and restricted permissions.

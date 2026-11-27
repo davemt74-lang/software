@@ -54,7 +54,7 @@ const emailCallSettings=()=>({ok:true,scope:emailCallScope(),policy:emailCallPol
     message:emailCallPolicy.urgent_enabled||emailCallPolicy.drafts_enabled?'Email calls are ready within your shared calling hours and limits.':'Email calls are off.'},
   decision:null,active_call:emailActiveCall,links:{account_phone:'/account.php#agent-phone',phone_connection:'/phone-location.php'}});
 const inventory=()=>selectedAgent===0?rows:[other];
-const counts=()=>({unread:inventory().filter(item=>!item.receipt.read_at).length,needs_action:inventory().filter(item=>item.needs_action&&!item.receipt.acknowledged_at).length,complete:true});
+const counts=()=>({unread:inventory().filter(item=>!item.receipt.read_at).length,needs_action:inventory().filter(item=>item.needs_action&&!item.receipt.acknowledged_at).length,new_canvases:inventory().filter(item=>item.source_kind==='canvas'&&!item.receipt.seen_at).length,complete:true});
 function workspaceStatus(){
   const common={ok:true,device_id:device.id,state:'sign_in_required',enrolled:false,owner_eligible:false,revision:0,enrollment_revision:0,scope_revision:null,agent:null,
     conversation_id:null,counts:null,agents:[],preferences:{notifications_enabled:false}};
@@ -148,6 +148,7 @@ await page.route('https://phone-agent.test/**',async route=>{
     }
     if(input.action==='feed'){
       let items=inventory();
+      if(input.visit===true)for(const item of items)if(item.source_kind==='canvas'&&!item.receipt.seen_at){item.receipt.seen_at=time;item.revision++;item.state_version++;}
       if(input.filter==='needs_you')items=items.filter(item=>item.needs_action&&!item.receipt.acknowledged_at);
       if(input.filter==='for_you')items=items.filter(item=>!item.needs_action&&!item.receipt.acknowledged_at&&item.state!=='completed');
       if(input.filter==='history')items=items.filter(item=>item.receipt.acknowledged_at||item.state==='completed');
@@ -226,7 +227,7 @@ await page.route('https://phone-agent.test/**',async route=>{
   }
 });
 const agent=()=>page.locator('#phone-agent'),card=ref=>agent().locator(`[data-item="${ref}"]`),nativeFrame=()=>page.frameLocator('.phone-agent-native-frame');
-const back=()=>agent().getByRole('button',{name:'← Back to results',exact:true});
+const back=()=>agent().getByRole('button',{name:'← Back to Inbox',exact:true});
 async function screenshot(name){const dir=process.env.VP3_PHONE_AGENT_SCREENSHOT_DIR;if(!dir)return;mkdirSync(dir,{recursive:true});await page.screenshot({path:path.join(dir,name),fullPage:true});}
 async function bounds(native=false){
   const geometry=await page.evaluate(()=>({width:innerWidth,body:document.documentElement.scrollWidth,height:innerHeight,
@@ -239,7 +240,10 @@ async function bounds(native=false){
 async function wake(){await page.evaluate(()=>window.dispatchEvent(new Event('pageshow')));}
 try{
   await page.goto('https://phone-agent.test/phone-location.php');
-  await page.getByRole('tab',{name:'Phone',exact:true}).click();
+  assert.equal(await page.locator('#phone-chat').isVisible(),true,'Chat is the paired phone landing view.');
+  assert.equal(await page.getByRole('tab',{name:'Home',exact:true}).count(),0);
+  assert.equal(await page.getByRole('tab',{name:'Phone',exact:true}).count(),0);
+  await page.locator('#phone-tab-connection').click();
   await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
   assert.equal(await page.locator('#phone-tab-agent').isVisible(),true,'A paired phone can find the AGENT approval screen before private access is granted.');
   assert.ok(requests.every(input=>input.action==='status'),'An unauthenticated holder never requests feed or detail.');
@@ -250,6 +254,13 @@ try{
   await screenshot('owner-enrollment-phone.png');
   await page.getByRole('checkbox',{name:/This is my phone/}).check();await page.getByRole('button',{name:'Connect my Agent'}).click();
   await card(id(1)).waitFor();assert.equal(await page.locator('#phone-tab-agent').getAttribute('aria-selected'),'true');
+  assert.equal(await page.locator('#phone-agent-unread').isVisible(),false,'Visiting Inbox clears its Canvas arrival badge.');
+  await page.locator('#phone-tab-chat').click();rows[3].receipt=emptyReceipt();rows[3].revision++;rows[3].state_version++;await wake();
+  await page.waitForFunction(()=>document.getElementById('phone-agent-unread').textContent==='1');
+  assert.match(await page.locator('#phone-tab-agent').getAttribute('aria-label'),/1 new canvas/);
+  assert.ok(rows[0].receipt.read_at===null,'Unread email does not inflate the Canvas arrival badge.');
+  await page.locator('#phone-tab-agent').click();await card(id(1)).waitFor();
+  await page.locator('#phone-agent-unread').waitFor({state:'hidden'});
   assert.equal(await page.locator('#phone-chat-form').isVisible(),false,'Agent has no guest-holder composer.');
   assert.equal(await agent().locator('article').count(),10);await bounds();await screenshot('agent-feed-phone.png');
   await agent().getByRole('button',{name:'Settings',exact:true}).click();
@@ -271,7 +282,7 @@ try{
   const connectionGeometry=await page.locator('#phone-connection').evaluate(panel=>({width:innerWidth,body:document.documentElement.scrollWidth,
     nested:[...panel.querySelectorAll('*')].filter(node=>{const style=getComputedStyle(node);return ['auto','scroll'].includes(style.overflowY)&&node.scrollHeight>node.clientHeight+2;}).map(node=>node.className)}));
   assert.ok(connectionGeometry.body<=connectionGeometry.width+1);assert.deepEqual(connectionGeometry.nested,[],'Phone Connection remains the only scrolling settings surface.');
-  await page.getByRole('button',{name:'Open Agent',exact:true}).click();await card(id(1)).waitFor();
+  await page.getByRole('button',{name:'Open Inbox',exact:true}).click();await card(id(1)).waitFor();
   await agent().getByRole('button',{name:'Load more',exact:true}).click();await card(id(12)).waitFor();assert.equal(await agent().locator('article').count(),12);
   await agent().getByRole('button',{name:'Needs you',exact:true}).click();await page.waitForFunction(()=>document.querySelectorAll('#phone-agent article').length===2);assert.equal(await agent().locator('article').count(),2);
   await card(id(1)).getByRole('button',{name:'Review email'}).waitFor();
@@ -303,8 +314,8 @@ try{
   await page.evaluate(channel=>window.dispatchEvent(new MessageEvent('message',{source:window,origin:location.origin,data:{channel,type:'close_result',id:1,allowed:true}})),new URL(forged).searchParams.get('channel'));
   assert.equal(await page.locator('.phone-agent-native-frame').count(),1,'A forged close result cannot discard edits.');
   await nativeFrame().getByRole('button',{name:'Keep editing',exact:true}).click();assert.equal(await nativeFrame().getByLabel('Message',{exact:true}).inputValue(),original+'\nUnsaved phone edits.');
-  await page.getByRole('tab',{name:'Phone',exact:true}).click();await nativeFrame().getByRole('button',{name:'Discard edits',exact:true}).click();
-  await page.waitForFunction(()=>document.getElementById('phone-tab-connection').getAttribute('aria-selected')==='true');assert.equal(draft.body,original);
+  await page.locator('#phone-tab-connection').click();await nativeFrame().getByRole('button',{name:'Discard edits',exact:true}).click();
+  await page.waitForFunction(()=>document.getElementById('phone-tab-connection').getAttribute('aria-expanded')==='true');assert.equal(draft.body,original);
   await page.locator('#phone-tab-agent').click();await card(id(1)).waitFor();assert.equal(await page.locator('.phone-agent-native-frame').count(),0,'Returning from a cleanly closed native view shows results, not a released blank composer.');
   await agent().getByRole('button',{name:'Review email for this call',exact:true}).click();await nativeFrame().getByLabel('Message',{exact:true}).waitFor();
   assert.equal(new URL(await page.locator('.phone-agent-native-frame').getAttribute('src')).searchParams.get('item_ref'),id(1),'The call banner opens its exact current email item.');
@@ -312,9 +323,9 @@ try{
   await nativeFrame().getByLabel('Message',{exact:true}).fill(original+'\nSaved on the phone.');await back().click();
   await nativeFrame().getByRole('button',{name:'Save draft and leave',exact:true}).click();await card(id(1)).waitFor();assert.match(draft.body,/Saved on the phone/);assert.equal(emailRequests.filter(input=>input.action==='confirm').length,0);
   const savedBeforeDenial=draft.body;await card(id(1)).getByRole('button',{name:'Review email'}).click();await nativeFrame().getByLabel('Message',{exact:true}).fill('These unsaved edits must clear when access is lost.');await back().click();
-  denySave=true;await nativeFrame().getByRole('button',{name:'Save draft and leave',exact:true}).click();await page.locator('.phone-agent-approval').waitFor();await page.getByRole('tab',{name:'Phone',exact:true}).click();await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
+  denySave=true;await nativeFrame().getByRole('button',{name:'Save draft and leave',exact:true}).click();await page.locator('.phone-agent-approval').waitFor();await page.locator('#phone-tab-connection').click();await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
   assert.equal(await page.locator('.phone-agent-native-frame').count(),0,'Denied dirty Save-and-leave clears the private native view.');assert.equal(draft.body,savedBeforeDenial);assert.equal(emailRequests.filter(input=>input.action==='confirm').length,0);
-  signedIn=true;await page.getByRole('button',{name:'Check sign-in'}).click();await page.getByRole('button',{name:'Open Agent',exact:true}).click();await card(id(1)).waitFor();
+  signedIn=true;await page.getByRole('button',{name:'Check sign-in'}).click();await page.getByRole('button',{name:'Open Inbox',exact:true}).click();await card(id(1)).waitFor();
   phoneLearning=true;
   await card(id(1)).getByRole('button',{name:'Review email'}).click();await nativeFrame().getByLabel('Message',{exact:true}).waitFor();
   const preferenceFrame=await page.locator('.phone-agent-native-frame').getAttribute('src');
@@ -444,7 +455,9 @@ try{
   await card(id(4)).getByRole('button',{name:'Open canvas'}).click();const canvas=nativeFrame().frameLocator('.phone-agent-canvas-frame');
   await canvas.getByText('Ready to play',{exact:true}).waitFor();assert.equal(await nativeFrame().locator('.phone-agent-canvas-frame').getAttribute('sandbox'),'allow-scripts');
   await canvas.getByRole('button',{name:'Try a spark'}).click();await canvas.getByText('A fresh idea is taking shape.').waitFor();
-  await bounds(true);await screenshot('agent-canvas-phone.png');assert.ok(nativeRequests.every(input=>['get','open'].includes(input.action)),'Viewing a saved private canvas does not dispatch generation, source writes, or model calls.');
+  await bounds(true);assert.equal(await page.locator('.phone-header').isVisible(),false);
+  const canvasBox=await agent().boundingBox();assert.ok(canvasBox.x===0&&canvasBox.y===0&&canvasBox.width===390&&canvasBox.height===700,'Canvas occupies the full app viewport.');
+  await screenshot('agent-canvas-phone.png');assert.ok(nativeRequests.every(input=>['get','open'].includes(input.action)),'Viewing a saved private canvas does not dispatch generation, source writes, or model calls.');
   await back().click();
   await card(id(5)).getByRole('button',{name:'Read email'}).click();await nativeFrame().getByRole('heading',{name:'Account review requested'}).waitFor();
   const formatted=nativeFrame().frameLocator('.vp3-gmail-email-frame');await formatted.getByRole('heading',{name:'Account review',exact:true}).waitFor();
@@ -455,10 +468,10 @@ try{
 
   heldFeed=hold();const oldFeed=heldFeed;await agent().getByRole('button',{name:'Refresh',exact:true}).click();await oldFeed.started;
   await agent().getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('combobox',{name:'Main Agent for this phone'}).selectOption('7');
-  await page.getByRole('button',{name:'Use selected Agent'}).click();await page.getByRole('button',{name:'Open Agent',exact:true}).click();await card(id(50)).waitFor();
+  await page.getByRole('button',{name:'Use selected Agent'}).click();await page.getByRole('button',{name:'Open Inbox',exact:true}).click();await card(id(50)).waitFor();
   oldFeed.release();await oldFeed.finished;await page.evaluate(()=>{});assert.equal(await card(id(1)).count(),0,'A delayed page from the previous Agent cannot paint in the new scope.');
   await agent().getByRole('button',{name:'Settings',exact:true}).click();await page.getByRole('combobox',{name:'Main Agent for this phone'}).selectOption('0');await page.getByRole('button',{name:'Use selected Agent'}).click();
-  await page.getByRole('button',{name:'Open Agent',exact:true}).click();await card(id(3)).waitFor();
+  await page.getByRole('button',{name:'Open Inbox',exact:true}).click();await card(id(3)).waitFor();
   await card(id(3)).getByRole('button',{name:'View image'}).click();await nativeFrame().getByRole('img',{name:'Color study'}).waitFor();
   rows[2].revision++;rows[2].state_version++;rows[2].source_revision=hash(9900);await wake();await card(id(3)).waitFor();
   assert.equal(await page.locator('.phone-agent-native-frame').count(),0,'An externally changed semantic source closes the old private viewer.');
@@ -470,8 +483,8 @@ try{
   await agent().getByRole('heading',{name:'Your project brief is ready'}).waitFor();assert.equal(await page.locator('#phone-tab-agent').getAttribute('aria-selected'),'true');
   await back().click();await card(id(2)).getByRole('button',{name:'Read result'}).click();await agent().getByRole('button',{name:'Open original Chat'}).click();
   await page.getByRole('heading',{name:'Original private Chat'}).waitFor();assert.match(navigation.at(-1),/chat\.php\?agent=system&conversation_id=42$/);
-  await page.goto('https://phone-agent.test/phone-location.php');await card(id(3)).waitFor();await card(id(3)).getByRole('button',{name:'View image'}).click();await nativeFrame().getByRole('img',{name:'Color study'}).waitFor();
-  signedIn=false;await wake();await page.locator('.phone-agent-approval').waitFor();await page.getByRole('tab',{name:'Phone',exact:true}).click();await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
+  await page.goto('https://phone-agent.test/phone-location.php');await page.locator('#phone-tab-agent').click();await card(id(3)).waitFor();await card(id(3)).getByRole('button',{name:'View image'}).click();await nativeFrame().getByRole('img',{name:'Color study'}).waitFor();
+  signedIn=false;await wake();await page.locator('.phone-agent-approval').waitFor();await page.locator('#phone-tab-connection').click();await page.getByRole('link',{name:'Sign in to your account'}).waitFor();
   assert.equal(await page.locator('#phone-tab-agent').isVisible(),true);assert.equal(await page.locator('.phone-agent-native-frame').count(),0);assert.equal(await agent().locator('article').count(),0);
   assert.equal(await page.getByRole('tab',{name:'Chat',exact:true}).isVisible(),true,'Revoking owner workspace authority preserves the holder Chat surface.');
   assert.ok(emailRequests.filter(input=>input.action.startsWith('preference')).every(input=>[id(101),id(102)].includes(input.draft_id)),'Every native writing preference action remains bound to its exact draft.');

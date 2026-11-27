@@ -195,6 +195,7 @@ if (!$user) {
 if (!has_permission('artist_listening.access', $user)) {
     artist_listening_v172_json(false, ['error'=>'Artist Listening permission is required.'], 403);
 }
+if(isset($_SERVER['HTTP_X_VP3_WORKING_ATTENTION'])&&!hash_equals(vp3_catch_up_page_binding_v1($user),(string)$_SERVER['HTTP_X_VP3_WORKING_ATTENTION']))artist_listening_v172_json(false,['error'=>'Your account changed. Refresh this page.'],403);
 if (!artist_listening_v172_schema_ready()) {
     artist_listening_v172_json(false, ['error'=>'Artist Listening is not ready. Run the Stonefellow v172 upgrade.'], 503);
 }

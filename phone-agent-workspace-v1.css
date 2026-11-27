@@ -59,3 +59,8 @@
 .phone-agent-native .phone-agent-actions button{font-size:.78rem;padding-inline:.4rem;flex:1 1 auto}
 .phone-agent-native .phone-agent-feedback{margin:.2rem 0;font-size:.8rem}
 @media(max-width:360px){.phone-agent-workspace{padding-inline:.75rem}.phone-agent-head{gap:.3rem}.phone-agent-head h1{font-size:1.3rem}.phone-agent-filters button{font-size:.76rem}.phone-agent-actions button{flex-basis:100%}}
+
+/* A received Canvas takes the complete app viewport, retaining Back and the native source fences. */
+#phone-location.phone-canvas-open>.phone-header,#phone-location.phone-canvas-open>#phone-dock{display:none!important}
+#phone-location.phone-canvas-open #phone-agent{position:fixed;inset:0;z-index:100;box-sizing:border-box;width:100%;height:var(--phone-viewport-height,100dvh);max-height:none;padding:0;background:#fff}
+.phone-canvas-open .phone-agent-workspace{padding:0!important;height:100%;max-width:none;width:100%;margin:0}.phone-canvas-open .phone-agent-detail{gap:0}.phone-canvas-open .phone-agent-detail-top{padding:4px 8px;border-bottom:1px solid #d2e0d9}.phone-canvas-open .phone-agent-detail>[data-agent-actions]{display:none}.phone-canvas-open .phone-agent-feedback:empty{display:none}

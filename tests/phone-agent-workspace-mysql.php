@@ -108,7 +108,7 @@ $bound=static fn(array $s):array=>['csrf_token'=>$s['csrf_token'],'enrollment_re
 $base=$bound($status);$first=$request($base+['action'=>'feed','limit'=>10]);
 workspace_assert(count($first['items'])===10&&$first['has_more']&&is_string($first['next_cursor']),'bounded first page returns an authenticated continuation');
 workspace_assert($first['items'][0]['target']['message_id']===25&&$first['items'][9]['target']['message_id']===16,'newest canonical result orders first across private Chats');
-workspace_assert($first['counts']===['unread'=>25,'needs_action'=>13,'complete'=>true],'unread and pending owner action are separate verified counts');
+workspace_assert($first['counts']===['unread'=>25,'needs_action'=>13,'new_canvases'=>0,'complete'=>true],'unread and pending owner action are separate verified counts');
 $second=$request($base+['action'=>'feed','limit'=>10,'cursor'=>$first['next_cursor']]);
 $third=$request($base+['action'=>'feed','limit'=>10,'cursor'=>$second['next_cursor']]);
 workspace_assert(count($second['items'])===10&&count($third['items'])===5&&!$third['has_more']&&$third['next_cursor']===null,'pagination reaches the twenty-first item without repetition');

@@ -21,8 +21,8 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="manifest" href="phone-app.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/phone-pwa/icon-180.png">
   <script src="phone-pwa-v1.js?v=3" defer></script>
-  <link rel="stylesheet" href="phone-location-v1.css?v=16">
-  <link rel="stylesheet" href="phone-agent-workspace-v1.css?v=2">
+  <link rel="stylesheet" href="phone-location-v1.css?v=17">
+  <link rel="stylesheet" href="phone-agent-workspace-v1.css?v=3">
   <link rel="stylesheet" href="agent-email-call-settings-v1.css?v=1">
   <link rel="stylesheet" href="phone-remote-dialer-v1.css?v=1">
   <link rel="stylesheet" href="phone-managed-call-ui-v1.css?v=3">
@@ -31,25 +31,26 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
   <script src="phone-recording-holder-v1.js?v=1" defer></script>
   <script src="phone-camera-holder-v1.js?v=6" defer></script>
-  <script src="phone-agent-chat-v1.js?v=10" defer></script>
+  <script src="phone-agent-chat-v1.js?v=11" defer></script>
   <script src="phone-agent-workspace-media-v1.js?v=1" defer></script>
   <script src="agent-email-call-settings-v1.js?v=1" defer></script>
-  <script src="phone-agent-workspace-v1.js?v=3" defer></script>
+  <script src="phone-agent-workspace-v1.js?v=4" defer></script>
   <script src="phone-save-place-v1.js?v=2" defer></script>
   <script src="phone-information-ui-v1.js?v=5" defer></script>
   <script src="phone-remote-dialer-v1.js?v=1" defer></script>
   <script src="phone-managed-call-ui-v1.js?v=5" defer></script>
   <script src="phone-handoff-v1.js?v=1" defer></script>
   <script src="phone-push-subscriptions-v1.js?v=5" defer></script>
-  <script src="phone-shell-v1.js?v=1" defer></script>
+  <script src="phone-shell-v1.js?v=2" defer></script>
   <script src="phone-location-checkins-v1.js?v=1" defer></script>
   <script src="phone-location-v1.js?v=21" defer></script>
 </head>
 <body>
-<main id="phone-location" data-endpoint="api/phone-location-v1.php" data-email-call-settings-api="api/phone-location-v1.php?workspace_calls=1">
+<main id="phone-location" data-chat-landing="1" data-endpoint="api/phone-location-v1.php" data-email-call-settings-api="api/phone-location-v1.php?workspace_calls=1">
   <header class="phone-header">
     <div class="phone-header-inner">
       <div class="phone-brand-line"><div><b class="brand">VP3</b><span>Phone</span></div>
+        <button type="button" id="phone-tab-connection" class="phone-settings-button" aria-label="Phone settings" aria-controls="phone-connection" aria-expanded="false" hidden><svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="1.8"><path d="m10 3-.6 2-2 .9-1.9-.5-2 3.4L5 10.3v2.4l-1.5 1.5 2 3.4 1.9-.5 2 .9.6 2h4l.6-2 2-.9 1.9.5 2-3.4-1.5-1.5v-2.4l1.5-1.5-2-3.4-1.9.5-2-.9L14 3Z"/><circle cx="12" cy="11.5" r="3"/></svg></button>
         <details id="phone-user-menu" class="phone-user-menu">
           <summary aria-label="User menu"><span id="phone-menu-label">Account</span><span aria-hidden="true">▾</span></summary>
           <div class="phone-user-dropdown"><p id="phone-menu-connection">This phone is not connected.</p>
@@ -61,24 +62,15 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         </details>
       </div>
       <div class="phone-tabs" id="phone-tabs" role="tablist" aria-label="Connected phone" hidden>
-        <button type="button" role="tab" id="phone-tab-home" aria-controls="phone-home" aria-selected="false" tabindex="-1">Home</button>
-        <button type="button" role="tab" id="phone-tab-agent" aria-controls="phone-agent" aria-selected="false" tabindex="-1" hidden>AGENT<span id="phone-agent-unread" class="phone-agent-unread" hidden></span></button>
         <button type="button" role="tab" id="phone-tab-chat" aria-controls="phone-chat" aria-selected="false" tabindex="-1">Chat</button>
+        <button type="button" role="tab" id="phone-tab-agent" aria-controls="phone-agent" aria-selected="false" tabindex="-1" hidden>Inbox<span id="phone-agent-unread" class="phone-agent-unread" hidden></span></button>
         <button type="button" role="tab" aria-label="Requests" id="phone-tab-requests" aria-controls="phone-requests" aria-selected="false" tabindex="-1">Requests<span id="phone-requests-count" class="phone-agent-unread" hidden></span></button>
-        <button type="button" role="tab" id="phone-tab-connection" aria-controls="phone-connection" aria-selected="true">Phone</button>
       </div>
       <?php require __DIR__.'/includes/phone-camera-app-view.php'; ?>
       <div id="phone-dialer-alert-host"></div>
       <div id="phone-managed-alert-host"></div>
     </div>
   </header>
-  <section id="phone-home" role="tabpanel" aria-labelledby="phone-tab-home" hidden>
-    <div class="phone-card phone-home-card"><h1>VP3 Phone</h1><p id="phone-home-status" role="status">Your connected phone.</p>
-      <p id="phone-home-requests">Review messages and requests when you are ready.</p>
-      <div class="phone-home-actions"><button type="button" data-phone-open="chat">Open Chat</button><button type="button" data-phone-open="requests" class="secondary">View requests</button></div>
-      <p id="phone-home-notifications" hidden><button type="button" data-phone-open="notifications" class="text-button">Set up notifications</button></p>
-    </div>
-  </section>
   <section id="phone-connection" aria-labelledby="phone-label">
     <div class="phone-card">
       <p class="state" id="phone-badge">Phone Tracking</p>
@@ -240,7 +232,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         </div>
         <p id="phone-handoff-status" role="status"></p>
       </details>
-      <button id="phone-info-back" type="button" class="secondary">Back to connection</button>
+      <button id="phone-info-back" type="button" class="secondary">Back to Chat</button>
     </div>
   </section>
   <footer id="phone-dock" aria-label="Phone chat and apps" hidden>

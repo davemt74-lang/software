@@ -25,11 +25,11 @@
       get('menu-label').textContent=device?.name||'Account';
       get('menu-connection').textContent=device?.status==='approved'&&owner?'Connected to '+owner:'This phone is not connected.';
       const active=device?.status==='approved';
-      get('home-status').textContent=active?(confirmed?'Connected and ready.':'Checking the connection…'):'Connect this phone to get started.';
+      if(get('home-status'))get('home-status').textContent=active?(confirmed?'Connected and ready.':'Checking the connection…'):'Connect this phone to get started.';
       const pending=device?.communication?.information_pending,known=Number.isSafeInteger(pending)&&pending>=0;
-      get('home-requests').textContent=active&&known&&pending>0?pending+' information request'+(pending===1?'':'s')+' to review.':'Review messages and requests when you are ready.';
+      if(get('home-requests'))get('home-requests').textContent=active&&known&&pending>0?pending+' information request'+(pending===1?'':'s')+' to review.':'Review messages and requests when you are ready.';
       const count=get('requests-count');count.hidden=!active||!known||pending===0;count.textContent=known&&pending>0?String(Math.min(99,pending))+(pending>99?'+':''):'';
-      get('home-notifications').hidden=!active||device?.push?.state==='registered'&&device?.push?.delivery?.ready===true;
+      if(get('home-notifications'))get('home-notifications').hidden=!active||device?.push?.state==='registered'&&device?.push?.delivery?.ready===true;
     }
     return {bind};
   };

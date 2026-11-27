@@ -51,6 +51,7 @@ phone_chat_test(vp3_phone_chat_schema_ready_v1($pdo),'chat schema installs repea
 $user=current_user(); $agent=vp3_agent_chat_resolve_agent_v380($pdo,$user,7);
 $principal=vp3_agent_chat_principal_v380($user,$agent);
 $_SERVER['HTTP_X_VP3_WORKING_ATTENTION']=vp3_catch_up_page_binding_v1($user);
+if(($argv[1]??'')==='global-activity'){require __DIR__.'/fixtures/global-phone-activity-v1.php';exit;}
 $legacy=$pdo->query('SELECT * FROM vp3_phone_chat_turns_v1 WHERE assistant_message_id=1')->fetch();
 $oldRows=$pdo->query('SELECT * FROM chat_messages WHERE id=1')->fetchAll();
 $oldHistory=vp3_phone_chat_history_v1($pdo,$user,7,1,$oldRows,[]);

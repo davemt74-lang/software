@@ -46,6 +46,7 @@ try {
     }
     if(pathname==='/embedded')return route.fulfill({contentType:'text/html; charset=utf-8',body:`<!doctype html><meta charset="utf-8"><form id="chatForm"><textarea id="chatInput"></textarea><button>Send</button></form><script>
       window.submissions=[];window.listened=0;window.VP3_ORB_ADAPTER={ownerKey:'1',state:()=>({state:'idle'}),busy:()=>false,listen:()=>window.listened++};
+      const voice=document.createElement('button');voice.id='chatVoiceButton';voice.type='button';voice.addEventListener('click',()=>window.listened++);document.body.append(voice);
       document.getElementById('chatForm').addEventListener('submit',event=>{event.preventDefault();submissions.push(document.getElementById('chatInput').value);});
       </script><script src="/agent-eyes-core.js"></script><script src="/agent-orb.js"></script>`});
     return route.fulfill({contentType:'text/html; charset=utf-8',body:`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -119,13 +120,13 @@ try {
     await page.evaluate(()=>document.body.classList.remove('chat-nav-open'));
     assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),true,'The workspace has no horizontal overflow.');
   }
-  await page.locator('.vp3-orb-bar input').fill('Review my latest research');
+  await page.locator('.vp3-orb-bar textarea').fill('Review my latest research');
   await page.locator('.vp3-orb-bar button[type=submit]').click();
   await page.waitForFunction(()=>document.querySelector('iframe')?.contentWindow.submissions?.length===1);
   assert.deepEqual(await page.evaluate(()=>document.querySelector('iframe').contentWindow.submissions),['Review my latest research']);
-  assert.equal(await page.locator('.vp3-orb-bar input').inputValue(),'');
+  assert.equal(await page.locator('.vp3-orb-bar textarea').inputValue(),'');
   await page.getByRole('button',{name:'Close Agent Chat',exact:true}).click();
-  await page.locator('.vp3-orb-bar').getByRole('button',{name:'Listen',exact:true}).click();
+  await page.locator('.vp3-orb-bar').getByRole('button',{name:'Start voice conversation',exact:true}).click();
   await page.waitForFunction(()=>document.querySelector('iframe').contentWindow.listened===1);
   assert.equal(await page.locator('iframe').count(),1,'Send and Listen share the canonical conversation.');
   assert.deepEqual(errors,[]);
