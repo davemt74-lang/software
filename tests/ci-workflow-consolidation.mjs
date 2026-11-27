@@ -17,6 +17,7 @@ const activeExpected=[
   "cognitive-loop-release-v2360.yml",
   "gmail-composer-v1.yml",
   "homeserver-runtime-journey.yml",
+  "music-analytics-v1.yml",
   "music-song-metadata-v1.yml",
   "package-entitlements-v340.yml",
   "profile-commerce-secure-file-v1130.yml",
@@ -59,6 +60,19 @@ assert.match(music,/node tests\/music-listening-api-v1\.mjs/,'Native listening m
 assert.match(music,/run:\s*php tests\/music-listening-mysql-v1\.php/,'Native listening must retain MySQL receipt and transaction acceptance');
 assert.match(music,/run:\s*node tests\/music-listening-browser-v1\.mjs/,'Native playback recovery must run in a browser');
 assert.doesNotMatch(music,/continue-on-error:\s*true/,'Music integration failures must not be downgraded to advisory checks');
+
+const analytics=fs.readFileSync(path.join(workflowDir,'music-analytics-v1.yml'),'utf8');
+assert.match(analytics,/pull_request:\s*\n\s+paths:/,'Artist analytics acceptance must remain path-filtered');
+assert.match(analytics,/push:\s*\n\s+branches:\s*\[main\]/,'Artist analytics must verify relevant merged main changes');
+assert.match(analytics,/\n\s+workflow_dispatch:/,'Artist analytics must remain manually runnable');
+assert.match(analytics,/image:\s*mysql:8\.0/,'Artist analytics must retain real MySQL acceptance');
+assert.match(analytics,/MUSIC_TEST_MYSQL_DSN:\s*['"]?mysql:/,'Analytics MySQL checks require a configured DSN instead of silently skipping');
+assert.match(analytics,/run:\s*php tests\/music-analytics-v1\.php/,'Artist analytics must retain service and snapshot acceptance');
+assert.match(analytics,/run:\s*node tests\/music-analytics-api-v1\.mjs/,'Artist analytics must exercise actual HTTP authority');
+assert.match(analytics,/run:\s*php tests\/music-analytics-mysql-v1\.php/,'Artist analytics must retain native MySQL reporting acceptance');
+assert.match(analytics,/browser:\s*\[chromium,\s*webkit\]/,'Artist analytics must retain Chromium and WebKit acceptance');
+assert.match(analytics,/run:\s*node tests\/music-analytics-browser-v1\.mjs/,'Artist analytics must exercise the real workspace browser flow');
+assert.doesNotMatch(analytics,/continue-on-error:\s*true/,'Artist analytics failures must not be downgraded to advisory checks');
 
 for(const name of archived){
   assert.ok(!active.includes(name),`historical workflow ${name} must not be both active and archived`);
