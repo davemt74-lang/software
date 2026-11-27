@@ -339,6 +339,8 @@ messages through native Gmail transport. The complete strict thread must still
 prove the sent anchor, matching reply and current usable head, including later
 outbound mail. Source, access and content are checked around inference. Repeated
 unchanged input does not dispatch another model pass.
+Read/unread and other non-content Gmail labels cannot invalidate a valid response
+interpretation. Sent, draft, spam and trash flags retain their source checks.
 
 Optional typed assessments use answered, partial, conflict or unclear, a concise
 summary and an optional useful owner-decision question. References come only from

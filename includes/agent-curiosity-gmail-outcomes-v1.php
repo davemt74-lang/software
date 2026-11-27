@@ -51,6 +51,14 @@ function vp3_curiosity_gmail_responses_v1(PDO $pdo,array $user,array $binding,ar
     return $out;
 }
 
+/** Read/unread and other mailbox labels do not change the email being interpreted. */
+function vp3_curiosity_gmail_message_identity_v1(array $message): array
+{
+    return array_intersect_key($message,array_flip(['message_id','thread_id','from','to','subject','rfc_message_id',
+        'in_reply_to','references','authentication_results','received_at_ms']))
+        +['source_flags'=>array_values(array_intersect(['SENT','DRAFT','SPAM','TRASH'],$message['labels']))];
+}
+
 /** Read the exact sent wording and watched response, with the complete native thread proof. */
 function vp3_curiosity_gmail_response_read_v1(PDO $pdo,array $user,array $binding,array $expected,callable $authorize,?callable $http=null): array
 {
@@ -66,7 +74,8 @@ function vp3_curiosity_gmail_response_read_v1(PDO $pdo,array $user,array $bindin
     $proof=agent_email_followthrough_evidence_v1($w,$thread);
     $s=agent_connection_gmail_message_v1($sent);$r=agent_connection_gmail_message_v1($reply);
     if(($proof['state']??null)!=='verified'||($proof['result']??null)!=='reply'
-        ||($proof['reply']??null)!==$r||($proof['anchor']??null)!==$s)throw new Vp3InitiativeSourcesChangedV1();
+        ||vp3_curiosity_gmail_message_identity_v1($proof['reply'])!==vp3_curiosity_gmail_message_identity_v1($r)
+        ||vp3_curiosity_gmail_message_identity_v1($proof['anchor'])!==vp3_curiosity_gmail_message_identity_v1($s))throw new Vp3InitiativeSourcesChangedV1();
     // The complete strict thread already proves chronological order and RFC linkage.
     $head='';
     foreach($thread as $message)if(!array_intersect(['DRAFT','SPAM','TRASH'],$message['labels']))$head=$message['message_id'];
@@ -74,13 +83,15 @@ function vp3_curiosity_gmail_response_read_v1(PDO $pdo,array $user,array $bindin
     $authorize();$current=vp3_curiosity_gmail_response_v1($pdo,$user,$binding,$expected['source_ref']);
     if($current===null||$current['response']!==$expected)throw new Vp3InitiativeSourcesChangedV1();
     $sentText=agent_connection_gmail_read_message_v1($sent);$replyText=agent_connection_gmail_read_message_v1($reply);
-    $digest=hash('sha256',json_encode([$sent,$reply,$thread],JSON_THROW_ON_ERROR));
+    $sentParts=agent_gmail_document_parts_v1($sent);$replyParts=agent_gmail_document_parts_v1($reply);
+    $digest=hash('sha256',json_encode([vp3_curiosity_gmail_message_identity_v1($s),vp3_curiosity_gmail_message_identity_v1($r),
+        $sentText['body'],$replyText['body'],$sentParts,$replyParts,array_map('vp3_curiosity_gmail_message_identity_v1',$thread)],JSON_THROW_ON_ERROR));
     return ['content_digest'=>$digest,'source_ref'=>$expected['source_ref'],'original_question'=>$expected['original_question'],
         'owner_request'=>$ctx['owner_reply'],'sent_wording'=>mb_substr($sentText['body'],0,6000),
         'sender_response'=>mb_substr($replyText['body'],0,6000),'sent_wording_truncated'=>mb_strlen($sentText['body'])>6000,
         'sender_response_truncated'=>mb_strlen($replyText['body'])>6000,
-        'sent_attachments_unreviewed'=>agent_gmail_document_parts_v1($sent)!==[],
-        'reply_attachments_unreviewed'=>agent_gmail_document_parts_v1($reply)!==[],
+        'sent_attachments_unreviewed'=>$sentParts!==[],
+        'reply_attachments_unreviewed'=>$replyParts!==[],
         'observed_at'=>gmdate(DATE_ATOM,intdiv($r['received_at_ms'],1000))];
 }
 

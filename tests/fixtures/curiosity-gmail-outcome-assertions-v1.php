@@ -32,16 +32,20 @@ $q=$pdo->prepare('SELECT * FROM agent_connection_email_followups_v1 WHERE operat
 canvas_pipeline_check(agent_connection_email_followup_deliver_v1($pdo,$watch,$claim,agent_connection_gmail_message_v1($replyRaw)),
     'the actual native watch delivery creates the authenticated response notice');
 $outcomeReads=0;$newerReply=false;
-$outcomeHttp=static function(string $method,string $url)use(&$sentRaw,&$replyRaw,&$outcomeReads,&$newerReply,$raw,$http):array{
+$outcomeHttp=static function(string $method,string $url)use(&$sentRaw,&$replyRaw,&$outcomeReads,&$newerReply,$raw,$http,$scenario):array{
     if($method!=='GET')throw new LogicException('Outcome analysis is read-only.');
     ++$outcomeReads;
+    $labels=static function(array $message)use($scenario,&$outcomeReads):array{
+        if($scenario==='gmail-outcome')$message['labelIds']=[...$message['labelIds'],...($outcomeReads%2?['UNREAD','IMPORTANT']:['IMPORTANT'])];
+        return $message;
+    };
     if(str_contains($url,'/threads/')){
         $messages=[$raw,$sentRaw,$replyRaw];
         if($newerReply){$new=$replyRaw;$new['id']='newer_reply';$new['internalDate']=(string)((time()-1)*1000);$new['payload']['headers'][3]['value']='<newer@supplier.example.test>';$messages[]=$new;}
-        return ['status'=>200,'json'=>['id'=>'quote_thread','messages'=>$messages]];
+        return ['status'=>200,'json'=>['id'=>'quote_thread','messages'=>array_map($labels,$messages)]];
     }
-    if(str_contains($url,'/messages/'.$sentRaw['id'].'?'))return ['status'=>200,'json'=>$sentRaw];
-    if(str_contains($url,'/messages/'.$replyRaw['id'].'?'))return ['status'=>200,'json'=>$replyRaw];
+    if(str_contains($url,'/messages/'.$sentRaw['id'].'?'))return ['status'=>200,'json'=>$labels($sentRaw)];
+    if(str_contains($url,'/messages/'.$replyRaw['id'].'?'))return ['status'=>200,'json'=>$labels($replyRaw)];
     return $http($method,$url);
 };
 $before=vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding);
@@ -78,7 +82,7 @@ if($scenario!=='gmail-outcome'){
 }
 if(!$done['ok'])throw new RuntimeException('Outcome worker failed: '.json_encode($done));
 $after=vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding);$saved=canvas_pipeline_result($reviewRun)['initiative_tool_result'];
-canvas_pipeline_check($saved['output']['email_outcomes'][0]['state']==='conflict'&&$outcomeCalls===1,'one canonical receipt stores the typed source-bound interpretation');
+canvas_pipeline_check($saved['output']['email_outcomes'][0]['state']==='conflict'&&$outcomeCalls===1,'changing read/unread labels cannot discard a valid interpretation or repeat its model call');
 canvas_pipeline_check($after['revision']===$before['revision']&&vp3_curiosity_analysis_schedule_v1($pdo,$owner,$binding)==='already_handled',
     'an analysis output cannot manufacture new input or another paid response analysis');
 $payload['composer']['saved_at']=time()+1;$payload['review_metadata']=['seen'=>true];
