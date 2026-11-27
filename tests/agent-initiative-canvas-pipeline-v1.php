@@ -53,20 +53,36 @@ if (!defined('VP3_EMAIL_CANVAS_PIPELINE_FIXTURE')) {
             'context'=>ai_v100_service_context(), 'history'=>$history, 'retrieved'=>$context];
         return ['ok'=>true,'answer'=>($GLOBALS['pipelineModel'])($prompt, (string)$control['protocol'])];
     }
-    function ai_curl_json(string $endpoint, array $headers, array $payload, int $timeout=45,
-        ?AiV100ServiceMeter $meter=null, ?array $target=null, ?string $personalKey=null, bool $singleAttempt=false): array
+    // Keep production generation, streaming, checkpoints and metering. Replace only the outbound connection.
+    $builders=file_get_contents(dirname(__DIR__).'/includes/ai-settings.php');
+    foreach(['ai_haiku55_request'=>'ai_provider_api_key','ai_anthropic_credit_rejection_v1'=>'ai_openai_response'] as $name=>$next){
+        if(!function_exists($name)){
+            $start=strpos($builders,'function '.$name.'(');$end=strpos($builders,'function '.$next.'(',$start);
+            eval(substr($builders,$start,$end-$start));
+        }
+    }
+    function canvas_pipeline_coding_execute(PDO $pdo,array $user,array $claim): array
     {
-        if (!$meter || !$target || !$singleAttempt) throw new RuntimeException('Expected the canonical metered single provider request.');
-        $ticket = $meter->begin($target, $payload, $target['provider']==='openai' ? 'max_output_tokens' : 'max_tokens');
-        $GLOBALS['pipelineCodingCalls'][] = ['target'=>$target,'model'=>$payload['model'],'ticket'=>$ticket];
-        $usage = ['input_tokens'=>40,'output_tokens'=>80,'total_tokens'=>120];
-        $meter->finish($ticket, $usage, 'completed', ['provider_request_id'=>'fixture-canvas-'.count($GLOBALS['pipelineCodingCalls'])]);
-        if (is_callable($GLOBALS['pipelineGenerationHook'] ?? null)) ($GLOBALS['pipelineGenerationHook'])();
-        $source = json_encode(['title'=>'Private prep board','html'=>'<button id="ready">Mark ready</button>',
-            'css'=>'button{padding:12px}','js'=>'CanvasUI.on("#ready","click",()=>CanvasData.save({ready:true}));'], JSON_THROW_ON_ERROR);
-        return ['ok'=>true,'data'=>$target['provider']==='openai'
-            ? ['status'=>'completed','output_text'=>$source,'usage'=>$usage]
-            : ['stop_reason'=>'end_turn','content'=>[['type'=>'text','text'=>$source]],'usage'=>$usage]];
+        return vp3_coding_canvas_execute_v1($pdo,$user,$claim,static function($db,$owner,$pin,$job,$request,$prompt,$previous,$diagnostic,$attribution):array{
+            $transport=static function(string $body,callable $consume,callable $header,int $timeout)use($pin):array{
+                $payload=json_decode($body,true,32,JSON_THROW_ON_ERROR);
+                $GLOBALS['pipelineCodingCalls'][]=['target'=>$pin,'model'=>$payload['model']];
+                $usage=['input_tokens'=>40,'output_tokens'=>80,'total_tokens'=>120];
+                $text=json_encode(['title'=>'Private prep board','html'=>'<button id="ready">Mark ready</button>',
+                    'css'=>'button{padding:12px}','js'=>'CanvasUI.on("#ready","click",()=>CanvasData.save({ready:true}));'],JSON_THROW_ON_ERROR);
+                $events=$pin['provider']==='openai'
+                    ?[['type'=>'response.created','response'=>['id'=>'resp_pipeline']],['type'=>'response.output_text.delta','delta'=>$text],
+                        ['type'=>'response.completed','response'=>['id'=>'resp_pipeline','status'=>'completed','output'=>[['content'=>[['type'=>'output_text','text'=>$text]]]],'usage'=>$usage]]]
+                    :[['type'=>'message_start','message'=>['id'=>'msg_pipeline','usage'=>['input_tokens'=>40]]],['type'=>'content_block_start','index'=>0,'content_block'=>['type'=>'text','text'=>'']],
+                        ['type'=>'content_block_delta','index'=>0,'delta'=>['type'=>'text_delta','text'=>$text]],['type'=>'content_block_stop','index'=>0],
+                        ['type'=>'message_delta','delta'=>['stop_reason'=>'end_turn'],'usage'=>['output_tokens'=>80]],['type'=>'message_stop']];
+                $header('request-id: req_pipeline');
+                foreach($events as $event)if(!$consume('data: '.json_encode($event,JSON_THROW_ON_ERROR)."\n\n"))return ['ok'=>false,'status'=>200,'errno'=>23];
+                if(is_callable($GLOBALS['pipelineGenerationHook']??null))($GLOBALS['pipelineGenerationHook'])();
+                return ['ok'=>true,'status'=>200,'errno'=>0];
+            };
+            return vp3_coding_canvas_generate_v1($db,$owner,$pin,$job,$request,$prompt,$previous,$diagnostic,$attribution,$transport);
+        });
     }
 }
 
@@ -306,7 +322,7 @@ canvas_pipeline_check($codingGoal['initiative_origin']['authorization']==='owner
     'the saved owner decision authorizes only this draft while Auto Build remains off and the selected model is pinned');
 vp3_coding_canvas_model_save_v1($pdo,$owner,$replacement);
 $codingClaim=canvas_pipeline_claim($codingId);
-canvas_pipeline_check(vp3_coding_canvas_execute_v1($pdo,$owner,$codingClaim)['ok'], 'the canonical coding executor saves the real generated draft');
+canvas_pipeline_check(canvas_pipeline_coding_execute($pdo,$owner,$codingClaim)['ok'], 'the canonical coding executor saves the real generated draft');
 $draft=vp3_coding_canvas_read_v1($pdo,$owner,7,$codingGoal['canvas_id']);
 canvas_pipeline_check($draft['canvas']['active_revision']===null && $draft['revision']['id']===1
     && is_object($draft['state']['value']) && get_object_vars($draft['state']['value'])===[], 'the generated app remains an inactive saved draft with its own empty app state');
@@ -319,7 +335,7 @@ canvas_pipeline_check($usage['model']===$selected['model'] && (int)$usage['user_
     && (int)$usage['conversation_id']===11 && (int)$usage['run_id']===$codingId && $usage['service_key']==='code_build'
     && (int)$usage['is_background']===1 && (int)$usage['total_tokens']===120 && $usage['service_status']==='completed'
     && count($GLOBALS['imageUsage'])===1, 'actual provider metering preserves the pinned model, per-user attribution, background classification and exact reported tokens');
-canvas_pipeline_check(!vp3_coding_canvas_execute_v1($pdo,$owner,$codingClaim)['ok'] && count($GLOBALS['pipelineCodingCalls'])===1,
+canvas_pipeline_check(!canvas_pipeline_coding_execute($pdo,$owner,$codingClaim)['ok'] && count($GLOBALS['pipelineCodingCalls'])===1,
     'a settled coding lease cannot repeat the paid provider transport');
 
 $setting=vp3_initiative_canvas_setting_v1($pdo,$owner,7);
@@ -339,7 +355,7 @@ canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_clai
 $autoResult=canvas_pipeline_result($autoRun);$autoCode=(int)$autoResult['initiative_tool_result']['output']['coding_run_id'];
 canvas_pipeline_check((int)$observer->query("SELECT COUNT(*) FROM agent_workflow_runs WHERE source_kind='coding_canvas'")->fetchColumn()===$beforeCoding+1,
     'another connection can observe the coding request after the canonical parent receipt commits');
-canvas_pipeline_check(vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($autoCode))['ok'], 'an opted-in proactive request uses the same coding executor and private store');
+canvas_pipeline_check(canvas_pipeline_coding_execute($pdo,$owner,canvas_pipeline_claim($autoCode))['ok'], 'an opted-in proactive request uses the same coding executor and private store');
 
 $retryParent=canvas_pipeline_prepare(2501);$retryParentResult=canvas_pipeline_result($retryParent);
 $retryRoot=(int)$retryParentResult['initiative_tool_result']['output']['coding_run_id'];
@@ -350,7 +366,7 @@ $nestedRetry=vp3_coding_canvas_retry_v1($pdo,$owner,7,11,$firstRetry['run_id'],a
 $nestedGoal=json_decode(vp3_coding_canvas_job_row_v1($pdo,$owner,$nestedRetry['run_id'])['goal'],true);
 $retryCalls=count($GLOBALS['pipelineCodingCalls']);
 canvas_pipeline_check($nestedGoal['retry_of']===$firstRetry['run_id']
-    && vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($nestedRetry['run_id']))['ok']
+    && canvas_pipeline_coding_execute($pdo,$owner,canvas_pipeline_claim($nestedRetry['run_id']))['ok']
     && count($GLOBALS['pipelineCodingCalls'])===$retryCalls+1,
     'a nested explicit retry of an OB1 proposal retains its original proof and generates only its admitted replacement');
 
@@ -375,7 +391,7 @@ vp3_coding_canvas_job_v1($pdo,$owner,7,11,$lateRetryRoot,'stop');
 $lateRetry=vp3_coding_canvas_retry_v1($pdo,$owner,7,11,$lateRetryRoot,agent_event_uuid_v1920());
 $beforeLateRetryDrafts=canvas_pipeline_count('vp3_coding_canvases_v1');
 $GLOBALS['pipelineGenerationHook']=static fn()=>db()->exec('UPDATE agent_memory_items SET is_active=0 WHERE id=3501');
-canvas_pipeline_check(!vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($lateRetry['run_id']))['ok']
+canvas_pipeline_check(!canvas_pipeline_coding_execute($pdo,$owner,canvas_pipeline_claim($lateRetry['run_id']))['ok']
     && canvas_pipeline_count('vp3_coding_canvases_v1')===$beforeLateRetryDrafts,
     'source revocation during an owner-requested retry still fences its saved effect');
 unset($GLOBALS['pipelineGenerationHook']);
@@ -387,7 +403,7 @@ canvas_pipeline_check($privateBriefDenied,'restoring a source-derived brief cann
 $revokedRun=canvas_pipeline_prepare(4001);$revokedResult=canvas_pipeline_result($revokedRun);
 $revokedCode=(int)$revokedResult['initiative_tool_result']['output']['coding_run_id'];$beforeDrafts=canvas_pipeline_count('vp3_coding_canvases_v1');
 $GLOBALS['pipelineGenerationHook']=static fn()=>db()->exec('UPDATE agent_memory_items SET is_active=0 WHERE id=4001');
-canvas_pipeline_check(!vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($revokedCode))['ok']
+canvas_pipeline_check(!canvas_pipeline_coding_execute($pdo,$owner,canvas_pipeline_claim($revokedCode))['ok']
     && canvas_pipeline_count('vp3_coding_canvases_v1')===$beforeDrafts, 'source revocation after a metered provider response prevents saving a new private app');
 unset($GLOBALS['pipelineGenerationHook']);
 
@@ -404,7 +420,7 @@ $GLOBALS['pipelineGenerationHook']=static function() use ($owner): void {
     $setting=vp3_initiative_canvas_setting_v1(db(),$owner,7);
     vp3_initiative_canvas_setting_v1(db(),$owner,7,false,$setting['revision']);
 };
-canvas_pipeline_check(!vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($optOutCode))['ok']
+canvas_pipeline_check(!canvas_pipeline_coding_execute($pdo,$owner,canvas_pipeline_claim($optOutCode))['ok']
     && !vp3_initiative_canvas_setting_v1($pdo,$owner,7)['enabled']
     && canvas_pipeline_count('vp3_coding_canvases_v1')===$beforeDrafts, 'turning off the actual Auto Build setting during generation prevents a late app save');
 unset($GLOBALS['pipelineGenerationHook']);
@@ -414,7 +430,7 @@ vp3_initiative_canvas_setting_v1($pdo,$owner,7,true,$setting['revision']);
 $budgetRun=canvas_pipeline_prepare(6001);$budgetResult=canvas_pipeline_result($budgetRun);
 $budgetCode=(int)$budgetResult['initiative_tool_result']['output']['coding_run_id'];$beforeCalls=count($GLOBALS['pipelineCodingCalls']);
 vp3_ai_service_save_rule_v1($pdo,'user',1,'code_build',['background_daily_tokens'=>0]);
-canvas_pipeline_check(!vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($budgetCode))['ok']
+canvas_pipeline_check(!canvas_pipeline_coding_execute($pdo,$owner,canvas_pipeline_claim($budgetCode))['ok']
     && count($GLOBALS['pipelineCodingCalls'])===$beforeCalls && canvas_pipeline_count('vp3_coding_canvases_v1')===$beforeDrafts,
     'an exhausted background allowance blocks proactive coding before a physical provider request');
 canvas_pipeline_check(canvas_pipeline_count('ai_execution_ledger',"service_key='code_build' AND service_status='completed' AND total_tokens=120")===count($GLOBALS['pipelineCodingCalls'])
@@ -477,7 +493,7 @@ canvas_pipeline_check(canvas_pipeline_count('agent_workflow_runs',"source_kind='
     && $naturalGoal['initiative_origin']['authorization']==='owner_followthrough'
     && !vp3_initiative_canvas_setting_v1($pdo,$owner,7)['enabled'],
     'bare Build it. admits one canonical coding job without switching on Auto Build');
-canvas_pipeline_check(vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($naturalCoding))['ok'],
+canvas_pipeline_check(canvas_pipeline_coding_execute($pdo,$owner,canvas_pipeline_claim($naturalCoding))['ok'],
     'the natural owner-approved coding job produces its private draft through the real provider and store');
 
 // Eligibility is not approval: an unrelated first reply can be classified as

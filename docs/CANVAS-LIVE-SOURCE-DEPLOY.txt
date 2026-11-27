@@ -1,0 +1,16 @@
+Canvas live source / provider response recovery
+
+1. Deploy the complete verified Cloud archive, preserving config.php, .env and uploads.
+2. Run Database Upgrade once. Existing jobs gain a nullable private received-response column.
+3. Open an existing app in Code / App Canvas and request a change.
+4. Keep the editor open. Live generated code should update during the run; switch HTML/CSS/JavaScript.
+5. The selected working app remains below the live text. Generated text is not executed there.
+6. On failure, review inline provider status, duration and token confirmation. AI usage opens the existing owner usage page.
+7. If complete valid source was received for the failed rebuild, Save received code as draft imports it without another model request. Test the draft, then explicitly Use this version.
+8. Retry saved request starts a new metered provider attempt. No automatic paid retry is performed.
+
+The archive cannot recover old response text that the previous version never stored.
+A charged historical attempt alone does not identify its exact transport failure.
+Partial received code is viewable but cannot be imported as a valid app.
+New-app runs support the live view; the no-inference import action requires a saved rebuild source.
+Test the installed provider and shared-host process limits with a small requested change first.

@@ -419,6 +419,13 @@
   display:grid;
   gap:.65rem;
 }
+.vp3-coding-canvas-editor-content { min-width:0;display:grid;gap:1rem; }
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-editor-content { display:contents; }
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-editor-content > section:not(.vp3-coding-canvas-workspace) { display:none; }
+.vp3-coding-live-source { min-width:0;border:1px solid #cad9d3;border-radius:.65rem;padding:.8rem;background:#f7faf8; }
+.vp3-coding-live-source summary { cursor:pointer;font-weight:650; }
+.vp3-coding-live-source p { font-size:.82rem;overflow-wrap:anywhere; }
+.vp3-coding-live-source pre { margin:.8rem 0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:none;overflow:visible;font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace; }
 .vp3-coding-canvas-image-fields {
   display:grid;
   gap:.5rem;

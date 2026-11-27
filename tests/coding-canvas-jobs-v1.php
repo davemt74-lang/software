@@ -85,7 +85,8 @@ $generate = function ($connection, $user, $pin, $jobId, $requestId, $prompt, $pr
     use (&$calls, $selected, $id, $request, $source): array {
     $calls++;
     check($pin === $selected + ['funding' => 'system'] && (int)$jobId === $id && $requestId === $request, 'Dispatch receives the frozen provider selection');
-    check($previous === null && $context === ['agent_id' => 7, 'conversation_id' => 11], 'Generation receives exact usage attribution and no app data');
+    check($previous === null && array_diff_key($context,array_flip(['before_dispatch','provider_checkpoint'])) === ['agent_id' => 7, 'conversation_id' => 11]
+        &&is_callable($context['before_dispatch'])&&is_callable($context['provider_checkpoint']), 'Generation receives exact usage attribution, private lease callbacks and no app data');
     return ['title' => 'Prep board', 'artifact' => $source];
 };
 check(vp3_coding_canvas_execute_v1($pdo, $owner, $lease, $generate)['ok'], 'One worker saves the draft with its receipt');

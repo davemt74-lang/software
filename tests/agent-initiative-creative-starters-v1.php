@@ -177,7 +177,8 @@ $GLOBALS['pipelineModel']=static fn()=>throw new RuntimeException('An approved s
 canvas_pipeline_check(vp3_initiative_execute_v1($pdo,$fresh,$claim($continuation),null,null,false)['ok'],
     'The approved starter reuses its proposal and queues the canonical coding executor');
 $continued=canvas_pipeline_result($continuation);$coding=(int)$continued['initiative_tool_result']['output']['coding_run_id'];
-canvas_pipeline_check(vp3_coding_canvas_execute_v1($pdo,$fresh,$claim($coding))['ok'],
+// Reuse the inherited streaming wire fixture; the native worker, meter and store still run.
+canvas_pipeline_check(canvas_pipeline_coding_execute($pdo,$fresh,$claim($coding))['ok'],
     'A new account can produce a real private app draft through the selected metered Coding model');
 $canvasId=$continued['initiative_tool_result']['output']['canvas_id'];
 $draft=vp3_coding_canvas_read_v1($pdo,$fresh,9,$canvasId);

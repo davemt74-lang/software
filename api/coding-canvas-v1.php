@@ -35,7 +35,7 @@ try {
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Canvas storage is unavailable.', 503);
     $user = vp3_coding_canvas_scope_v1($pdo, $user, $aid, $cid);
-    vp3_coding_canvas_authority_v1($pdo, $user, $aid, in_array($action, ['build', 'repair', 'retry','save_source'], true));
+    vp3_coding_canvas_authority_v1($pdo, $user, $aid, in_array($action, ['build', 'repair', 'retry','save_source','recover_source'], true));
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
     $canvasId = $input->canvas_id ?? null;
@@ -46,7 +46,17 @@ try {
     if (($revision !== null || in_array($action, ['repair', 'test', 'apply', 'save_state', 'save_source', 'email_data','command_data','publish','save_library_image'], true))
         && (!is_int($revision) || $revision < 1)) throw new InvalidArgumentException('Choose an exact Canvas revision.');
 
-    if(in_array($action,['phone_targets','phone_send'],true)){
+    if(in_array($action,['received_source','recover_source'],true)){
+        if(defined('VP3_PHONE_AGENT_NATIVE_V1'))throw new RuntimeException('Open the owner Canvas editor to view received code.',403);
+        if($cid<1||!is_int($input->run_id??null)||$input->run_id<1)throw new InvalidArgumentException('Choose an exact Coding Agent run.');
+        require_once dirname(__DIR__).'/includes/coding-canvas-response-v1.php';
+        if($action==='received_source')$result=vp3_coding_canvas_response_view_v1($pdo,$user,$aid,$cid,$input->run_id);
+        else{
+            if(!is_string($input->request_id??null))throw new InvalidArgumentException('Choose an exact code recovery request.');
+            $result=vp3_coding_canvas_response_recover_v1($pdo,$user,$aid,$cid,$input->run_id,$input->request_id);
+            $canvasId=$result['canvas']['id'];
+        }
+    } elseif(in_array($action,['phone_targets','phone_send'],true)){
         if(!is_string($canvasId)||!is_int($revision)||$revision<1)throw new InvalidArgumentException('Choose a saved Canvas version.');
         require_once dirname(__DIR__).'/includes/coding-canvas-phone-v1.php';
         $result=vp3_coding_canvas_phone_v1($pdo,$user,$aid,$cid,$canvasId,$revision,$action,(array)$input);
@@ -122,7 +132,7 @@ try {
         if ($cid < 1 || !is_int($runId) || $runId < 1) throw new InvalidArgumentException('Choose an exact Coding Agent run.');
         if ($action === 'tick') {
             ignore_user_abort(true);
-            @set_time_limit(150);
+            @set_time_limit(330);
         }
         if ($action === 'retry') {
             if (!is_string($input->request_id ?? null)) throw new InvalidArgumentException('Choose a new Coding Agent retry request.');
@@ -187,7 +197,7 @@ try {
             }
         }
     }
-        if (in_array($action,['open','test','apply','save_library_image','save_source'],true)) {
+        if (in_array($action,['open','test','apply','save_library_image','save_source','recover_source'],true)) {
             require_once dirname(__DIR__).'/includes/coding-canvas-email-v1.php';
             $result['email_source'] = vp3_coding_canvas_email_binding_v1($pdo,$user,$aid,$canvasId,$result['revision']['id']) !== null;
             $canvas=vp3_coding_canvas_require_row_v1($pdo,(int)$user['id'],$aid,vp3_coding_canvas_id_v1($canvasId));
