@@ -237,6 +237,7 @@ async function verifyTwoPhoneRoutes(baseURL, apiOwner, owner, other) {
 }
 
 async function startWithFreshSensorReading(page, context, reading) {
+  await page.getByRole('tab',{name:'Phone',exact:true}).click();
   const started = page.waitForResponse(response => new URL(response.url()).pathname === phoneEndpoint &&
     response.request().postDataJSON()?.action === 'start');
   await page.locator('#phone-start').click();
@@ -387,6 +388,7 @@ async function browserJourney(baseURL, owner, other) {
     const d=check(await ownerApi(desktop,owner),'communication grant').devices.find(d=>d.id===deviceId);
     return d?.communication?.owner_calls&&d.communication.owner_requests;
   });
+  await phone.getByRole('tab',{name:'Phone',exact:true}).click();
   const holderForm=phone.locator('#phone-communication-form');
   await holderForm.getByLabel('My personal phone number',{exact:true}).fill('+16025550129');
   await holderForm.getByRole('button',{name:'Save communication preferences',exact:true}).click();
@@ -460,9 +462,10 @@ async function browserJourney(baseURL, owner, other) {
   await panel.getByLabel('Information message',{exact:true}).fill('What time is best for the private fixture review?');
   await panel.getByRole('button',{name:'Send to phone',exact:true}).click();
   await panel.getByText('What time is best for the private fixture review?',{exact:true}).waitFor();
+  await phone.getByRole('tab',{name:'Requests',exact:true}).click();
   const holderInbox=phone.locator('#phone-information');
   await eventually('Phone did not receive open request count',async()=> (await holderInbox.locator('summary').innerText()).includes('(1 open)'));
-  await holderInbox.locator('summary').click();
+  assert.equal(await holderInbox.evaluate(el=>el.open),true);
   await holderInbox.getByText('What time is best for the private fixture review?',{exact:true}).waitFor();
   await holderInbox.getByRole('button',{name:'Accept request',exact:true}).click();
   await holderInbox.getByLabel('Your response',{exact:true}).fill('Before noon <private fixture>');
@@ -478,6 +481,12 @@ async function browserJourney(baseURL, owner, other) {
   assert.ok(receipt&&!JSON.stringify(updates).includes('Before noon'),'Chat receives only a scoped generic receipt, not the private response');
   assert.ok(!check(await chatApi(desktop,owner,'activity',{phone_updates:true,conversation_id:8}),'receipt replay').phone_updates.some(u=>u.speech.includes('responded to an information request')));
   await screenshot(map,'owner-connected-information');
+  const completed=panel.locator('.phone-information-item').filter({hasText:'What time is best for the private fixture review?'});
+  await completed.getByRole('button',{name:'Delete request',exact:true}).click();
+  await completed.getByRole('button',{name:'Keep request',exact:true}).click();assert.equal(await completed.count(),1);
+  await completed.getByRole('button',{name:'Delete request',exact:true}).click();await completed.getByRole('button',{name:'Permanently delete',exact:true}).click();
+  await panel.getByText('Request permanently deleted.',{exact:true}).waitFor();assert.equal(await completed.count(),0);
+
   // Real browser requests through both existing authenticated endpoints.
   await panel.getByLabel('Information type',{exact:true}).selectOption('photo_request');
   await panel.getByLabel('Information message',{exact:true}).fill('Please share the synthetic review photo.');
@@ -523,13 +532,14 @@ async function browserJourney(baseURL, owner, other) {
   assert.ok(!JSON.stringify(fileReceipts).includes('synthetic review photo')&&!JSON.stringify(fileReceipts).includes('synthetic document'),'file receipts contain no private request bodies or document content');
   assert.deepEqual(check(await chatApi(desktop,owner,'activity',{phone_updates:true,conversation_id:8}),'file receipt replay').phone_updates,[]);
   await screenshot(map,'owner-connected-files');
-  await holderInbox.locator('summary').click();
+  assert.equal(await holderInbox.evaluate(el=>el.open),true);
   await communication.getByRole('button',{name:'Communication',exact:true}).click();
   await map.locator('#phone-detail [data-action=request_start]').click();
   await eventually('Phone missed start request', async () =>
     check(await phoneApi(handset, 'status'), 'phone read').device.location_state === 'requested');
   assert.equal(gpsRequests, 0, 'Pairing and owner request must leave phone geolocation idle');
   assert.equal(await map.locator('#phone-map .phone-map-marker').count(), 0);
+  await phone.getByRole('tab',{name:'Phone',exact:true}).click();
   await phone.locator('#phone-start').waitFor();
   assert.match(await phone.locator('#phone-owner').innerText(), /Map Operator/);
   assert.ok(await phone.evaluate(() => document.documentElement.scrollWidth <= innerWidth), 'iPhone page must fit its viewport');
@@ -587,7 +597,7 @@ async function browserJourney(baseURL, owner, other) {
 }
 
 async function verifyPhoneTabs(phone) {
-  const connection = phone.getByRole('tab', {name:'Connection', exact:true});
+  const connection = phone.getByRole('tab', {name:'Phone', exact:true});
   const chat = phone.getByRole('tab', {name:'Chat', exact:true});
   const input = phone.locator('#phone-chat-input');
   async function verifyDock() {
@@ -601,7 +611,7 @@ async function verifyPhoneTabs(phone) {
   }
   async function verifyConnection() {
     assert.equal(await connection.getAttribute('aria-selected'), 'true');
-    await verifyDock();
+    assert.equal(await input.isVisible(),false);
     const position = await phone.locator('#phone-label').evaluate(label => {
       const bounds = label.getBoundingClientRect();
       return {top:bounds.top, bottom:bounds.bottom, height:window.visualViewport?.height || innerHeight};
@@ -1405,7 +1415,7 @@ async function verifyInstalledPairing(baseURL,desktop,owner){
     try{
       const messageId=randomUUID();
       check(await phoneApi(installed,'chat_send',{device_id:d.id,request_id:messageId,message:'Private handoff fixture'}),'source chat');
-      await guest.getByRole('tab',{name:'Info',exact:true}).click();
+      await guest.locator('#phone-user-menu summary').click();await guest.locator('#phone-tab-info').click();
       await guest.locator('#phone-handoff-panel summary').click();
       await guest.locator('#phone-handoff-offer').waitFor();
       guest.once('dialog',dialog=>dialog.accept());

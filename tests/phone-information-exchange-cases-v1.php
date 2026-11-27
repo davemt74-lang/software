@@ -81,6 +81,16 @@ function vp3_test_phone_information_v1(PDO $db,int $owner,int $other,string $id,
     $create(7,'update','New update');$create(8,'update','Another update');
     $reject(429,fn()=>$create(9,'update','Daily cap'),'daily budget persists across consent changes');
     $assert($status()['generation']===$initial['generation']&&$status()['location_state']===$initial['location_state'],'information exchange never activates GPS');
+    $current=$find($ownerAct('information_list'),$ids[0]);
+    $deletion=['exchange_id'=>$ids[0],'version'=>$current['version'],'confirmed'=>true];
+    $reject(409,fn()=>$ownerAct('information_delete',array_replace($deletion,['version'=>99])),'stale request deletion is rejected');
+    $reject(422,fn()=>$holderAct('information_delete',$deletion),'phone holder cannot permanently delete owner requests');
+    $reject(404,fn()=>vp3_phone_information_owner_v1($db,$other,'information_delete',$bound()+$deletion),'other accounts cannot delete this user request');
+    $result=$ownerAct('information_delete',$deletion);
+    $assert($result['deleted']===$ids[0]&&!array_filter($result['items'],fn($r)=>$r['exchange_id']===$ids[0]),'permanent delete removes the completed request and response');
+    $assert($ownerAct('information_delete',$deletion)['deleted']===$ids[0],'lost delete acknowledgement can be retried safely');
+    $reject(409,fn()=>$create(1,'question','What is your preferred meeting time?'),'delayed create cannot resurrect a deleted request');
+    $reject(429,fn()=>$create(9,'update','Daily cap'),'deleting requests does not reset the daily send budget');
     // Leave the fixture with consent off and no actionable requests for the existing tracking tests.
     $grant(false);
 }

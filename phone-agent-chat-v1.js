@@ -9,7 +9,9 @@ window.VP3PhoneAgentChat = function (request, apps) {
   const history = get('chat-history'), empty = get('chat-empty'), tabs = get('tabs');
   const connection = get('connection'), info = get('info'), connectionTab = get('tab-connection'), chatTab = get('tab-chat'), infoTab = get('tab-info');
   const agent = get('agent'), agentTab = get('tab-agent'), agentUnread = get('agent-unread');
-  const tabItems = [['agent',agentTab,agent],['connection',connectionTab,connection],['chat',chatTab,chat],['info',infoTab,info]].filter(([,tab,panel])=>tab&&panel);
+  const home=get('home'),requests=get('requests');
+  const tabItems = [['home',get('tab-home'),home],['agent',agentTab,agent],['chat',chatTab,chat],['requests',get('tab-requests'),requests],['connection',connectionTab,connection],
+    ...(!home&&infoTab?[['info',infoTab,info]]:[])].filter(([,tab,panel])=>tab&&panel);
   let selectedTab = 'connection';
   let agentEnabled = false, navigated = false, navigationVersion = 0;
   let deviceId = null, online = false, generation = 0, nextPoll = 0, polling = false;
@@ -26,6 +28,8 @@ window.VP3PhoneAgentChat = function (request, apps) {
     }
   }
   function selectTab(view) {
+    if(!tabItems.some(([key])=>key===view)&&view!=='info')view='connection';
+    if(['home','requests'].includes(view)&&!deviceId)view='connection';
     if(view==='chat'&&!deviceId)view='connection';
     if(view==='agent'&&(!deviceId||!agentEnabled))view='connection';
     if(view!=='chat'){notificationRequest=null;focusNotification=false;}
@@ -34,10 +38,12 @@ window.VP3PhoneAgentChat = function (request, apps) {
       const active=key===view;panel.hidden=!active;
       tab.setAttribute('aria-selected',String(active));tab.tabIndex=active?0:-1;
     }
+    info.hidden=view!=='info';
     if(deviceId)main.dataset.tab=view;
     else delete main.dataset.tab;
-    form.hidden=view==='info'||view==='agent';
-    get('dock-help').hidden=view==='info'||view==='agent';
+    form.hidden=view!=='chat';
+    get('dock-help').hidden=view!=='chat';
+    dock.hidden=!deviceId||view!=='chat';
     closeApps();
     sizeViewport();
     if(view==='chat'){
@@ -57,9 +63,10 @@ window.VP3PhoneAgentChat = function (request, apps) {
   }
   for(const [key,tab] of tabItems)tab.addEventListener('click',()=>void navigateTab(key));
   async function openGuide(){if(await navigateTab('info'))get('info-title').focus({preventScroll:true});}
+  if(home&&infoTab)infoTab.addEventListener('click',openGuide);
   for(const id of ['setup-guide','footer-guide'])get(id).addEventListener('click',openGuide);
   get('info-back').addEventListener('click',async()=>{
-    if(await navigateTab('connection'))(deviceId?connectionTab:get('setup-guide')).focus({preventScroll:true});
+    if(await navigateTab(deviceId&&home?'home':'connection'))(deviceId?(get('tab-home')||connectionTab):get('setup-guide')).focus({preventScroll:true});
   });
   tabs.addEventListener('keydown',event=>{
     if(!['ArrowLeft','ArrowRight','Home','End'].includes(event.key))return;
@@ -285,9 +292,9 @@ window.VP3PhoneAgentChat = function (request, apps) {
       if (id) connection.setAttribute('role','tabpanel');
       else connection.removeAttribute('role');
       connection.setAttribute('aria-labelledby',id ? connectionTab.id : 'phone-label');
-      info.setAttribute('role',id?'tabpanel':'region');info.setAttribute('aria-labelledby',id?infoTab.id:'phone-info-title');
+      info.setAttribute('role',home?'region':id?'tabpanel':'region');info.setAttribute('aria-labelledby',home?'phone-info-title':id?infoTab.id:'phone-info-title');
       get('setup-help').hidden=Boolean(id);
-      selectTab('connection');
+      selectTab(id&&home?'home':'connection');
       lastTranscript = '';
       status('');
     }
@@ -313,8 +320,9 @@ window.VP3PhoneAgentChat = function (request, apps) {
     if(agentUnread){agentUnread.hidden=!agentEnabled||!Number.isSafeInteger(unread)||unread<1;agentUnread.textContent=unread>99?'99+':String(unread)+(countsComplete?'':'+');}
     if(agentEnabled)main.dataset.agentReady='true';else delete main.dataset.agentReady;
     if(!agentEnabled&&selectedTab==='agent'){navigationVersion++;selectTab('connection');}
-    else if(agentEnabled&&defaultView&&!navigated&&selectedTab==='connection')selectTab('agent');
+    else if(agentEnabled&&defaultView&&!navigated&&['home','connection'].includes(selectedTab))selectTab('agent');
   }
   return {bind,setAgent,selectedTab:()=>selectedTab,openAgent:()=>navigateTab('agent'),openInfo:openGuide,
-    openConnection:()=>navigateTab('connection'),openNotification};
+    openHome:()=>navigateTab(home?'home':'connection'),openRequests:()=>navigateTab(requests?'requests':'connection'),
+    openChat:()=>navigateTab('chat'),openConnection:()=>navigateTab('connection'),openNotification};
 };

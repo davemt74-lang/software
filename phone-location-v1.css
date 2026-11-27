@@ -129,3 +129,25 @@ button.phone-chat-retry { width: auto; min-height: 44px; margin-top: .3rem; colo
 .phone-guide-link{width:auto;min-height:32px;padding:3px 5px;background:transparent;color:#174e46;text-decoration:underline;text-underline-offset:2px;border:0;font-size:.75rem}
 #phone-setup-help .phone-guide-link{min-height:44px}
 @media(max-height:430px){#phone-location:not([data-tab="info"]) #phone-dock-help{display:none}}
+
+/* Phone shell: one scrolling panel, with setup and device details off Home. */
+.phone-brand-line>div:first-child{display:flex;align-items:center;gap:10px;min-width:0}
+.phone-user-menu{position:relative;margin-left:auto;min-width:0;max-width:55%}
+.phone-user-menu>summary{display:flex;align-items:center;justify-content:center;gap:8px;min-height:44px;padding:8px 12px;list-style:none;border:1px solid #d8dde4;border-radius:9px;background:#fff;cursor:pointer}
+.phone-user-menu>summary::-webkit-details-marker{display:none}.phone-user-menu>summary>span:first-child{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.phone-user-dropdown{position:absolute;right:0;top:calc(100% + 6px);z-index:80;width:240px;max-width:calc(100vw - 32px);padding:10px;background:#fff;border:1px solid #d8dde4;border-radius:10px;box-shadow:0 12px 35px #15223824}
+.phone-user-dropdown p{margin:4px 8px 10px;color:#566273;font-size:13px;overflow-wrap:anywhere}
+.phone-user-dropdown a,.phone-user-dropdown button{display:block;width:100%;min-height:44px;padding:12px;text-align:left;border:0;border-radius:7px;background:#fff;color:#111;text-decoration:none;font:inherit;box-sizing:border-box}
+.phone-user-dropdown a:focus-visible,.phone-user-dropdown button:focus-visible,.phone-user-menu summary:focus-visible{outline:2px solid #2461b4;outline-offset:2px}
+.phone-tabs{display:flex;gap:4px}.phone-tabs>[role=tab]{flex:1 1 0;min-width:0;min-height:44px;padding:8px 5px;font-size:12px;overflow-wrap:anywhere}
+#phone-home,#phone-requests{min-width:0;min-height:0;overflow:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch}
+#phone-home[hidden],#phone-requests[hidden]{display:none!important}.phone-home-card{max-width:680px;margin:16px auto}.phone-home-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:22px}.phone-home-actions button{min-height:44px;flex:1}
+#phone-notifications{margin-top:20px;border-top:1px solid #e1e5eb;padding-top:16px}#phone-requests .phone-information-panel{border:0;padding:0}#phone-requests details{margin-top:16px}
+
+#phone-home,#phone-requests{flex:1;}
+.phone-checkin-choice{display:flex;align-items:center;gap:.6rem;min-height:44px;}
+.phone-checkin-choice input{width:20px;min-height:20px;margin:0;flex:none;}
+#phone-checkin-patterns form{display:flex;flex-wrap:wrap;align-items:end;gap:.5rem;}
+#phone-checkin-patterns label{flex:1;min-width:140px;}
+
+.phone-home-actions button{margin:0;}

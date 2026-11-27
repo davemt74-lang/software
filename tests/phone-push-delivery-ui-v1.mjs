@@ -24,7 +24,7 @@ function setup(options={}){
  const app=new URL('./phone-location.php',location),script=new URL('./phone-service-worker-v1.js',location);
  const registration={scope:options.wrongScope?new URL('./',location).href:app.href,active:{scriptURL:options.wrongScript?new URL('./other-worker.js',location).href:script.href},pushManager:{getSubscription:async()=>{facts.inspections++;if(options.inspectGate)await options.inspectGate.promise;return sub;},subscribe:settings=>{assert.equal(facts.gesture,true,'subscribe starts inside the original trusted gesture');assert.equal(settings.userVisibleOnly,true);assert.deepEqual(Buffer.from(settings.applicationServerKey),Buffer.from(publicKey,'base64url'));facts.subscriptions++;permission='granted';sub=makeSub();return options.subscribeGate?options.subscribeGate.promise.then(()=>sub):Promise.resolve(sub);}}};
  const navigator={standalone:options.installed!==false,onLine:options.online!==false,serviceWorker:{getRegistration:async url=>{assert.equal(url,app.href);if(registrationError)throw Error('Registration lookup failed');return registration;}}};
- const Notification={get permission(){return permission;},requestPermission(){facts.permissionPrompts++;throw Error('No separate permission prompt is allowed');}};
+ const Notification={get permission(){return permission;},requestPermission(){assert.equal(facts.gesture,true,'permission prompt starts in the trusted gesture');facts.permissionPrompts++;permission='granted';return Promise.resolve('granted');}};
  window.isSecureContext=options.secure!==false;window.matchMedia=()=>({matches:options.installed!==false});window.Notification=Notification;window.PushManager=function(){};
  if(options.unsupported)delete window.PushManager;
  const history={replaceState:(_state,_title,url)=>{historyCalls.push(url);location.href=new URL(url,location).href;}};
@@ -64,7 +64,7 @@ await test('a lost or changed registration invalidates previously observed test 
  for(const change of ['script','lookup']){const b=await ready();assert.equal(b.elements.get('phone-push-test').disabled,false);if(change==='script'){b.registration.active.scriptURL='https://phone.test/vp3/other-worker.js';await b.click('phone-push-test');assert.equal(b.calls.length,0,'Direct stale event cannot use a changed active script');}else b.setRegistrationError(true);await b.wake();await flush();assert.equal(b.elements.get('phone-push-test').disabled,true);await b.click('phone-push-test');assert.equal(b.calls.length,0);await b.dispose();}
 });
 await test('fresh worker availability and provider acceptance never claim device delivery',async()=>{
- const b=await ready();let d=structuredClone(b.device);d.push.delivery.ready=false;d.push.delivery.worker.state='never_seen';b.bind(d);assert.match(b.elements.get('phone-push-test-state').textContent,/waiting for the server worker/);assert.equal(b.elements.get('phone-push-test').disabled,true);
+ const b=await ready();let d=structuredClone(b.device);d.push.delivery.ready=false;d.push.delivery.worker.state='never_seen';b.bind(d);assert.match(b.elements.get('phone-push-test-state').textContent,/once-per-minute.*cron/);assert.equal(b.elements.get('phone-push-test').disabled,true);
  d.push.delivery.ready=true;d.push.delivery.worker.state='observed';d.push.delivery.last_test=receipt(d,{state:'accepted',provider_accepted_epoch:Math.floor(Date.now()/1000)});b.bind(d);assert.match(b.elements.get('phone-push-test-state').textContent,/push service accepted.*Display on this device is not confirmed/);assert.doesNotMatch(b.elements.get('phone-push-test-state').textContent,/delivered|showing|opened/);await b.dispose();
 });
 await test('client display reports and authenticated opens have distinct truthful labels',async()=>{
@@ -103,20 +103,20 @@ await test('GPS-only generation changes do not change push consent or reject a m
 });
 await test('registration still begins in the trusted gesture and preserves pre-delivery wording',async()=>{
  const d=fixture();d.push.state='off';d.push.revision=0;delete d.push.endpoint_hash;delete d.push.delivery;d.push.delivery_ready=false;
- const b=await ready({device:d,local:false,permission:'default',noTestElements:true});assert.equal(b.elements.get('phone-push-enable').disabled,false);await b.click('phone-push-enable',false);assert.equal(b.facts.subscriptions,0);await b.click('phone-push-enable');await flush();assert.equal(b.facts.subscriptions,1);assert.equal(b.facts.permissionPrompts,0);assert.equal(b.calls[0].action,'push_register');assert.equal(b.calls[0].subscription_revision,0);assert.match(b.elements.get('phone-push-feedback').textContent,/Background delivery is not active yet/);assert.match(b.elements.get('phone-guide-notification-state').textContent,/Notifications allowed · subscription saved/);await b.dispose();
+ const b=await ready({device:d,local:false,permission:'default',noTestElements:true});assert.equal(b.elements.get('phone-push-enable').disabled,false);await b.click('phone-push-enable',false);assert.equal(b.facts.subscriptions,0);await b.click('phone-push-enable');await flush();assert.equal(b.facts.permissionPrompts,1);assert.equal(b.facts.subscriptions,0);assert.equal(b.calls.length,0);await b.click('phone-push-enable');await flush();assert.equal(b.facts.subscriptions,1);assert.equal(b.calls[0].action,'push_register');assert.equal(b.calls[0].subscription_revision,0);assert.match(b.elements.get('phone-push-feedback').textContent,/Background delivery is not active yet/);assert.match(b.elements.get('phone-guide-notification-state').textContent,/Notifications allowed · subscription saved/);await b.dispose();
 });
 await test('disable removes server authority before unsubscribing only the exact local subscription',async()=>{
  const b=await ready();await b.click('phone-push-disable');await flush();assert.deepEqual(b.facts.order,['push_disable','unsubscribe']);assert.equal(b.facts.unsubscribed,1);assert.equal(b.device.push.state,'off');assert.equal(b.elements.get('phone-push-test').disabled,true);await b.dispose();
  const foreign=await ready({wrongKey:true});await foreign.click('phone-push-disable');await flush();assert.equal(foreign.facts.unsubscribed,0);await foreign.dispose();
 });
 await test('late subscription completion cannot register into another pairing',async()=>{
- const gate=defer(),d=fixture();d.push.state='off';d.push.revision=0;delete d.push.endpoint_hash;const b=await ready({device:d,local:false,permission:'default',subscribeGate:gate}),pending=b.click('phone-push-enable');await flush();const changed=structuredClone(d);changed.id='e'.repeat(32);b.bind(changed);gate.resolve();await pending;await flush();assert.equal(b.calls.length,0);assert.equal(b.facts.subscriptions,1);await b.dispose();
+ const gate=defer(),d=fixture();d.push.state='off';d.push.revision=0;delete d.push.endpoint_hash;const b=await ready({device:d,local:false,permission:'granted',subscribeGate:gate}),pending=b.click('phone-push-enable');await flush();const changed=structuredClone(d);changed.id='e'.repeat(32);b.bind(changed);gate.resolve();await pending;await flush();assert.equal(b.calls.length,0);assert.equal(b.facts.subscriptions,1);await b.dispose();
 });
 await test('opaque tap reference is removed from the URL and waits for authenticated foreground device binding',async()=>{
  const b=setup({url:'https://phone.test/vp3/phone-location.php?keep=1&push_event='+eventRef+'#review',infoHidden:true});assert.equal(b.location.search,'?keep=1');assert.equal(b.location.hash,'#review');assert.equal(b.historyCalls.length,1);assert.equal(b.calls.length,0);b.bind(fixture(),false);await flush();assert.equal(b.calls.length,0);b.bind(fixture(),true);await flush();assert.equal(b.calls.length,1);assert.deepEqual(b.calls[0],{action:'push_resolve',device_id:'d'.repeat(32),event_ref:eventRef});assert.equal(b.resolved.length,1);assert.deepEqual(b.resolved[0].target,{tab:'info'});assert.equal(b.facts.subscriptions,0);await b.dispose();
 });
 await test('authenticated tap resolves fixed Chat and request targets without private data from the push',async()=>{
- for(const target of [{tab:'chat',request_id:requestId},{tab:'requests',exchange_id:'b'.repeat(32)},{tab:'info'}]){const b=setup({url:'https://phone.test/vp3/phone-location.php?push_event='+eventRef,request:(_action,_body,{receipt})=>receipt({state:'uncertain',opened_epoch:Math.floor(Date.now()/1000),target,private_text:'never copied from this envelope'})});b.bind(fixture());await flush();assert.equal(b.resolved.length,1);assert.deepEqual(b.resolved[0].target,target);assert.equal(b.resolved[0].state,'uncertain');assert.equal(JSON.stringify(b.resolved).includes('private_text'),false);assert.equal([...b.elements.values()].some(element=>element.textContent.includes('never copied')),false);await b.dispose();}
+ for(const target of [{tab:'chat',request_id:requestId},{tab:'requests',exchange_id:'b'.repeat(32)},{tab:'info'},{tab:'phone'}]){const b=setup({url:'https://phone.test/vp3/phone-location.php?push_event='+eventRef,request:(_action,_body,{receipt})=>receipt({state:'uncertain',opened_epoch:Math.floor(Date.now()/1000),target,private_text:'never copied from this envelope'})});b.bind(fixture());await flush();assert.equal(b.resolved.length,1);assert.deepEqual(b.resolved[0].target,target);assert.equal(b.resolved[0].state,'uncertain');assert.equal(JSON.stringify(b.resolved).includes('private_text'),false);assert.equal([...b.elements.values()].some(element=>element.textContent.includes('never copied')),false);await b.dispose();}
 });
 await test('unknown URLs malformed targets and unconfirmed opens never hydrate private source',async()=>{
  const invalid=[{target:{tab:'admin',url:'/admin'}},{target:{tab:'chat',request_id:'../private'}},{target:{tab:'requests',exchange_id:'b'.repeat(32),url:'/private'}},{target:{tab:'info',message_id:4}},{target:{tab:'chat'}},{target:{tab:'requests',exchange_id:'B'.repeat(32)}},{opened_epoch:0},{event_ref:'c'.repeat(32)},{device_id:'e'.repeat(32)},{subscription_revision:3}];
@@ -130,5 +130,20 @@ await test('a tap response from an old pairing or subscription cannot open a pan
 });
 await test('HTTP auth errors and raw upstream failures produce no private source or technical disclosure',async()=>{
  const b=setup({url:'https://phone.test/vp3/phone-location.php?push_event='+eventRef,infoHidden:true,request:()=>Promise.reject(Object.assign(Error('SQLSTATE secret provider URL'),{status:403}))});b.bind(fixture());await flush();assert.equal(b.resolved.length,0);assert.match(b.elements.get('phone-push-test-state').textContent,/no longer available/);assert.equal(b.unavailable.length,1);assert.equal([...b.elements.values()].some(element=>element.textContent.includes('SQLSTATE')),false);await b.dispose();
+});
+await test('server enrollment is not required to show the direct OS permission prompt',async()=>{
+ const d=fixture();d.push.state='off';d.push.enrollment_enabled=false;delete d.push.endpoint_hash;
+ const b=await ready({device:d,local:false,permission:'default'});
+ assert.equal(b.facts.permissionPrompts,0);assert.equal(b.elements.get('phone-push-enable').disabled,false);
+ await b.click('phone-push-enable',false);assert.equal(b.facts.permissionPrompts,0);
+ await b.click('phone-push-enable');assert.equal(b.facts.permissionPrompts,1);assert.equal(b.calls.length,0);assert.equal(b.facts.subscriptions,0);
+ assert.equal(b.elements.get('phone-push-enable').disabled,true,'server enrollment is still required before subscribing');await b.dispose();
+});
+await test('worker activation can repair a previously unavailable registration without reloading',async()=>{
+ const d=fixture();d.push.state='off';delete d.push.endpoint_hash;
+ const b=await ready({device:d,local:false,wrongScript:true,permission:'granted'});
+ assert.equal(b.elements.get('phone-push-enable').disabled,true);
+ b.registration.active.scriptURL='https://phone.test/vp3/phone-service-worker-v1.js';await b.window.emit('vp3:phone-pwa-worker-state');await flush();
+ assert.equal(b.elements.get('phone-push-enable').disabled,false);assert.equal(b.facts.permissionPrompts,0);assert.equal(b.facts.subscriptions,0);await b.dispose();
 });
 console.log('PHONE_PUSH_DELIVERY_UI_V1=PASS ('+checks+' cases; actual subscription UI, consent, stale results and authenticated tap targets)');

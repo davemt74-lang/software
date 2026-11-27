@@ -1,10 +1,11 @@
 (() => {
   'use strict';
   window.VP3PhonePushSubscriptionsV1=({request,onResolved=()=>{},onUnavailable=()=>{}})=>{
-    const root=document.getElementById('phone-location'),info=document.getElementById('phone-info');
+    const root=document.getElementById('phone-location'),info=document.getElementById('phone-connection')||document.getElementById('phone-info');
     const controls=document.getElementById('phone-push-controls'),status=document.getElementById('phone-guide-notification-state');
     const enable=document.getElementById('phone-push-enable'),disable=document.getElementById('phone-push-disable'),feedback=document.getElementById('phone-push-feedback');
     const test=document.getElementById('phone-push-test'),testState=document.getElementById('phone-push-test-state');
+    const setupLink=document.getElementById('phone-push-server-setup');
     if(!root||!info||!controls||!status||!enable||!disable||!feedback)return null;
     const scope=new URL('./phone-location.php',location.href),script=new URL('./phone-service-worker-v1.js',location.href);
     const installed=()=>navigator.standalone===true||window.matchMedia('(display-mode: standalone)').matches;
@@ -20,8 +21,8 @@
     const hasKey=p=>p&&typeof p.application_server_key==='string'&&/^[A-Za-z0-9_-]{87}$/.test(p.application_server_key)&&/^[a-f0-9]{64}$/.test(p.key_id||'');
     const registered=p=>p?.state==='registered';
     const sameLocal=p=>!!local&&localKeyOK&&registered(p)&&localHash===p.endpoint_hash;
-    const canEnable=()=>usable()&&supported()&&installed()&&registration&&observed&&hasKey(view())&&view().enrollment_enabled===true
-      &&permission()!=='denied'&&(!local||localKeyOK)&&!sameLocal(view());
+    const canEnable=()=>usable()&&supported()&&installed()&&(permission()==='default'
+      ||permission()==='granted'&&registration&&observed&&hasKey(view())&&view().enrollment_enabled===true&&(!local||localKeyOK)&&!sameLocal(view()));
     const binding=()=>({device_id:d?.id,subscription_revision:view()?.revision,key_id:view()?.key_id});
     const current=expected=>d?.status==='approved'&&d.id===expected.device_id&&view()?.revision===expected.subscription_revision&&view()?.key_id===expected.key_id;
     const canTest=()=>usable()&&supported()&&installed()&&registration&&observed&&exact(registration)&&sameLocal(view())&&permission()==='granted'&&view()?.delivery?.enabled===true&&view()?.delivery?.ready===true;
@@ -52,8 +53,10 @@
       const saved=testResult(delivery?.last_test,expected),own=testResult(testReceipt,expected);
       const receipt=saved&&(!own||saved.event_ref===own.event_ref||saved.created_epoch>own.created_epoch)?saved:own;
       if(receipt)return testDescription(receipt);
-      if(!delivery?.enabled)return 'Background delivery is not active yet.';
-      if(!delivery.ready)return delivery.worker?.state==='observed'?'Notification delivery is not ready. Ask the owner to check the server setup.':'Notification delivery is waiting for the server worker.';
+      if(!p||delivery?.state==='upgrade_required')return 'The account owner needs to run Database Upgrade before server notifications can be set up.';
+      if(!p.enrollment_enabled&&!registered(p))return 'Server notification enrollment is not enabled. The site administrator can prepare it in Admin → Phone → Connected phone notifications.';
+      if(!delivery?.enabled)return 'Server background delivery is switched off. The site administrator can enable it in Admin → Phone → Connected phone notifications.';
+      if(!delivery.ready)return delivery.worker?.state==='observed'?'The server worker cannot send notifications yet. Check its runtime and transport status in Admin → Phone.':'The server notification worker has not run recently. Configure its once-per-minute cron job in Admin → Phone.';
       return 'Send a test to check this installation. A saved subscription does not confirm delivery.';
     }
     function consumeNavigation(){
@@ -73,7 +76,7 @@
         if(document.hidden||!ready)return;
         pendingEvent=null;
         const receipt=testResult(result,expected);
-        if(!receipt||receipt.event_ref!==ref||receipt.opened_epoch<1||!result.target||!['info','chat','requests','agent'].includes(result.target.tab))throw Error('Notification source unavailable');
+        if(!receipt||receipt.event_ref!==ref||receipt.opened_epoch<1||!result.target||!['info','phone','chat','requests','agent'].includes(result.target.tab))throw Error('Notification source unavailable');
         const target={tab:result.target.tab};
         const fields=target.tab==='chat'?['tab','request_id']:target.tab==='requests'?['tab','exchange_id']:target.tab==='agent'?['tab','item_ref']:['tab'];
         if(Object.keys(result.target).some(key=>!fields.includes(key)))throw Error('Invalid notification source');
@@ -105,12 +108,13 @@
     function render(){
       const p=view(),perm=permission(),isApproved=d?.status==='approved';
       controls.hidden=!isApproved;
-      enable.hidden=!isApproved||!supported()||!installed()||!p?.enrollment_enabled||perm==='denied'||sameLocal(p)||(local&&!localKeyOK);
+      enable.hidden=!isApproved||!supported()||!installed()||perm==='denied'||sameLocal(p)||(local&&!localKeyOK);
       enable.disabled=!canEnable();
-      enable.textContent=local?'Save notification subscription':'Enable notifications';
+      enable.textContent=local?'Save notification subscription':perm==='granted'?'Finish enabling notifications':'Enable notifications';
       disable.hidden=!isApproved||!p||!['registered','unavailable'].includes(p.state);
       disable.disabled=!usable()||disable.hidden;
-      if(test){test.hidden=!isApproved||!supported()||!installed()||!registered(p)||p?.delivery?.enabled!==true;test.disabled=test.hidden||!canTest();}
+      if(test){test.hidden=!isApproved||!supported()||!installed()||!registered(p);test.disabled=test.hidden||!canTest();}
+      if(setupLink)setupLink.hidden=!isApproved||p?.enrollment_enabled===true&&p?.delivery?.ready===true;
       let label='Background notifications are not enabled yet.';
       if(isApproved&&p){
         if(!installed())label='Install VP3 Phone on your Home Screen first.';
@@ -156,12 +160,17 @@
       render();void inspect(changed);void resolveNavigation();
     }
     enable.addEventListener('click',async event=>{
-      // Safari requires subscription initiation in the original user gesture.
-      // No server request, worker-ready await or permission prompt occurs first.
+      // Ask permission directly in this tap. Subscription then gets its own
+      // trusted tap, preserving Safari activation across the OS prompt.
       if(!event.isTrusted||!canEnable())return;
       const p=view(),id=d.id,v=version,reg=registration;
       busy=true;notice='';render();
       try{
+        if(permission()==='default'){
+          const answer=await Notification.requestPermission();
+          if(v===version&&d?.id===id)notice=answer==='granted'?'Permission allowed. Finish enabling notifications when server setup is ready.':answer==='denied'?'Notifications are blocked in device settings.':'Permission was not granted. You can try again.';
+          return;
+        }
         const pending=local?Promise.resolve(local):reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:keyBytes(p.application_server_key)});
         const sub=await pending;
         if(v!==version||d?.id!==id||document.hidden||info.hidden||!ready||view()?.revision!==p.revision||view()?.key_id!==p.key_id)return;
@@ -213,6 +222,8 @@
       finally{if(v===version){busy=false;render();void inspect(true);}}
     });
     new MutationObserver(()=>{if(!info.hidden){render();void inspect(true);}}).observe(info,{attributes:true,attributeFilter:['hidden']});
+    window.addEventListener('vp3:phone-pwa-worker-state',()=>{render();void inspect(true);});
+    navigator.serviceWorker?.addEventListener?.('controllerchange',()=>{render();void inspect(true);});
     window.addEventListener('pageshow',()=>{render();void inspect(true);void resolveNavigation();});
     window.addEventListener('pagehide',()=>{pendingEvent=null;reset();ready=false;render();});
     document.addEventListener('visibilitychange',()=>{if(!document.hidden){render();void inspect(true);void resolveNavigation();}});

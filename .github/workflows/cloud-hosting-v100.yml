@@ -497,6 +497,7 @@ jobs:
           VP3_TEST_MYSQL_PASS: root
         run: |
           php tests/phone-tracking-mysql-v1.php
+          php tests/phone-location-checkins-v1.php
           php tests/system-apps-v100-mysql.php
           php tests/system-apps-v110-mysql.php
           php tests/system-apps-v120-mysql.php

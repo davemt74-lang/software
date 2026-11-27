@@ -382,6 +382,8 @@ jobs:
           node tests/phone-tracking-announcement-v1.mjs
           node tests/phone-location-holder-browser-v1.mjs
           node tests/phone-agent-chat-holder-v1.mjs
+          php tests/phone-location-checkins-v1.php
+          node tests/phone-shell-checkins-browser-v1.mjs
           node tests/phone-owner-reply-e2e.mjs
       - name: Exercise the tracking map and iPhone sharing page together
         env:

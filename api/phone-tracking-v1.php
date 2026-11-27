@@ -40,7 +40,7 @@ try {
         }
         $action = $input['action'] ?? null;
         if (!in_array($action, ['invite','approve','deny','request_start','stop','revoke','set_preferences',
-            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','information_create','information_cancel','information_create_file','information_download','dialer_send','dialer_cancel','managed_prepare','managed_cancel','managed_reconcile','managed_end','managed_pilot_dispatch','managed_recording_withdraw','handoff_approve','handoff_owner_cancel'], true)) {
+            'set_holder_place_access','request_history','stop_history','delete_history','save_place','delete_place','save_communication_grants','information_create','information_cancel','information_delete','information_create_file','information_download','dialer_send','dialer_cancel','managed_prepare','managed_cancel','managed_reconcile','managed_end','managed_pilot_dispatch','managed_recording_withdraw','handoff_approve','handoff_owner_cancel'], true)) {
             throw new RuntimeException('Unknown action.', 422);
         }
         unset($input['action'], $input['csrf_token']);
@@ -52,7 +52,7 @@ try {
     if (!$pdo || !vp3_phone_schema_ready_v1($pdo)) throw new RuntimeException('Upgrade required.', 503);
     $owner = (int)$user['id'];
     $result = match ($action) {
-        'information_list','information_create','information_cancel','information_create_file','information_download' => vp3_phone_information_owner_v1($pdo,$owner,$action,$input),
+        'information_list','information_create','information_cancel','information_delete','information_create_file','information_download' => vp3_phone_information_owner_v1($pdo,$owner,$action,$input),
         'dialer_send','dialer_cancel' => vp3_phone_dialer_owner_v1($pdo,$owner,$action,$input),
         'managed_prepare','managed_cancel','managed_reconcile','managed_end','managed_pilot_dispatch','managed_recording_withdraw' => vp3_managed_ui_owner_action_v1($pdo,$user,$action,$input,time()),
         'handoff_approve','handoff_owner_cancel' => vp3_phone_handoff_owner_v1($pdo,$user,$action,$input,time()),

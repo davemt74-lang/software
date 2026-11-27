@@ -20,8 +20,8 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <meta name="apple-mobile-web-app-title" content="VP3 Phone">
   <link rel="manifest" href="phone-app.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/phone-pwa/icon-180.png">
-  <script src="phone-pwa-v1.js?v=2" defer></script>
-  <link rel="stylesheet" href="phone-location-v1.css?v=14">
+  <script src="phone-pwa-v1.js?v=3" defer></script>
+  <link rel="stylesheet" href="phone-location-v1.css?v=15">
   <link rel="stylesheet" href="phone-agent-workspace-v1.css?v=2">
   <link rel="stylesheet" href="agent-email-call-settings-v1.css?v=1">
   <link rel="stylesheet" href="phone-remote-dialer-v1.css?v=1">
@@ -31,34 +31,54 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
   <script src="phone-recording-holder-v1.js?v=1" defer></script>
   <script src="phone-camera-holder-v1.js?v=6" defer></script>
-  <script src="phone-agent-chat-v1.js?v=8" defer></script>
+  <script src="phone-agent-chat-v1.js?v=9" defer></script>
   <script src="phone-agent-workspace-media-v1.js?v=1" defer></script>
   <script src="agent-email-call-settings-v1.js?v=1" defer></script>
   <script src="phone-agent-workspace-v1.js?v=2" defer></script>
-  <script src="phone-save-place-v1.js?v=1" defer></script>
-  <script src="phone-information-ui-v1.js?v=4" defer></script>
+  <script src="phone-save-place-v1.js?v=2" defer></script>
+  <script src="phone-information-ui-v1.js?v=5" defer></script>
   <script src="phone-remote-dialer-v1.js?v=1" defer></script>
   <script src="phone-managed-call-ui-v1.js?v=5" defer></script>
   <script src="phone-handoff-v1.js?v=1" defer></script>
-  <script src="phone-push-subscriptions-v1.js?v=3" defer></script>
-  <script src="phone-location-v1.js?v=20" defer></script>
+  <script src="phone-push-subscriptions-v1.js?v=4" defer></script>
+  <script src="phone-shell-v1.js?v=1" defer></script>
+  <script src="phone-location-checkins-v1.js?v=1" defer></script>
+  <script src="phone-location-v1.js?v=21" defer></script>
 </head>
 <body>
 <main id="phone-location" data-endpoint="api/phone-location-v1.php" data-email-call-settings-api="api/phone-location-v1.php?workspace_calls=1">
   <header class="phone-header">
     <div class="phone-header-inner">
-      <div class="phone-brand-line"><b class="brand">VP3</b><span>Phone connection</span></div>
+      <div class="phone-brand-line"><div><b class="brand">VP3</b><span>Phone</span></div>
+        <details id="phone-user-menu" class="phone-user-menu">
+          <summary aria-label="User menu"><span id="phone-menu-label">Account</span><span aria-hidden="true">▾</span></summary>
+          <div class="phone-user-dropdown"><p id="phone-menu-connection">This phone is not connected.</p>
+            <a href="account.php">Your account</a><a href="chat.php">Open VP3</a>
+            <button type="button" data-phone-open="connection">Phone settings</button>
+            <button type="button" data-phone-open="notifications">Notifications</button>
+            <button type="button" id="phone-tab-info">Help &amp; setup</button>
+          </div>
+        </details>
+      </div>
       <div class="phone-tabs" id="phone-tabs" role="tablist" aria-label="Connected phone" hidden>
+        <button type="button" role="tab" id="phone-tab-home" aria-controls="phone-home" aria-selected="false" tabindex="-1">Home</button>
         <button type="button" role="tab" id="phone-tab-agent" aria-controls="phone-agent" aria-selected="false" tabindex="-1" hidden>AGENT<span id="phone-agent-unread" class="phone-agent-unread" hidden></span></button>
-        <button type="button" role="tab" id="phone-tab-connection" aria-controls="phone-connection" aria-selected="true">Connection</button>
         <button type="button" role="tab" id="phone-tab-chat" aria-controls="phone-chat" aria-selected="false" tabindex="-1">Chat</button>
-        <button type="button" role="tab" id="phone-tab-info" aria-controls="phone-info" aria-selected="false" tabindex="-1">Info</button>
+        <button type="button" role="tab" aria-label="Requests" id="phone-tab-requests" aria-controls="phone-requests" aria-selected="false" tabindex="-1">Requests<span id="phone-requests-count" class="phone-agent-unread" hidden></span></button>
+        <button type="button" role="tab" id="phone-tab-connection" aria-controls="phone-connection" aria-selected="true">Phone</button>
       </div>
       <?php require __DIR__.'/includes/phone-camera-app-view.php'; ?>
       <div id="phone-dialer-alert-host"></div>
       <div id="phone-managed-alert-host"></div>
     </div>
   </header>
+  <section id="phone-home" role="tabpanel" aria-labelledby="phone-tab-home" hidden>
+    <div class="phone-card phone-home-card"><h1>VP3 Phone</h1><p id="phone-home-status" role="status">Your connected phone.</p>
+      <p id="phone-home-requests">Review messages and requests when you are ready.</p>
+      <div class="phone-home-actions"><button type="button" data-phone-open="chat">Open Chat</button><button type="button" data-phone-open="requests" class="secondary">View requests</button></div>
+      <p id="phone-home-notifications" hidden><button type="button" data-phone-open="notifications" class="text-button">Set up notifications</button></p>
+    </div>
+  </section>
   <section id="phone-connection" aria-labelledby="phone-label">
     <div class="phone-card">
       <p class="state" id="phone-badge">Phone Tracking</p>
@@ -69,6 +89,17 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <div><dt>Location</dt><dd id="phone-gps"></dd></div>
         <div id="phone-preference-row" hidden><dt>Updates</dt><dd id="phone-preferences"></dd></div>
       </dl>
+      <section id="phone-checkins" class="phone-guide-section" aria-labelledby="phone-checkin-title" hidden>
+        <h2 id="phone-checkin-title">Location Specialist</h2>
+        <p id="phone-checkin-status" role="status"></p>
+        <label class="phone-checkin-choice"><input id="phone-checkin-learn" type="checkbox"> Let the Location Specialist learn from this check-in</label>
+        <div class="phone-permission-buttons"><button id="phone-checkin-start" type="button">Check In Location</button><button id="phone-checkin-stop" type="button" class="secondary" hidden>Check Out Location</button></div>
+        <p class="phone-install-note">Check-ins keep a location and visit times for 30 days. When accurate updates show you have left the 150 m area, VP3 checks you out and adds a notice here. A background alert also requires enabled notifications. Location updates can pause when the app is closed; checkout is confirmed when updates resume.</p>
+        <button id="phone-save-current-place" type="button" class="secondary" hidden>Save this location</button>
+        <div id="phone-checkin-patterns"></div>
+        <ul id="phone-checkin-recent" aria-label="Recent location visits"></ul>
+        <button id="phone-checkin-forget" type="button" class="text-button">Forget check-in learning</button>
+      </section>
       <section id="phone-agent-enrollment" class="phone-permission" aria-labelledby="phone-agent-enrollment-title" hidden></section>
       <form id="phone-pair-entry" hidden autocomplete="off">
         <label for="phone-pair-code">Pairing code</label>
@@ -86,10 +117,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <p id="phone-consent"></p>
         <button type="button" id="phone-start" hidden>Start sharing</button>
         <button type="button" id="phone-stop" hidden>Stop sharing</button>
-        <details id="phone-information" class="phone-permission" hidden>
-          <summary id="phone-information-summary">Information exchange</summary>
-          <div id="phone-information-host"></div>
-        </details>
+
         <div id="phone-dialer-settings-host"></div>
         <section id="phone-communication" class="phone-permission" aria-labelledby="phone-communication-title" hidden>
           <h2 id="phone-communication-title">Communication preferences</h2>
@@ -118,6 +146,20 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <button type="button" class="secondary" id="phone-retry" hidden>Check connection</button>
         <button type="button" class="text-button" id="phone-disconnect" hidden>Disconnect phone</button>
       </div>
+      <section id="phone-notifications" class="phone-guide-section" aria-labelledby="phone-guide-notifications-title">
+        <h2 id="phone-guide-notifications-title">Notifications</h2>
+        <p class="phone-guide-status" id="phone-guide-notification-state">Background notifications are not enabled yet.</p>
+        <p>Install VP3 Phone on your Home Screen, then allow notifications. On iPhone or iPad, iOS or iPadOS 16.4 or later is required. Use Settings &gt; Notifications &gt; VP3 Phone to manage alerts.</p>
+        <p><a id="phone-push-server-setup" href="admin/phone.php#phone-push" hidden>Open server notification setup</a></p>
+        <div id="phone-push-controls" hidden>
+          <button id="phone-push-enable" type="button" hidden>Enable notifications</button>
+          <button id="phone-push-disable" type="button" class="secondary" hidden>Turn off notifications</button>
+          <button id="phone-push-test" type="button" class="secondary" hidden>Send test notification</button>
+          <p id="phone-push-feedback" role="status"></p>
+          <p id="phone-push-test-state" role="status"></p>
+        </div>
+        <p class="phone-install-note">When background delivery is enabled, alerts can notify you about private replies and information requests for this phone. Test status distinguishes push-service acceptance from an alert reported by this installation. Opening an alert checks your current connection and permissions.</p>
+      </section>
       <section id="phone-record-retained" aria-labelledby="phone-record-retained-title" hidden>
         <h2 id="phone-record-retained-title">Recording on this phone</h2>
         <p>Camera sharing ended. Save a copy before closing this page.</p>
@@ -125,6 +167,14 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
       </section>
       <p id="phone-setup-help" class="phone-guide-footer">Need help getting started? <button id="phone-setup-guide" class="phone-guide-link" type="button" aria-label="Click here for iPhone setup and notifications">Click here</button></p>
       <noscript>Enable JavaScript to pair or manage this phone.</noscript>
+    </div>
+  </section>
+  <section id="phone-requests" role="tabpanel" aria-labelledby="phone-tab-requests" hidden>
+    <div class="phone-card"><h1>Requests</h1><p id="phone-requests-status" role="status">Connect this phone to review information requests.</p>
+        <details id="phone-information" class="phone-permission" open hidden>
+          <summary id="phone-information-summary">Information exchange</summary>
+          <div id="phone-information-host"></div>
+        </details>
     </div>
   </section>
   <section id="phone-agent" role="tabpanel" aria-labelledby="phone-tab-agent" tabindex="0" hidden>
@@ -153,19 +203,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
         <p id="phone-install-help">If the installed app is not connected, use an owner-approved pairing code.</p>
         <button id="phone-install-button" type="button" class="secondary" hidden>Install VP3 Phone</button>
       </section>
-      <section class="phone-guide-section" aria-labelledby="phone-guide-notifications-title">
-        <h2 id="phone-guide-notifications-title">Notifications</h2>
-        <p class="phone-guide-status" id="phone-guide-notification-state">Background notifications are not enabled yet.</p>
-        <p>Install VP3 Phone on your Home Screen, then allow notifications. On iPhone or iPad, iOS or iPadOS 16.4 or later is required. Use Settings &gt; Notifications &gt; VP3 Phone to manage alerts.</p>
-        <div id="phone-push-controls" hidden>
-          <button id="phone-push-enable" type="button" hidden>Enable notifications</button>
-          <button id="phone-push-disable" type="button" class="secondary" hidden>Turn off notifications</button>
-          <button id="phone-push-test" type="button" class="secondary" hidden>Send test notification</button>
-          <p id="phone-push-feedback" role="status"></p>
-          <p id="phone-push-test-state" role="status"></p>
-        </div>
-        <p class="phone-install-note">When background delivery is enabled, alerts can notify you about private replies and information requests for this phone. Test status distinguishes push-service acceptance from an alert reported by this installation. Opening an alert checks your current connection and permissions.</p>
-      </section>
+
       <section class="phone-guide-section" aria-labelledby="phone-guide-requests-title">
         <h2 id="phone-guide-requests-title">Agent requests</h2>
         <dl class="phone-guide-requests">

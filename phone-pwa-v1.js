@@ -12,6 +12,7 @@
     help.textContent=active?'If this app is not connected, use a fresh pairing code or move your existing connection below.':'On Android, use Install app or Add to Home Screen if your browser offers it. Open the installed app to connect.';
     button.hidden=active||!prompt;button.disabled=busy||button.hidden;
     panel.dataset.workerState=workerState;
+    window.dispatchEvent(new CustomEvent('vp3:phone-pwa-worker-state',{detail:{state:workerState}}));
   }
   window.addEventListener('beforeinstallprompt',event=>{event.preventDefault();prompt=event;render();});
   window.addEventListener('appinstalled',()=>{prompt=null;render();});
@@ -29,8 +30,11 @@
   if(script.origin!==location.origin||scope.pathname!==location.pathname){workerState='unavailable';render();return;}
   navigator.serviceWorker.register(script.href,{scope:scope.href,updateViaCache:'none'})
     .then(reg=>{
-      if(new URL(reg.scope).href!==scope.href){workerState='unavailable';}
-      else workerState='registered';
-      render();
+      const observe=()=>{
+        workerState=new URL(reg.scope).href!==scope.href?'unavailable':reg.active?.scriptURL===script.href?'registered':'activating';
+        render();
+      };
+      const watch=()=>{reg.installing?.addEventListener('statechange',observe);reg.waiting?.addEventListener('statechange',observe);observe();};
+      reg.addEventListener?.('updatefound',watch);watch();
     }).catch(()=>{workerState='unavailable';render();});
 })();

@@ -1,0 +1,83 @@
+CONNECTED PHONE: REQUESTS, NOTIFICATIONS AND LOCATION SPECIALIST
+
+Deploy this complete Cloud package and run Database Upgrade (upgrade.php).
+It installs deletion receipts and Location Specialist visit storage. Existing
+phones retain their pairing and permissions. Missing upgrades disable the new
+actions without breaking existing chat, calls or email review.
+
+PHONE LAYOUT
+Home is the simple landing view. Chat has its own composer. Requests contains
+the existing private Information Exchange. Phone contains connection settings,
+Location Specialist check-in/out, saved location creation when owner-enabled,
+and notification setup. The header user menu opens account, VP3, Phone settings
+and Help & setup. Owner-enrolled phones retain their private AGENT tab and exact
+email/call review protections. A holder credential never grants that workspace.
+
+INFORMATION REQUEST DELETION
+On the main account's Phone Tracking page, select a phone, open Information,
+choose Delete request, and confirm Permanently delete. Only that owning account
+can delete its request. This erases the shared request, response and file copy
+and removes queued request alerts. Separate saved calls and recordings remain.
+Content-free receipts prevent delayed creation retries and send-budget resets;
+they expire with the existing 30-day information retention window. Stale versions
+must refresh. An ordinary cancel keeps the existing cancellation behavior.
+
+LOCATION SPECIALIST
+The holder must start sharing and have a fresh GPS reading with <=50 m accuracy.
+Check In Location creates one visit and starts an elapsed timer. Check Out
+Location ends it. Two accurate outside readings spanning at least 30 seconds
+confirm departure beyond the 150 m area plus both accuracy margins. A return
+inside or an inaccurate fix clears the candidate; a gap over two minutes starts
+a new candidate. Duplicate fixes do not advance it. No fix or expired status
+ever proves departure. The timer shows time since check-in and flags paused GPS.
+Stopping sharing ends observation, and revocation/delete history erases visits.
+Closed visits are retained for 30 days and pruned on subsequent authorized reads
+or actions. The timer is not proof of continuous presence while updates pause.
+
+Auto checkout adds a visible recent-visit notice and, when already configured,
+queues an opaque background update through the existing push worker. It does not
+perform network delivery in the web request. Current permission and source
+checks apply again before delivery and before an alert opens the Phone tab.
+
+Saved locations use the existing owner-controlled holder_can_save_places grant
+and its version. Save this location opens the existing explicit GPS/name form.
+It also names an active matching visit. Already confirmed visit names can be
+reused. Matching existing account saved-place names additionally requires an
+owner-role phone, enabled creation, and the holder's current saved-places grant.
+No saved-place catalog is exposed to guests and check-in itself creates no place.
+
+LEARNING AND CURIOSITY
+The holder explicitly selects learning for a check-in. Three selected visits
+within 150 m on at least three UTC calendar days surface a place-name question.
+It is a repeat-visit heuristic, not a claim that a place is work or school.
+An explicit place name updates matching learned visits. Forget check-in learning
+removes learned flags and names; ordinary retained visit times remain until
+deleted/expired. It does not delete independent account saved locations.
+Curiosity's existing leased analysis worker receives at most six current patterns
+from the owner's approved, unexpired owner-role phones with location enabled.
+Inputs contain visit/day/duration counts and confirmed names, not coordinates,
+device identifiers or guest-phone patterns. Input changes invalidate the analysis
+revision. Findings stay tentative and flow through existing Brainstorming/OB1
+review; neither polling nor check-in triggers a model call or creates a label.
+
+NOTIFICATIONS: REQUIRED LIVE SERVER SETUP
+The previous generic background-delivery message did not establish which part
+was missing. Phone now names enrollment, upgrade, delivery and worker conditions.
+On iOS/iPadOS 16.4+, open the installed Home Screen app. Enable notifications
+requests OS permission directly from that tap. A second Finish enabling
+notifications tap subscribes and saves the current installation when ready.
+There is no automatic permission prompt, subscription, test or outbound call.
+
+The administrator must use Admin > Phone > Connected phone notifications to
+prepare/enable enrollment, supply the push contact, and enable delivery. Configure
+the existing once-per-minute CLI cron with PHP 8.2+:
+  /path/to/php82 /absolute/install/path/phone-push-worker-v1.php
+Do not turn this into a web cron. The worker needs its existing curl/JSON/mbstring/
+OpenSSL capabilities. No provider acceptance or saved subscription proves display.
+Use Send test notification explicitly, confirm the installed phone shows it, and
+open the alert. Also verify a real private request and GPS departure on the phone.
+PWA location updates may pause in the background; this release does not promise
+continuous closed-app GPS tracking or native OS geofencing.
+
+Official iOS permission requirements:
+https://webkit.org/blog/13878/web-push-for-web-apps-on-ios-and-ipados/

@@ -59,6 +59,8 @@ jobs:
             "commit": "${VP3_RELEASE_SHA}",
             "cloud_phone_workspace": "twilio-browser-phone-v1",
             "phone_push_section": "PS5C.4",
+            "phone_location_checkins": "location-specialist-v1",
+            "phone_shell": "home-chat-requests-phone-v1",
             "phone_push_worker_minimum_php": "8.2",
             "phone_push_delivery_default": "off",
             "phone_agent_workspace": "owner-private-v1",
@@ -141,6 +143,10 @@ jobs:
           test -f _deploy/phone-app.webmanifest
           test -f _deploy/phone-service-worker-v1.js
           test -f _deploy/phone-pwa-v1.js
+          test -f _deploy/phone-shell-v1.js
+          test -f _deploy/phone-location-checkins-v1.js
+          test -f _deploy/includes/phone-location-checkins-v1.php
+          test -f _deploy/docs/PHONE-REQUESTS-LOCATION-DEPLOY.txt
           test -f _deploy/phone-handoff-v1.js
           test -f _deploy/includes/phone-handoff-v1.php
           test -f _deploy/includes/phone-push-subscriptions-v1.php
