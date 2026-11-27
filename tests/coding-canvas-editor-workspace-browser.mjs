@@ -88,11 +88,14 @@ async function layout(width){
     width:el.getBoundingClientRect().width,scroll:el.scrollWidth,client:el.clientWidth,document:document.documentElement.scrollWidth,
     sourceOverflow:getComputedStyle(el.querySelector('.vp3-coding-canvas-source pre')).overflowY,
     tabs:[...el.querySelectorAll('[role="tab"]')].map(tab=>tab.getBoundingClientRect().height),
+    pickers:[...el.querySelectorAll('.vp3-coding-canvas-pickers select')].map(select=>select.getBoundingClientRect().height),
+    instructionTarget:el.querySelector('.vp3-coding-canvas-editor-controls > summary').getBoundingClientRect().height,
     editorColumns:getComputedStyle(el.querySelector('.vp3-coding-canvas-editor-layout')).gridTemplateColumns.split(' ').length,
   }));
   assert.ok(measurements.width<=width&&measurements.scroll<=measurements.client+1&&measurements.document<=width+1,'No horizontal overflow: '+JSON.stringify(measurements));
   assert.equal(measurements.sourceOverflow,'visible','Source uses the Chat thread scroll rather than a nested scroller');
   assert.ok(measurements.tabs.every(height=>height>=44),'Tabs retain touch-sized targets');
+  if(width<=1100)assert.ok(measurements.pickers.every(height=>height>=44)&&measurements.instructionTarget>=44,'Phone selectors and instructions retain touch-sized targets: '+JSON.stringify(measurements));
   assert.equal(measurements.editorColumns,width>1100?2:1);
 }
 

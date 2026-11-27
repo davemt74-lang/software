@@ -134,6 +134,8 @@
 @media (max-width:1100px) {
   .vp3-coding-canvas-editor-layout { grid-template-columns:minmax(0,1fr); }
   .vp3-coding-canvas-editor-layout > .vp3-coding-canvas-editor-controls { position:static; }
+  .vp3-coding-canvas select { min-height:44px; }
+  .vp3-coding-canvas-editor-controls > summary { min-height:44px;box-sizing:border-box;padding:.75rem 0; }
 }
 .vp3-coding-canvas-progress {
   display:grid;
