@@ -113,6 +113,10 @@ $native=agent_connection_email_chat_payload_v1(agent_connection_email_chat_draft
 gd_check($reply['is_reply']&&$reply['to']==='sender@example.test'&&$native['reply']['message_id']==='doc_one'
     &&$reply['body']===$review['result']['reply_body'],'explicit reply creation uses the real sender and canonical source thread');
 gd_check(gd_action('reply',['review_id'=>$review['id']])['draft']['id']===$reply['id'],'creating the same reviewed reply is idempotent');
+$collision=gd_analyze()['review'];
+agent_email_composer_create_v1($pdo,pec_user_v1(),$GLOBALS['gdPrincipal'],11,['request_id'=>$collision['id'],
+    'to'=>'different@example.test','subject'=>'Different manual email','body'=>'Owner-written text.'],'document-private-review-key');
+gd_reject(static fn()=>gd_action('reply',['review_id'=>$collision['id']]),'a preexisting composer request cannot substitute an unrelated email for an attachment reply');
 gd_check((int)$pdo->query('SELECT COUNT(*) FROM agent_connection_sends_v1')->fetchColumn()===0,'suggested wording never sends mail');
 $pdo->exec('UPDATE agent_connections_v1 SET send_enabled=0 WHERE id=7');
 gd_reject(static fn()=>gd_action('reply',['review_id'=>$review['id']]),'reply creation requires current outgoing permission');$pdo->exec('UPDATE agent_connections_v1 SET send_enabled=1 WHERE id=7');
@@ -180,5 +184,7 @@ $GLOBALS['pecMessages']['doc_one']=$inline;$GLOBALS['gdRef']=agent_gmail_documen
 gd_check(base64_decode(gd_action('open')['file']['data'],true)===$pdf,'inline Gmail attachment bodies follow the same byte validation');
 $deep=['mimeType'=>'multipart/mixed'];for($i=0;$i<14;$i++)$deep=['parts'=>[$deep]];
 gd_reject(static fn()=>agent_gmail_document_parts_v1(['payload'=>$deep]),'excessive MIME recursion is bounded');
+gd_check(isset(agent_gmail_document_source_v1($pdo,pec_user_v1(),7,str_repeat('a',64),['payload'=>$deep])['documents']['unavailable']),
+    'a MIME review limit explains attachment unavailability without breaking the ordinary email reader');
 gd_check(!array_filter($GLOBALS['gdUrls'],static fn(string $url):bool=>!str_starts_with($url,'https://gmail.googleapis.com/')),'all attachment I/O stays on the Gmail API origin');
 echo 'Gmail document native checks: '.$GLOBALS['gdChecks'].PHP_EOL;

@@ -54,7 +54,7 @@
           headers:{'Content-Type':'application/json'},body:JSON.stringify({...fields,...context,source_ref:source.source_ref,action})});
         const result=await response.json();if(!current())throw new DOMException('Private view changed.','AbortError');
         if(!response.ok||result?.ok!==true){
-          if([401,403,419].includes(response.status)){dispose();window.dispatchEvent(new Event('vp3:phone-agent-access-changed'));}
+          if([401,403,409,419].includes(response.status)){dispose();window.dispatchEvent(new Event('vp3:phone-agent-access-changed'));}
           throw Error(result?.error||'The attachment review could not be verified.');
         }
         return result;

@@ -204,7 +204,7 @@ function agent_gmail_document_action_v1(PDO $pdo,array $user,array $principal,in
     if ($action==='get') {
         if ($row!==null&&$row['state']==='ready') {
             agent_gmail_document_saved_v1($row,$read,$part,$http);
-            agent_gmail_document_current_v1($pdo,$user,$principal,$chat,$source,$current);
+            agent_gmail_document_read_v1($pdo,$user,$principal,$chat,$source,$current,$http);
         }
         return ['review'=>agent_gmail_document_public_v1($row)];
     }

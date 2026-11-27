@@ -187,7 +187,14 @@ function agent_email_composer_create_v1(PDO $pdo, array $user, array $principal,
         }
         $existing = $pdo->prepare('SELECT * FROM agent_connection_email_drafts_v1 WHERE id=? AND owner_user_id=? AND agent_id=? AND conversation_id=?');
         $existing->execute([$id,$owner,$agent,$conversation]);
-        if ($saved = $existing->fetch(PDO::FETCH_ASSOC)) return $saved;
+        if ($saved = $existing->fetch(PDO::FETCH_ASSOC)) {
+            if ($nativeReply!==null) {
+                $existingPayload=agent_connection_email_chat_payload_v1($saved);
+                if (($existingPayload['reply']??null)!==$nativeReply['reply']||(int)$saved['connection_id']!==$nativeReply['connection_id']
+                    ||$saved['authorization_key']!==$nativeReply['grant']||$saved['recipient']!==$to) throw new DomainException('This reply request belongs to another saved email.',409);
+            }
+            return $saved;
+        }
         $now = time();
         if ($userMessage === null) {
             $context = json_encode(['source'=>'agent_email_composer','skip_brain_archive'=>true],JSON_THROW_ON_ERROR);
