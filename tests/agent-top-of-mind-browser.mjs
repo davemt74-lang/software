@@ -62,8 +62,14 @@ writeFileSync(join(temp,'router.php'),[
   '$interestGoal=["binding"=>$policy,"sources"=>[$ref=>$interest["revision"]],"canonical_sources"=>[$ref=>$interest["revision"]],"tool"=>"topic.research","primary"=>$ref,"focus"=>"Find verified bridge repair methods","report"=>true];',
   'vp3_initiative_enqueue_v1(db(),$u,"initiative.prepare",$interestGoal,hash("sha256","top-of-mind-http-interest"));$interestRun=(int)db()->query("SELECT MAX(id) FROM agent_workflow_runs")->fetchColumn();',
   'db()->exec("CREATE TABLE user_calendar_events(id INTEGER PRIMARY KEY,owner_user_id INTEGER,title TEXT,status TEXT,all_day INTEGER,start_at_utc TEXT,end_at_utc TEXT,timezone TEXT,source TEXT,source_reference TEXT,description TEXT,location TEXT)");',
-  'db()->prepare("INSERT INTO user_calendar_events VALUES(4,1,\'Fixture planning session\',\'active\',1,?,?,\'UTC\',\'user\',\'\',\'\',\'https://example.com/meeting\')")->execute([gmdate("Y-m-d 00:00:00"),gmdate("Y-m-d 00:00:00",time()+86400)]);',
-  'header("Content-Type:application/json");echo json_encode(["run_id"=>(int)$r,"interest_run_id"=>$interestRun,"artist_report_id"=>$artistReport,"topic_message_id"=>$topicMessage]);return;}',
+  // The real API keeps reading wall time. A two-day all-day event remains
+  // active if desktop and mobile checks straddle the next UTC midnight.
+  '$calendarSeed=new DateTimeImmutable("now",new DateTimeZone("UTC"));$calendarStart=$calendarSeed->setTime(0,0);$calendarMidnight=$calendarStart->modify("+1 day");$calendarEnd=$calendarStart->modify("+2 days");',
+  'db()->prepare("INSERT INTO user_calendar_events VALUES(4,1,\'Fixture planning session\',\'active\',1,?,?,\'UTC\',\'user\',\'\',\'\',\'https://example.com/meeting\')")->execute([$calendarStart->format("Y-m-d H:i:s"),$calendarEnd->format("Y-m-d H:i:s")]);',
+  'require_once $source."/includes/agent-calendar-prep-v1.php";$calendarBoundaries=[];',
+  'foreach(["before_midnight"=>$calendarMidnight->modify("-1 second"),"after_midnight"=>$calendarMidnight->modify("+1 second"),"at_expiry"=>$calendarEnd] as $name=>$instant){',
+  '$calendarBoundaries[$name]=["at"=>$instant->format(DATE_ATOM),"items"=>vp3_calendar_prep_today_v1(db(),$u,7,11,$instant)];}',
+  'header("Content-Type:application/json");echo json_encode(["run_id"=>(int)$r,"interest_run_id"=>$interestRun,"artist_report_id"=>$artistReport,"topic_message_id"=>$topicMessage,"calendar_boundaries"=>$calendarBoundaries]);return;}',
   'if($path==="/api/chat-notifications-brain-v240.php"){header("Content-Type:application/json");echo json_encode(["ok"=>true,"complete"=>true,"agent_namespace"=>"agent:7","notifications"=>["items"=>[],"unread"=>0],"brain"=>["enabled"=>false],"activity_stream"=>["complete"=>true,"agent_namespace"=>"agent:7","items"=>[]]]);return;}',
   'if(!in_array($path,["/","/outside","/chat.php"],true)){http_response_code(404);return;}',
   '$binding=vp3_catch_up_page_binding_v1(current_user());$outside=$path==="/outside";',
@@ -89,7 +95,14 @@ try{
   const cookie=session.headers.get('set-cookie').split(';')[0],binding=(await session.json()).binding;
   const headers={'Cookie':cookie,'X-VP3-Working-Attention':binding};
   const seed=await fetch(base+'/seed',{method:'POST',headers:{...headers,'X-Fixture-CSRF':'fixture'}});assert.equal(seed.status,200,await seed.clone().text());
-  const {run_id:runId,interest_run_id:interestRunId,artist_report_id:artistReportId,topic_message_id:topicMessageId}=await seed.json();
+  const {run_id:runId,interest_run_id:interestRunId,artist_report_id:artistReportId,topic_message_id:topicMessageId,calendar_boundaries:calendarBoundaries}=await seed.json();
+  assert.equal(Date.parse(calendarBoundaries.after_midnight.at)-Date.parse(calendarBoundaries.before_midnight.at),2000);
+  for(const boundary of ['before_midnight','after_midnight']){
+    assert.deepEqual(calendarBoundaries[boundary].items.map(({id,title,all_day})=>({id,title,all_day})),
+      [{id:4,title:'Fixture planning session',all_day:true}],boundary+' must retain the same active all-day event');
+  }
+  assert.deepEqual(calendarBoundaries.at_expiry.items,[],'the real calendar projection must omit the event at its actual expiry');
+  console.log('PASS real calendar projection retains the same all-day event across UTC midnight and removes it at its actual expiry');
   const endpoint=base+'/api/agent-top-of-mind-v1.php?agent_id=7&conversation_id=11';
   const before=await fetch(base+'/counts').then(r=>r.json());
   for(let i=0;i<3;i++){

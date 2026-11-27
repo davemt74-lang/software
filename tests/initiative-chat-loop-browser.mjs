@@ -42,13 +42,20 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
   let policy=enabled,exists=enabled||paused,policyRevision=exists?revision:'',policyCid=42,phase=0,failTick=false,holdTick=null,holdRead=null,holdActivity=null,claimActive=false,realWork=0,ownerBusy=false,pendingReport=deliveryOnly;
   let blockedReason=deliveryOnly?'quota_exhausted':'';
   let reportedAssessmentRun=null;
+  let completedFailedTick=null;
   const health=(cid=42)=>({state:runtimeUnavailable?'unavailable':!exists?'starting':policy?(cid!==policyCid?'linked_elsewhere':blockedReason?'blocked':'waiting'):'paused',
     reason:runtimeUnavailable?'context_unavailable':!exists?'automatic_startup':policy?(cid!==policyCid?'linked_elsewhere':blockedReason||'worker_missing'):'initiative_paused',enabled:!runtimeUnavailable&&policy&&cid===policyCid,
     paused:exists&&!policy,policy_exists:exists,
     agent_id:agentId,conversation_id:cid,policy_revision:runtimeUnavailable?'':policyRevision,configuration_ready:!runtimeUnavailable,execution_ready:!runtimeUnavailable&&policy&&!blockedReason&&cid===policyCid,
     knowledge_scope:{mode:'off',folder_id:0},runner_state:'never_seen',
     ...(deliveryOnly?{pump_available:!runtimeUnavailable&&policy&&cid===policyCid}:{}),
-    active_jobs:!runtimeUnavailable&&policy&&cid===policyCid?activeJobs:[], ...debugHealth});
+    active_jobs:!runtimeUnavailable&&policy&&cid===policyCid?activeJobs:[],
+    // A completed worker outcome remains visible to every read of its bound
+    // policy. Before completion, and after a rebind, no failure is invented.
+    ...(!runtimeUnavailable&&policy&&!blockedReason&&cid===policyCid
+      &&completedFailedTick?.conversation_id===cid&&completedFailedTick.policy_revision===policyRevision
+      ?{state:completedFailedTick.state,reason:completedFailedTick.reason}:{}),
+    ...debugHealth});
   await context.addInitScript(()=>{
     window.speechCalls=0;window.announcementCalls=0;
     window.SpeechRecognition=undefined;window.webkitSpeechRecognition=undefined;
@@ -161,7 +168,8 @@ async function fixture(agentId,{enabled=false,paused=false,twoTabs=false,initial
         if(!policy)return route.fulfill({json:{ok:true,reason:'off',health:health()}}).catch(()=>{});
         if(failedTickReason){
           const state=failedTickReason==='assessment_sources_changed'?'waiting':'failed';
-          return route.fulfill({json:{ok:false,reason:failedTickReason,health:{...health(),state,reason:failedTickReason}}});
+          completedFailedTick={conversation_id:body.conversation_id,policy_revision:body.policy_revision,state,reason:failedTickReason};
+          return route.fulfill({json:{ok:false,reason:failedTickReason,health:health(body.conversation_id)}});
         }
         const assessment=debugHealth.latest_assessment_run;
         if(assessment){
@@ -356,15 +364,61 @@ try{
     ['assessment_unverified','The last assessment did not produce a verified plan.'],
   ]){
     const review=await fixture(17,{enabled:true,failedTickReason:reason});
+    const failedTick=review.hold();
+    let resumedTick=null;
     try{
+      assert.equal(review.health().reason,'worker_missing','A configured failure is not a completed worker outcome.');
       const page=await review.open(),status=page.locator('[data-agent-initiative-status]');
+      await failedTick.arrived;
+      const read=async activity=>{
+        const response=page.waitForResponse(response=>{
+          const url=new URL(response.url());
+          if(activity){
+            if(url.pathname!=='/api/agent-activity-v94.php'||response.request().method()!=='POST')return false;
+            const context=response.request().postDataJSON().context;
+            return context.conversation_id===42&&context.visible===true&&context.focused===true&&context.chat_focused===true;
+          }
+          return url.pathname==='/api/cognitive-presentation-v510.php'&&response.request().method()==='GET'
+            &&url.searchParams.get('include_live_context')==='1'&&url.searchParams.get('conversation_id')==='42';
+        });
+        if(activity)await page.evaluate(()=>window.StonefellowAgentActivity.refreshCoreContext());
+        else{
+          await page.waitForFunction(()=>document.querySelector('[data-agent-brief-content]').getAttribute('aria-busy')==='false');
+          await page.evaluate(()=>window.VP3_COGNITIVE_PRESENTATION.refresh());
+        }
+        const body=await (await response).json();
+        return activity?body.agent_core_context.health:body.state.live_context.initiative.runtime;
+      };
+      for(const activity of [true,false])assert.equal((await read(activity)).reason,'worker_missing','Reads cannot report an unfinished failed tick.');
+      assert.equal(await status.getByText(label,{exact:true}).count(),0);
+      failedTick.release();
       await status.getByText(label,{exact:true}).waitFor();
       assert.ok(review.ticks.length>0);
+      for(const activity of [true,false]){
+        assert.equal((await read(activity)).reason,reason,'Later health reads retain the completed failed outcome.');
+        if(activity)await page.waitForFunction(reason=>window.StonefellowAgentActivity.coreContext()?.health.reason===reason,reason);
+        await status.getByText(label,{exact:true}).waitFor();
+      }
+      assert.equal(review.health(43).reason,'linked_elsewhere','A failed outcome cannot follow another conversation.');
+      const failedRevision=review.health().policy_revision;
+      await status.getByRole('button',{name:'Pause',exact:true}).click();
+      await status.getByText('Agent background work is paused.',{exact:true}).waitFor();
+      assert.notEqual(review.health().policy_revision,failedRevision);
+      assert.equal(review.health().reason,'initiative_paused','A policy change supersedes the completed outcome.');
+      resumedTick=review.hold();
+      await status.getByRole('button',{name:'Resume',exact:true}).click();
+      await resumedTick.arrived;
+      assert.equal(review.health().enabled,true);
+      assert.notEqual(review.health().policy_revision,failedRevision);
+      for(const activity of [true,false])assert.equal((await read(activity)).reason,'worker_missing','An enabled new revision cannot inherit the earlier failed outcome.');
+      assert.equal(await status.getByText(label,{exact:true}).count(),0);
+      resumedTick.release();
+      await status.getByText(label,{exact:true}).waitFor();
       assert.doesNotMatch(await status.textContent(),/connection was interrupted/);
       assert.deepEqual(review.errors,[]);
-    }finally{await review.context.close();}
+    }finally{failedTick.release();resumedTick?.release();await review.context.close();}
   }
-  console.log('PASS an authenticated HTTP 200 failed assessment renders its actual verified status');
+  console.log('PASS an authenticated HTTP 200 failed assessment retains its bound status across later activity and presentation reads, without an invented early failure');
 
   const taskRetry=await fixture(17,{enabled:true,failedTickReason:'model_unavailable',debugHealth:{
     state:'waiting',reason:'retry_scheduled',retry_due_at:'2026-11-11T19:31:30+00:00',
