@@ -1247,6 +1247,13 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
         'question'=>($loaded['state']['followup_clarification']??'')?:($loaded['result']['initiative_tool_result']['output']['question']??''),
         'guidance'=>'Classify a clear answer to the pending question as advance. Advance queues a private reassessment of this same finding with the exact owner answer. It does not authorize any source edit, tool action or external message. Use discuss for an explanation request and none for unrelated requests.'];
     if($curiosity)$prompt['coordination']['guidance']='This is a private Curiosity question. Use resolve for a real answer to the exact question, decline to skip the topic, defer to set it aside, discuss to explain the question, and none for unrelated conversation. A partial but meaningful answer can use resolve. No external action, proposed app, or tool request can be fulfilled here. Silence, an instruction, or an unrelated question is not an answer.';
+    $curiosityGmail=false;
+    if($curiosity){
+        require_once __DIR__.'/agent-curiosity-gmail-draft-v1.php';
+        [, $curiosityThread]=explode(':',$primary,3);
+        $curiosityGmail=vp3_curiosity_gmail_option_v1($pdo,$loaded['user'],$loaded['agent_id'],$cid,$curiosityThread);
+        if($curiosityGmail)$prompt['gmail_reply_option']=['guidance'=>'For this source-bound attachment question, set prepare_gmail_reply true with resolve only when the owner clearly requests a reply draft, accepts such an offer, or supplies the requested concrete detail to convey to this original sender. A factual observation, mere acknowledgment, deferral, unrelated request, or uncertain intention is not a draft request. This records a private-draft objective for Brainstorming and OB1; it cannot send an email or start a watch.'];
+    }
     if($gmailReply)$prompt['gmail_reply_option']=[
         'guidance'=>'Set prepare_gmail_reply true with advance if the owner supplies a clear answer to convey in a reply to this original email, explicitly requests a draft, or says yes to an offer to draft a reply. Do not draft for a calendar-only decision, an unrelated answer, ambiguous wording, or mere acknowledgment. A draft is private and cannot send or change Gmail.'];
     if($canvasImprovement)$prompt['canvas_improvement_option']=[
@@ -1261,7 +1268,7 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
     if($curiosity&&$explicit&&vp3_curiosity_standalone_chat_request_v1($query)){
         $decision=['intent'=>'discuss','focus'=>'The Curiosity question remains open. Ask the owner to send the task request as a regular Chat message.',
             'clarification'=>$loaded['result']['initiative_tool_result']['output']['question']??''];
-    }elseif($direct!==null){
+    }elseif($direct!==null&&!($curiosityGmail&&$direct==='resolve')){
         $decision=['intent'=>$direct,'focus'=>''];
     }else{
         $answer=$model?$model(json_encode($prompt,JSON_THROW_ON_ERROR),'vp3.initiative-reply.v1'):
@@ -1284,7 +1291,7 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
     $intent=$decision['intent'];$focus=trim($decision['focus']);$rawAction=$decision['action']??null;$actionDecision=$decision['action_decision']??'none';
     $prepareGmailReply=$decision['prepare_gmail_reply']??false;
     if(array_key_exists('prepare_gmail_reply',$decision)&&(!is_bool($decision['prepare_gmail_reply'])
-        ||($prepareGmailReply&&(!$gmailReply||$intent!=='advance'||$rawAction!==null||$actionDecision!=='none')))){
+        ||($prepareGmailReply&&(!(($gmailReply&&$intent==='advance')||($curiosityGmail&&$intent==='resolve'))||$rawAction!==null||$actionDecision!=='none')))){
         throw new Vp3InitiativeModelDiagnosticV1('invalid_response');
     }
     $prepareCanvasImprovement=$decision['prepare_canvas_improvement']??false;
@@ -1331,7 +1338,7 @@ function vp3_initiative_followthrough_reply_v1(PDO $pdo,array $user,array $princ
             require_once __DIR__.'/agent-curiosity-v1.php';
             [, $thread,$question]=explode(':',$loaded['goal']['primary'],3);
             vp3_curiosity_apply_reply_v1($pdo,$loaded['user'],$loaded['agent_id'],$cid,$thread,$question,
-                $userMessageId,$curiosityDisposition);
+                $userMessageId,$curiosityDisposition,gmailReplyRequested:$prepareGmailReply);
         }
         $state=$loaded['state'];$state['followup_clarification']=$clarification;$state['revision']++;$state['last_reply_message_id']=$userMessageId;$state['last_reply_hash']=hash('sha256',$query);$state['last_reply_explicit']=$explicit;$state['last_intent']=$intent;$state['focus']=$focus;$state['updated_at']=gmdate(DATE_ATOM);
         unset($state['canvas_improvement_requested']);

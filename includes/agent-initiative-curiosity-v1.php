@@ -50,6 +50,15 @@ function vp3_initiative_curiosity_evidence_v1(PDO $pdo,array $scope,?array $sele
             'detail'=>'The owner confirmed this in a Curiosity reply. '.$summary,
             'url'=>vp3_agent_activity_chat_href_v1($agent,$row['conversation_id']).'&message_id='.$row['message_id'],
             'revision'=>$row['revision']];
+        require_once __DIR__.'/agent-curiosity-gmail-draft-v1.php';
+        try{$request=vp3_curiosity_gmail_request_v1($pdo,$scope['user'],$agent,$scope['conversation_id'],$id);}
+        catch(PDOException $error){throw $error;}
+        catch(RuntimeException|DomainException|JsonException $error){$request=null;}
+        if($request!==null){
+            $evidence[$ref]['curiosity_gmail_reply']=$request['request_key'];
+            $evidence[$ref]['revision']=hash('sha256',$row['revision'].'|gmail-reply:'.$request['request_key']);
+            $evidence[$ref]['detail'].=' This verified answer requests private Gmail reply preparation; use gmail.prepare_reply when ready.';
+        }
     }
     return $evidence;
 }

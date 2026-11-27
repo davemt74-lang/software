@@ -12,6 +12,7 @@ function vp3_initiative_tool_specialist_v1(string $tool): ?string
     return match ($tool) {
         'brainstorm.explore' => 'brainstorm',
         'curiosity.analyze' => 'curiosity',
+        'gmail.prepare_reply' => 'gmail',
         'tasks.read', 'tasks.lists.read' => 'tasks',
         'calendar.read', 'reminders.read' => 'planning',
         'artist.research', 'topic.research', 'knowledge.search' => 'research',

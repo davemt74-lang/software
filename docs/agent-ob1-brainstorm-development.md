@@ -274,3 +274,50 @@ Actual browser gates cover the specialist source action, private navigation race
 and attachment review at 1280, 390 and 320 pixels. All provider/model transports in
 these gates are synthetic; live account quality and installation scheduling still
 require deployment acceptance.
+
+## Section 7: Curiosity answers reach the native Gmail composer
+
+A source-bound attachment answer can now request an actual private Gmail reply.
+The existing reply classifier receives this option only when the current exact
+owner/Agent/Chat, saved review provenance, original account and native reply grant
+are valid. An authenticated owner answer is recorded on the existing confirmed
+goal and Chat anchor. A factual observation without a drafting request closes the
+gap without creating a draft or a standing preference. This is a bounded private
+preparation objective; it grants neither sending nor a follow-up watch.
+
+Brainstorming sees `gmail.prepare_reply` only for that verified answer. It may
+propose the handoff; OB1 alone admits the Email Specialist job. The native
+Initiative worker reads the original message and rechecks attachment bytes, the
+current thread head (including newer sent replies), permissions and the current
+Email Soul around inference. The model supplies outgoing body text only. Gmail
+supplies the recipient, subject, thread and RFC reply headers. Uncertain historical
+attachment findings and owner-requested terms must not become supplier commitments.
+
+The actual encrypted native email draft is committed atomically with its canonical
+workflow receipt. Chat receives its existing **Review reply** action and opens the
+existing email composer. Owner edits, optional attachments, explicit sending and
+any separately approved follow-through continue through that native workflow.
+There is no new workspace, draft ledger or storage upgrade. Identity follows the
+original mailbox message within the exact owner/Agent/Chat, so repeated attachment
+questions cannot create competing automatic drafts for that same message. Edited,
+discarded and completed native rows prevent automatic recreation. A later incoming
+Gmail message is a different source; the ordinary explicit composer remains available.
+
+OB1 reads source-bound progress from the native draft and its matching completed
+worker action/receipt. Awaiting review, sending, failed and discarded states are
+separate from completion of the owner's objective. A sent claim additionally
+requires the exact durable native Chat send receipt. No supplier response, delivery,
+reading or business completion is inferred from a prepared or sent draft. Changed
+progress invalidates an older supervisor assessment; unrelated completed jobs do
+not age this proof out of discovery. Revoked or superseded source context withdraws
+the derived result rather than rerunning paid preparation.
+
+Acceptance extends the real attachment-question pipeline through Brainstorming,
+OB1, encrypted native draft storage, Chat delivery and the existing review action.
+SQLite and native MySQL cover the actual handoff, unrequested factual answers,
+new incoming mail, newer outbound mail, grant withdrawal, changed bytes, Email Soul
+changes during inference, preserved owner edits, duplicate assignment, cancellation,
+busy-account progress and exact send receipts. Existing creative, follow-through,
+Top of Mind, Gmail document and desktop/mobile composer gates remain in force.
+All provider and model transports in these gates are synthetic. Live installation
+scheduling and paid-model writing quality remain deployment acceptance checks.

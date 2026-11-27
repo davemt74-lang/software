@@ -164,6 +164,8 @@ function vp3_initiative_tools_catalog_v1(PDO $pdo,array $user,array $binding,arr
     $catalog+=vp3_brainstorm_catalog_v1($evidence);
     require_once __DIR__.'/agent-initiative-curiosity-analysis-v1.php';
     $catalog+=vp3_curiosity_analysis_catalog_v1($evidence);
+    require_once __DIR__.'/agent-curiosity-gmail-draft-v1.php';
+    $catalog+=vp3_curiosity_gmail_catalog_v1($pdo,$scope['user'],$binding,$evidence);
     require_once __DIR__.'/agent-initiative-creative-starters-v1.php';
     $catalog+=vp3_starter_playlist_catalog_v1($evidence);
     $checkinReady=table_exists('chat_messages');
@@ -413,6 +415,10 @@ function vp3_initiative_tools_result_current_v1(PDO $pdo,array $user,array $bind
     vp3_agent_memory_scope_set_current_v410((int)$user['id'],(int)($binding['agent_id']??0));
     try{
         $scope=vp3_initiative_tools_scope_v1($pdo,$user,$binding);$output=$toolResult['output']??null;
+        if($tool==='gmail.prepare_reply'){
+            require_once __DIR__.'/agent-curiosity-gmail-draft-v1.php';
+            vp3_curiosity_gmail_result_current_v1($pdo,$scope['user'],$binding,$goal,$toolResult);return;
+        }
         if($tool==='playlist.prepare'){
             require_once __DIR__.'/agent-initiative-creative-starters-v1.php';
             vp3_starter_playlist_current_v1($pdo,$scope['user'],$binding,$goal,$toolResult);
@@ -586,6 +592,16 @@ function vp3_initiative_tool_execute_v1(PDO $pdo,array $user,array $binding,arra
             };
             return vp3_curiosity_analysis_prepare_v1($pdo,$scope['user'],$binding,$job,$evidence,$model,$authorize,
                 $researchTransport['gmail_http']??null);
+        }
+        if($tool==='gmail.prepare_reply'){
+            if($model===null)throw new RuntimeException('Email draft inference is unavailable.',503);
+            $goal=['tool'=>$tool,'primary'=>$job['primary'],'report'=>$job['report'],'sources'=>array_column($evidence,'revision','ref')];
+            $authorize=static function()use($pdo,$user,$binding,$evidence,$checkLease):void{
+                if($checkLease)$checkLease();vp3_initiative_tools_current_v1($pdo,$user,$binding,$evidence);
+                if(!vp3_curiosity_gmail_catalog_v1($pdo,$user,$binding,$evidence))throw new Vp3InitiativeSourcesChangedV1();
+            };
+            $prepared=vp3_curiosity_gmail_prepare_v1($pdo,$scope['user'],$binding,$goal,$model,$authorize,$researchTransport['gmail_http']??null);
+            return $prepared['result']+['curiosity_gmail_draft'=>$prepared['draft']];
         }
         if($tool==='image.prepare'){
             if($checkLease)$checkLease();
