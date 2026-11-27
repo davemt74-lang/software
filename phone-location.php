@@ -40,7 +40,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <script src="phone-remote-dialer-v1.js?v=1" defer></script>
   <script src="phone-managed-call-ui-v1.js?v=5" defer></script>
   <script src="phone-handoff-v1.js?v=1" defer></script>
-  <script src="phone-push-subscriptions-v1.js?v=4" defer></script>
+  <script src="phone-push-subscriptions-v1.js?v=5" defer></script>
   <script src="phone-shell-v1.js?v=1" defer></script>
   <script src="phone-location-checkins-v1.js?v=1" defer></script>
   <script src="phone-location-v1.js?v=21" defer></script>

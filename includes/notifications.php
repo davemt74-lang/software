@@ -1,6 +1,8 @@
 <?php
 declare(strict_types=1);
 
+require_once __DIR__.'/notification-read-transactions-v1.php';
+
 /**
  * Operational Agent activity uses the existing notifications table as a durable,
  * deduplicated carrier, but it belongs to the Agent Brain tab rather than the
@@ -540,8 +542,12 @@ function mark_notification_read(int $notificationId, int $userId): void
          SET is_read=1,read_at=COALESCE(read_at,NOW())
          WHERE id=? AND user_id=? AND ' . notification_system_sql_predicate().$profileGuard
     );
-    $stmt->execute([$notificationId, $userId]);
-    if($stmt->rowCount()>0&&function_exists('vp3_cognitive_notification_event_v2380'))vp3_cognitive_notification_event_v2380($pdo,$userId,'notification.read',$notificationId);
+    $changed=notification_read_transaction_v1($pdo,static function()use($pdo,$stmt,$notificationId,$userId):int{
+        $stmt->execute([$notificationId,$userId]);$changed=$stmt->rowCount();
+        notification_sync_browser_reads_v1($pdo,$userId,$notificationId);
+        return $changed;
+    });
+    if($changed>0&&function_exists('vp3_cognitive_notification_event_v2380'))vp3_cognitive_notification_event_v2380($pdo,$userId,'notification.read',$notificationId);
 }
 
 function mark_all_notifications_read(int $userId): void
@@ -557,7 +563,9 @@ function mark_all_notifications_read(int $userId): void
          SET is_read=1,read_at=COALESCE(read_at,NOW())
          WHERE user_id=? AND is_read=0 AND ' . notification_system_sql_predicate().$profileGuard
     );
-    $stmt->execute([$userId]);
+    notification_read_transaction_v1($pdo,static function()use($pdo,$stmt,$userId):void{
+        $stmt->execute([$userId]);notification_sync_browser_reads_v1($pdo,$userId);
+    });
 }
 
 function notification_is_profile_order_pa5(array $row): bool

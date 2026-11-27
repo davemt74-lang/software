@@ -43,11 +43,37 @@ function vp3_phone_agent_workspace_install_v1(PDO $pdo): void
         owner_user_id INT UNSIGNED NOT NULL, device_id CHAR(32) NOT NULL, grant_id CHAR(32) NOT NULL,
         item_ref CHAR(32) NOT NULL, source_revision CHAR(64) NOT NULL, revision BIGINT NOT NULL DEFAULT 0,
         seen_epoch BIGINT NULL, read_epoch BIGINT NULL, acknowledged_epoch BIGINT NULL, snoozed_until BIGINT NULL,
-        updated_epoch BIGINT NOT NULL,
+        updated_epoch BIGINT NOT NULL,wake_revision BIGINT NOT NULL DEFAULT 0,wake_requested_epoch BIGINT NOT NULL DEFAULT 0,
         PRIMARY KEY(owner_user_id,device_id,grant_id,item_ref),
         FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_devices_v1(owner_user_id,id) ON DELETE CASCADE,
         FOREIGN KEY(owner_user_id,item_ref) REFERENCES vp3_phone_agent_items_v1(owner_user_id,item_ref) ON DELETE CASCADE
     )".$tail);
+    $addedWake=false;
+    foreach(['wake_revision','wake_requested_epoch'] as $column){
+        if(schema_metadata_column_exists($pdo,'vp3_phone_agent_receipts_v1',$column))continue;
+        try{$pdo->exec('ALTER TABLE vp3_phone_agent_receipts_v1 ADD COLUMN '.$column.' BIGINT NOT NULL DEFAULT 0');}
+        catch(PDOException $e){if(!in_array((int)($e->errorInfo[1]??0),[1,1060],true)||!schema_metadata_column_exists($pdo,'vp3_phone_agent_receipts_v1',$column))throw $e;}
+        $addedWake=true;
+    }
+    if($addedWake)$pdo->exec('UPDATE vp3_phone_agent_receipts_v1 SET wake_revision=1,wake_requested_epoch=updated_epoch WHERE snoozed_until IS NOT NULL AND wake_revision=0');
+    // Durable semantic identities outlive the short-lived provider outbox.
+    $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_agent_alerts_v1(
+        owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,grant_id CHAR(32) NOT NULL,item_ref CHAR(32) NOT NULL,
+        item_revision BIGINT NOT NULL,wake_revision BIGINT NOT NULL DEFAULT 0,event_ref CHAR(32) NOT NULL,recorded_epoch BIGINT NOT NULL,
+        PRIMARY KEY(owner_user_id,device_id,grant_id,item_ref),
+        FOREIGN KEY(owner_user_id,device_id) REFERENCES vp3_phone_devices_v1(owner_user_id,id) ON DELETE CASCADE,
+        FOREIGN KEY(owner_user_id,item_ref) REFERENCES vp3_phone_agent_items_v1(owner_user_id,item_ref) ON DELETE CASCADE
+    )".$tail);
+    if(schema_metadata_table_exists($pdo,'vp3_phone_push_outbox_v1')&&schema_metadata_column_exists($pdo,'vp3_phone_push_outbox_v1','source_grant_id')){
+        $insert=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?'INSERT IGNORE':'INSERT OR IGNORE';
+        $pdo->exec($insert." INTO vp3_phone_agent_alerts_v1(owner_user_id,device_id,grant_id,item_ref,item_revision,wake_revision,event_ref,recorded_epoch)
+            SELECT e.owner_user_id,e.device_id,g.grant_id,i.item_ref,e.source_revision,e.source_wake_revision,e.event_ref,e.created_epoch
+            FROM vp3_phone_push_outbox_v1 e JOIN vp3_phone_agent_items_v1 i ON i.owner_user_id=e.owner_user_id AND i.item_ref=e.source_id AND i.revision=e.source_revision
+            JOIN vp3_phone_agent_enrollments_v1 g ON g.owner_user_id=e.owner_user_id AND g.device_id=e.device_id AND g.credential_hash=e.credential_hash AND g.selected_agent_id=i.agent_id
+            LEFT JOIN vp3_phone_agent_receipts_v1 r ON r.owner_user_id=g.owner_user_id AND r.device_id=g.device_id AND r.grant_id=g.grant_id AND r.item_ref=i.item_ref AND r.source_revision=i.source_revision
+            WHERE e.source_type='agent_item' AND (e.source_grant_id IS NULL OR e.source_grant_id=g.grant_id) AND e.source_wake_revision=COALESCE(r.wake_revision,0)
+            ORDER BY e.created_epoch DESC,e.event_ref DESC");
+    }
     $pdo->exec("CREATE TABLE IF NOT EXISTS vp3_phone_canvas_deliveries_v1(
         owner_user_id INT UNSIGNED NOT NULL,device_id CHAR(32) NOT NULL,request_id CHAR(36) NOT NULL,
         signature CHAR(64) NOT NULL,grant_id CHAR(32) NOT NULL,item_ref CHAR(32) NOT NULL,created_epoch BIGINT NOT NULL,
@@ -66,7 +92,8 @@ function vp3_phone_agent_workspace_ready_v1(PDO $pdo): bool
         $pdo->query('SELECT sequence_id,item_ref,owner_user_id,agent_id,conversation_id,source_kind,source_id,source_key,
             source_revision,revision,created_epoch,updated_epoch FROM vp3_phone_agent_items_v1 WHERE 1=0');
         $pdo->query('SELECT owner_user_id,device_id,grant_id,item_ref,source_revision,revision,seen_epoch,read_epoch,
-            acknowledged_epoch,snoozed_until,updated_epoch FROM vp3_phone_agent_receipts_v1 WHERE 1=0');
+            acknowledged_epoch,snoozed_until,updated_epoch,wake_revision,wake_requested_epoch FROM vp3_phone_agent_receipts_v1 WHERE 1=0');
+        $pdo->query('SELECT owner_user_id,device_id,grant_id,item_ref,item_revision,wake_revision,event_ref,recorded_epoch FROM vp3_phone_agent_alerts_v1 WHERE 1=0');
         return true;
     } catch (PDOException) { return false; }
 }

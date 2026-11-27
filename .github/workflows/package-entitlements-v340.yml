@@ -275,6 +275,7 @@ jobs:
       - name: Private phone push queue, canonical sources and runtime guard
         run: |
           php tests/phone-sqlite-transactions-v1.php
+          php tests/notification-read-sync-v1.php
           php tests/phone-push-delivery-v1.php
           php tests/phone-push-events-v1.php
           php tests/phone-push-vapid-cache-v1.php

@@ -65,7 +65,13 @@ function vp3_phone_push_event_enqueue_v1(PDO $pdo,array $d,array $source,int $no
     return vp3_phone_transaction_v1($pdo,static function()use($pdo,$d,$source,$now,$testKey):array{
         $ctx=vp3_phone_push_delivery_context_v1($pdo,(int)$d['owner_user_id'],$d['id'],$now,$testKey);
         if($ctx['reason']!==''||!hash_equals($d['token_hash'],$ctx['device']['token_hash']))return [];
-        try{return vp3_phone_push_delivery_enqueue_v1($pdo,$d,$source,$now,'vp3_phone_push_source_current_v1',$testKey);}
+        try{
+            if(($source['type']??null)==='agent_item'){
+                require_once __DIR__.'/phone-agent-alerts-v1.php';
+                return vp3_phone_agent_alert_enqueue_v1($pdo,$d,$source,$now,$testKey);
+            }
+            return vp3_phone_push_delivery_enqueue_v1($pdo,$d,$source,$now,'vp3_phone_push_source_current_v1',$testKey);
+        }
         catch(RuntimeException $error){
             if($error->getCode()!==429)throw $error;
             // A bounded optional notification queue must not prevent the

@@ -48,16 +48,21 @@
       return 'Test notification queued. Check this device for an alert.';
     }
     function deliveryLabel(){
-      if(testNotice)return testNotice;
       const p=view(),delivery=p?.delivery,expected=binding();
       const saved=testResult(delivery?.last_test,expected),own=testResult(testReceipt,expected);
       const receipt=saved&&(!own||saved.event_ref===own.event_ref||saved.created_epoch>own.created_epoch)?saved:own;
-      if(receipt)return testDescription(receipt);
-      if(!p||delivery?.state==='upgrade_required')return 'The account owner needs to run Database Upgrade before server notifications can be set up.';
-      if(!p.enrollment_enabled&&!registered(p))return 'Server notification enrollment is not enabled. The site administrator can prepare it in Admin → Phone → Connected phone notifications.';
-      if(!delivery?.enabled)return 'Server background delivery is switched off. The site administrator can enable it in Admin → Phone → Connected phone notifications.';
-      if(!delivery.ready)return delivery.worker?.state==='observed'?'The server worker cannot send notifications yet. Check its runtime and transport status in Admin → Phone.':'The server notification worker has not run recently. Configure its once-per-minute cron job in Admin → Phone.';
-      return 'Send a test to check this installation. A saved subscription does not confirm delivery.';
+      let problem='';
+      if(!p||delivery?.state==='upgrade_required')problem='The account owner needs to run Database Upgrade before server notifications can be set up.';
+      else if(delivery?.state==='credential_unavailable')problem='The server notification credentials are unavailable. Ask the site administrator to check the protected key in Admin → Phone.';
+      else if(!p.enrollment_enabled&&!registered(p))problem='Server notification enrollment is not enabled. The site administrator can prepare it in Admin → Phone → Connected phone notifications.';
+      else if(!delivery?.enabled)problem='Server background delivery is switched off. The site administrator can enable it in Admin → Phone → Connected phone notifications.';
+      else if(delivery.state==='worker_unavailable'||!delivery.ready&&delivery.worker?.state!=='observed')problem='The server notification worker has not run recently. Configure its once-per-minute cron job in Admin → Phone.';
+      else if(delivery.state==='transport_unavailable')problem=delivery.worker?.code==='runtime_requires_php82'
+        ?'The server notification worker needs PHP 8.2 or newer. Ask the site administrator to update its cron command in Admin → Phone.'
+        :'The server worker cannot send notifications yet. Check its runtime and required extensions in Admin → Phone.';
+      else if(!delivery.ready)problem='Finish saving the notification subscription on this phone before testing delivery.';
+      const history=testNotice||(receipt?'Last test: '+testDescription(receipt):'');
+      return [problem,history||(!problem?'Send a test to check this installation. A saved subscription does not confirm delivery.':'')].filter(Boolean).join(' ');
     }
     function consumeNavigation(){
       try{

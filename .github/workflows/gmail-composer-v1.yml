@@ -162,6 +162,7 @@ jobs:
       - name: Private Phone Agent enrollment, native sources, receipts and background push
         run: |
           for file in tests/phone-agent-workspace-*.php; do php "$file"; done
+          php tests/phone-agent-workspace-sources-v1.php notification-reliability
           for file in includes/phone-agent-workspace-*.php includes/phone-agent-device-grants-v1.php includes/coding-canvas-phone-v1.php api/phone-agent-workspace-v1.php api/phone-location-v1.php phone-location.php; do php -l "$file"; done
       - name: Existing Gmail send, writing, provider and inference boundaries
         run: |
