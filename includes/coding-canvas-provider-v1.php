@@ -143,7 +143,7 @@ function vp3_coding_canvas_provider_output_v1(string $provider,array $decoded): 
 }
 
 /** Invoke exactly the saved job pin and meter the single physical provider request. */
-function vp3_coding_canvas_generate_v1(PDO $pdo,array $user,array $pin,string $jobId,string $requestId,string $prompt,?array $previous=null,?string $diagnostic=null,array $attribution=[]): array
+function vp3_coding_canvas_generate_v1(PDO $pdo,array $user,array $pin,string $jobId,string $requestId,string $prompt,?array $previous=null,?string $diagnostic=null,array $attribution=[],?callable $transport=null): array
 {
     if(!vp3_coding_canvas_response_ready_v1($pdo))throw new RuntimeException('Run Database Upgrade before starting a Coding Agent request.',503);
     $prompt=trim($prompt);
@@ -196,7 +196,7 @@ function vp3_coding_canvas_generate_v1(PDO $pdo,array $user,array $pin,string $j
         ?['instructions'=>$instructions,'input'=>$messages,'max_output_tokens'=>12000,'store'=>false]
         :['system'=>$instructions,'messages'=>$messages,'max_tokens'=>12000]);
     $result=vp3_coding_canvas_provider_stream_v1($payload,$key,$meter,$pin,$personalKey,
-        $attribution['before_dispatch']??null,$attribution['provider_checkpoint']??null);
+        $attribution['before_dispatch']??null,$attribution['provider_checkpoint']??null,$transport);
     if(empty($result['ok'])){
         $failure=match($result['failure_code']??''){
             'provider_attempt_unconfirmed'=>match($result['provider_failure_class']??''){
