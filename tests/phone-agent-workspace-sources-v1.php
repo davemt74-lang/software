@@ -361,9 +361,20 @@ try{
     session_id('phone-source-main-'.bin2hex(random_bytes(12)));session_start();$_SESSION=$session;
     $beforeCanvas=$pdo->query('SELECT * FROM vp3_coding_canvases_v1')->fetchAll();
     $beforeKnowledge=$pdo->query('SELECT * FROM knowledge_items')->fetchAll();
-    $targets=vp3_coding_canvas_phone_v1($pdo,$owner,7,12,$canvasId,2,'phone_targets',[]);
+    $targets=vp3_coding_canvas_phone_v1($pdo,$owner,7,11,$canvasId,2,'phone_targets',[]);
     pas_check(count($targets['phones'])===1&&!$targets['phones'][0]['agent_access']['enabled'],'legacy phone enrollment is never migrated into no-login permission silently');
-    $delivery=vp3_coding_canvas_phone_v1($pdo,$owner,7,12,$canvasId,2,'phone_send',[
+    session_start();
+    pas_check(vp3_coding_canvas_phone_v1($pdo,$owner,7,0,$canvasId,2,'phone_targets',[])['phones'][0]['id']===$deviceId,
+        'a real saved Canvas lists its owner phones even from an unsaved Chat');
+    session_start();
+    pas_reject(403,fn()=>vp3_coding_canvas_phone_v1($pdo,$owner,7,13,$canvasId,2,'phone_targets',[]),
+        'a sibling Agent conversation cannot substitute for the current private browsing context');
+    session_start();
+    pas_reject(403,fn()=>vp3_coding_canvas_phone_v1($pdo,$owner,7,21,$canvasId,2,'phone_targets',[]),
+        'a foreign owner conversation cannot authorize phone discovery');
+
+    session_start();
+    $delivery=vp3_coding_canvas_phone_v1($pdo,$owner,7,11,$canvasId,2,'phone_send',[
         'device_id'=>$deviceId,'generation'=>(int)$device['generation'],'expected_revision'=>$targets['phones'][0]['agent_access']['revision'],
         'request_id'=>'30000000-0000-4000-8000-000000000001','confirmed'=>true]);
     pas_check($beforeCanvas===$pdo->query('SELECT * FROM vp3_coding_canvases_v1')->fetchAll()
