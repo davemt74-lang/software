@@ -1737,15 +1737,16 @@
         ? 'foodmonster' : null,
       tool_receipt:raw.tool_receipt,
       sources:Array.isArray(raw.sources) ? raw.sources : [],
-      media:raw.music_chat_v1 ? [] : Array.isArray(raw.media) ? raw.media : [],
+      media:raw.music_chat_v1 || raw.music_history_v1 ? [] : Array.isArray(raw.media) ? raw.media : [],
       stem_media:Array.isArray(raw.stem_media) ? raw.stem_media : [],
       actions:Array.isArray(raw.actions) ? raw.actions : [],
       cards:Array.isArray(raw.cards) ? raw.cards : (Array.isArray(raw.cognitive_cards) ? raw.cognitive_cards : []),
       system_app_action_card:raw.system_app_action_card && typeof raw.system_app_action_card === 'object' ? raw.system_app_action_card : null,
       knowledge_actions_r9:raw.knowledge_actions_r9 || null,
       canvas_media:raw.canvas_media && typeof raw.canvas_media==='object' ? raw.canvas_media : null,
-      youtube_results:!raw.music_chat_v1 && raw.youtube_results && typeof raw.youtube_results==='object' ? raw.youtube_results : null,
+      youtube_results:!raw.music_chat_v1 && !raw.music_history_v1 && raw.youtube_results && typeof raw.youtube_results==='object' ? raw.youtube_results : null,
       music_chat_v1:raw.music_chat_v1 && typeof raw.music_chat_v1==='object' ? raw.music_chat_v1 : null,
+      music_history_v1:raw.music_history_v1 && typeof raw.music_history_v1==='object' ? raw.music_history_v1 : null,
       profile_handoff:raw.profile_handoff && typeof raw.profile_handoff==='object' ? raw.profile_handoff : null,
       profile_call:raw.profile_call && typeof raw.profile_call==='object' ? raw.profile_call : null,
       phone_v1:raw.phone_v1 && typeof raw.phone_v1==='object' ? raw.phone_v1 : null,
@@ -4068,15 +4069,20 @@
 
   function nativeMusicStartContext(audio, state) {
     const action = mediaOfferAudioActions.get(audio);
-    const isOffer = action && action.track_id === state.trackId && action.expires_at * 1000 > Date.now()
+    const live = window.STONEFELLOW_CHAT || {};
+    const history = typeof action?.history_ref === 'string' && action.history_ref.length > 0 && action.history_ref.length <= 4096
+      && Number(live.userId) === Number(cfg.userId) && Number(live.agentId || 0) === Number(cfg.agentId || 0)
+      && String(live.csrf || '') === String(cfg.csrf || '');
+    const authorized = action && action.track_id === state.trackId && action.expires_at * 1000 > Date.now()
       && action.conversation_id === conversationId && action.owner_user_id === initiativePage.owner && action.agent_id === initiativePage.agent
-      && initiativeIdentityMatchesV1() && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.();
-    // The frozen start request keeps this one accepted offer across retries.
+      && (history || initiativeIdentityMatchesV1()) && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.();
+    // The frozen start request keeps the signed offer or exact history selection
+    // across retries; the native receipt endpoint revalidates its authority.
     mediaOfferAudioActions.delete(audio);
     return {
       source: audio.closest('[data-chat-view="player"]') ? 'agent_player' : 'agent_chat',
       source_url: location.origin + location.pathname,
-      ...(isOffer ? {media_offer_playback: action} : {})
+      ...(authorized ? {media_offer_playback: action} : {})
     };
   }
 
@@ -4714,6 +4720,7 @@
       }
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       if(message.role==='assistant'&&context.music_chat_v1)void window.VP3_MUSIC_CHAT_V1?.attach(renderedMessage,context.music_chat_v1,{live:false});
+      if(message.role==='assistant'&&context.music_history_v1)void window.VP3_MUSIC_HISTORY_V1?.attach(renderedMessage,context.music_history_v1,{live:false});
       if (message.role==='user') bindPairedPhoneMessage(renderedMessage,context);
       if(message.role==='assistant')bindScreenInsightsV1(renderedMessage,context.screen_insights_v1);
       bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
@@ -4879,6 +4886,7 @@
       }
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       if(message.role==='assistant'&&context.music_chat_v1)void window.VP3_MUSIC_CHAT_V1?.attach(renderedMessage,context.music_chat_v1,{live:false});
+      if(message.role==='assistant'&&context.music_history_v1)void window.VP3_MUSIC_HISTORY_V1?.attach(renderedMessage,context.music_history_v1,{live:false});
       if (message.role==='user') bindPairedPhoneMessage(renderedMessage,context);
       if(message.role==='assistant')bindScreenInsightsV1(renderedMessage,context.screen_insights_v1);
       bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
@@ -5377,7 +5385,7 @@
         'assistant',
         data.answer,
         data.sources || [],
-        data.music_chat_v1 ? [] : data.media || [],
+        data.music_chat_v1 || data.music_history_v1 ? [] : data.media || [],
         data.playlist_title || '',
         data.stem_media || [],
         data.actions || [],
@@ -5385,10 +5393,12 @@
         data.system_app_action_card || null,
         data.knowledge_actions_r9 || null,
         data.canvas_media || null,
-        data.music_chat_v1 ? null : data.youtube_results || null
+        data.music_chat_v1 || data.music_history_v1 ? null : data.youtube_results || null
       );
       if(!existingReply)bindStoredMessagePa3(reply,data.assistant_message_id);
       if(!existingReply&&data.music_chat_v1)void window.VP3_MUSIC_CHAT_V1?.attach(reply,data.music_chat_v1,{live:data.replayed!==true});
+      if(existingReply&&data.music_chat_v1?.history_operation)void window.VP3_MUSIC_CHAT_V1?.refreshMessage?.(reply);
+      if(data.music_history_v1)void window.VP3_MUSIC_HISTORY_V1?.attach(reply,data.music_history_v1,{live:!existingReply&&data.replayed!==true});
       if(!existingReply || data.connected_site_provider_v1==='foodmonster')bindFoodMonsterResultIcon(reply,data.connected_site_provider_v1);
       if(!existingReply&&data.replayed!==true&&data.connected_site_provider_v1==='stoneward'){
         bindConnectedSitePlayback(reply,data.connected_site_playback_v1,data.connected_site_queue_v1);
@@ -5421,7 +5431,7 @@
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}
       const autoMediaAction=(data.actions||[]).find(action=>action && action.auto && action.type==='media_capture');
       if(autoMediaAction){window.setTimeout(()=>{window.StonefellowMediaStudio?.open(autoMediaAction.mode||'camera',Number(autoMediaAction.camera_index||0));},260);}
-      if (!existingReply && !data.music_chat_v1 && data.media_playback) {
+      if (!existingReply && !data.music_chat_v1 && !data.music_history_v1 && data.media_playback) {
         void window.STONEFELLOW_CHAT_CONTINUITY?.applyMediaPlayback?.(data.media_playback,reply);
       }
 
@@ -5707,7 +5717,8 @@
   attachAudioTracking(thread);
   window.addEventListener('vp3:media-offer-audio-ready',event=>{
     const {audio,action}=event.detail||{};
-    if(audioState.get(audio)?.trackId===action?.track_id&&audio?.isConnected&&action?.offer_message_id>0){
+    if(audioState.get(audio)?.trackId===action?.track_id&&audio?.isConnected
+      &&(action?.offer_message_id>0||typeof action?.history_ref==='string'&&action.history_ref.length>0&&action.history_ref.length<=4096)){
       mediaOfferAudioActions.set(audio,action);
     }
   });
@@ -5810,7 +5821,43 @@
     return true;
   }
 
+  async function renderMusicHistoryResponse(data, {current = () => true, openPlaylist = false} = {}) {
+    const payload = data?.music_history_v1 || data?.music_chat_v1;
+    const messageId = Number(data?.assistant_message_id);
+    const live = window.STONEFELLOW_CHAT || {};
+    const scoped = () => current() && contextReady && !initialRestorePending && !restoringConversation
+      && !historyParticipant && !window.VP3ParticipantContinuity?.selectedContext?.()
+      && payload?.owner_user_id === Number(cfg.userId) && payload.owner_user_id === Number(live.userId)
+      && payload.agent_id === Number(cfg.agentId || 0) && payload.agent_id === Number(live.agentId || 0)
+      && payload.conversation_id === conversationId && String(live.csrf || '') === String(cfg.csrf || '');
+    if (!scoped() || !Number.isSafeInteger(messageId) || messageId < 1
+        || payload.source_message_id !== messageId || typeof data.answer !== 'string') return false;
+    const existing = thread.querySelector('[data-chat-message-id="' + messageId
+      + '"][data-chat-conversation-id="' + conversationId + '"][data-chat-message-role="assistant"]');
+    if (existing) {
+      if (data.music_history_v1) await window.VP3_MUSIC_HISTORY_V1?.attach(existing, data.music_history_v1, {live:false});
+      if (data.music_chat_v1) await window.VP3_MUSIC_CHAT_V1?.refreshMessage?.(existing);
+      return scoped(); // A repeated stored response never repeats a player action.
+    }
+    const reply = addMessage('assistant', data.answer);
+    bindStoredMessagePa3(reply, messageId);
+    if (!scoped()) return false;
+    const record = data.music_history_v1
+      ? await window.VP3_MUSIC_HISTORY_V1?.attach(reply, data.music_history_v1, {live:data.replayed !== true})
+      : await window.VP3_MUSIC_CHAT_V1?.attach(reply, data.music_chat_v1, {live:data.replayed !== true});
+    if (!record || !scoped()) return false;
+    if (openPlaylist && data.replayed !== true && data.music_chat_v1) {
+      await window.VP3_MUSIC_CHAT_V1?.openPlaylistPicker?.(reply, 0);
+    }
+    if (!scoped()) return false;
+    reply.scrollIntoView({block:'start'});
+    void refreshHistory().catch(() => {});
+    return true;
+  }
+
   const canonicalChatContinuity = {
+    requestMusicHistory:() => requestTopOfMindTurn('Show my listening history'),
+    renderMusicHistoryResponse,
     runYoutubeLocalTurn: (message, action) => runYoutubeLocalTurn(message, action),
     runMusicLocalTurn: (message, action) => runYoutubeLocalTurn(message, action, window.VP3_MUSIC_CHAT_V1),
     requestYoutubePicks:() => requestTopOfMindTurn('/youtube picks'),
@@ -6786,7 +6833,8 @@
         if(options.musicChat===true&&typeof options.onReady==='function')options.onReady(audio,{
           stop:()=>window.VP3MusicListeningV1?.attach(audio)?.stop()
         });
-        if(fromOffer)window.dispatchEvent(new CustomEvent('vp3:media-offer-audio-ready',{detail:{audio,action}}));
+        if(fromOffer||typeof action.history_ref==='string'&&action.history_ref.length>0)
+          window.dispatchEvent(new CustomEvent('vp3:media-offer-audio-ready',{detail:{audio,action}}));
         audio.dataset.mediaSinglePlay='';
         const selected={audio,track:{...track,last_position_seconds:position},conversationId:action.conversation_id};
         mediaResumeFallback=selected;

@@ -1,0 +1,64 @@
+VP3 PERSONAL LISTENING HISTORY AND AGENT RECALL — MC2
+
+This release extends private listening history across VP3 native media and
+YouTube playback observed inside VP3. It uses existing receipts and players.
+
+WHAT CHANGES
+
+History can be filtered by source, song/artist/channel text and local date/time.
+Older pages preserve individual repeated plays. The interface and explicit Agent
+history queries use the same authorized reader and display the actual coverage.
+
+History reads stay quiet. An explicit historical selection can Play, Resume
+where its exact position and current asset are verified, or add to an existing
+private playlist through the MC1 action path. Chat and voice restoration
+rehydrate current access and do not repeat playback or playlist mutations.
+
+INSTALL
+
+1. Back up matching code, database, config.php, environment files, private/
+   keys and uploads/ before deploying. Preserve the installation identity.
+2. Verify the full Cloud ZIP checksum and VP3_RELEASE.json commit against the
+   release handoff. Apply at the application root through the normal deployment
+   process while preserving all runtime configuration and uploaded media.
+3. Ensure current MC1 and YouTube prerequisites are installed through the normal
+   authorized upgrade.php flow. MC2 reads existing playback/history tables and
+   stores only history query/selection references in the established Chat
+   context. Normal reads and page polling perform no schema installation.
+4. Retain the existing per-Agent playback-history policy and YouTube connection,
+   consent, capture and watch/position settings.
+
+VERIFY ON THE HOST
+
+- Open History in the normal media/Chat experience. Check VP3-only, YouTube-only
+  and combined entries, local dates, query text, Older results and refresh.
+- Play the same song twice and confirm two individual history entries remain.
+- Ask what you listened to yesterday and last night. Confirm the displayed
+  local time window matches the request, including its timezone.
+- Ask to play a specific numbered result and add it to an existing private
+  playlist. Confirm the exact displayed entry is selected.
+- Resume a measured historical item with a valid position. If its audio asset
+  was replaced, its source expired or its position is unavailable, Resume must
+  be unavailable rather than using a guessed position.
+- Reload Chat and repeat a voice response. Confirm no automatic playback,
+  duplicate saved-list mutation or unexpected history Chat turn occurs.
+- Check the narrow phone layout and the lower controls of a tall history card.
+- Confirm revoked source access and disabled YouTube consent hide unavailable
+  metadata; a paused history capture is described accurately.
+
+BOUNDARIES
+
+YouTube history covers playback observed in VP3. Existing provider metadata
+expiry and the saved-playlist receipt window remain in effect. No lifetime
+Google/YouTube account-history claim or retention extension is introduced.
+
+A recorded start without measured time is not evidence of listening duration.
+Personal history, native/provider artist totals and financial states remain
+separate. Stoneward is a VP3 catalog distributor, not a third history source.
+
+MC3 preference learning and stronger suggestions remain a following release.
+This release build does not deploy a live host or run its production upgrade.
+Actual Google authorization and physical iPhone/Android playback require host
+observations in addition to the documented automated acceptance.
+
+Rollback uses the matching code/configuration/database/private/uploads backup.

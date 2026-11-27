@@ -238,12 +238,34 @@ function vp3_music_chat_meta_v1(array $meta): array
         if($intent!=='add_to_playlist'||$count!==1||$existing!==null||!is_int($targetRevision)||$targetRevision<1
             ||($meta['create_playlist']??false)===true||($meta['autoplay']??false)===true)throw new RuntimeException('Choose one song and the current target playlist.',422);
     }elseif($intent==='add_to_playlist')throw new RuntimeException('Choose the target saved playlist.',422);
+    $history=$meta['history_ref']??null;$historyOperation=$meta['history_operation']??null;
+    if($history!==null&&(!is_string($history)||strlen($history)>240||!preg_match('/\Amh1\.[A-Za-z0-9_-]+\z/D',$history)
+        ||!in_array($historyOperation,['play','resume'],true)||$count!==1||$existing!==null||($meta['create_playlist']??false)===true)){
+        throw new RuntimeException('Choose one exact retained history entry.',422);
+    }
+    if($history===null&&$historyOperation!==null)throw new RuntimeException('History playback needs its exact receipt reference.',422);
     return ['intent'=>$intent,'source'=>$source,'requested_count'=>$count,'query'=>vp3_music_chat_text_v1($meta['query']??'',200),
         'title'=>vp3_music_chat_text_v1($meta['title']??'',200),'coverage'=>$coverage,
         'status'=>$status,'selection_index'=>$selection,
         'existing_playlist_id'=>$existing,'expected_playlist_revision'=>$existing===null?null:$playlistRevision,
         'target_playlist_id'=>$target,'expected_target_revision'=>$target===null?null:$targetRevision,
-        'create_playlist'=>($meta['create_playlist']??false)===true,'autoplay'=>($meta['autoplay']??false)===true];
+        'create_playlist'=>($meta['create_playlist']??false)===true,'autoplay'=>($meta['autoplay']??false)===true]
+        +($history!==null?['history_ref'=>$history,'history_operation'=>$historyOperation]:[]);
+}
+
+/** MC2 adds only a receipt reference and operation; its position is always read again. */
+function vp3_music_chat_history_selection_v1(PDO $pdo,array $scope,array $row): ?array
+{
+    $meta=vp3_music_chat_json_v1($row['meta_json']);
+    if(!isset($meta['history_ref']))return null;
+    require_once __DIR__.'/music-history-v1.php';
+    $selected=vp3_music_history_item_v1($pdo,$scope['user'],$scope['agent_id'],$scope['conversation_id'],$meta['history_ref']);
+    $items=vp3_music_chat_json_v1($row['items_json']);
+    if(count($items)!==1||$items[0]['source']!==$selected['item']['source']||$items[0]['source_id']!==$selected['item']['source_id']){
+        throw new RuntimeException('The exact history selection changed.',409);
+    }
+    if($meta['history_operation']==='resume'&&empty($selected['entry']['resume_available']))throw new RuntimeException('That exact history position is no longer resumable. Choose Play again.',409);
+    return $selected+['entry_ref'=>$meta['history_ref'],'operation'=>$meta['history_operation']];
 }
 
 /** Coverage may contain source status/counters, never arbitrary provider fields or credentials. */
@@ -275,8 +297,13 @@ function vp3_music_chat_result_row_v1(PDO $pdo,array $scope,string $id,bool $loc
 function vp3_music_chat_result_projection_v1(PDO $pdo,array $scope,array $row,bool $replayed=false): array
 {
     $meta=vp3_music_chat_json_v1($row['meta_json'],16384);$items=[];$unavailable=0;
+    $historyUnavailable=false;
+    if(isset($meta['history_ref'])){
+        try{vp3_music_chat_history_selection_v1($pdo,$scope,$row);}
+        catch(RuntimeException $error){if(!in_array((int)$error->getCode(),[403,404,409,410],true))throw $error;$historyUnavailable=true;}
+    }
     foreach(vp3_music_chat_json_v1($row['items_json']) as $stored){
-        $item=vp3_music_chat_result_item_v1($pdo,$scope,$stored);
+        $item=$historyUnavailable?vp3_music_chat_unavailable_item_v1($stored,'history_unavailable'):vp3_music_chat_result_item_v1($pdo,$scope,$stored);
         if(!$item['available'])++$unavailable;
         $items[]=$item;
     }
@@ -288,6 +315,7 @@ function vp3_music_chat_result_projection_v1(PDO $pdo,array $scope,array $row,bo
             'shortfall'=>max(0,$meta['requested_count']-count($items)),'unavailable_count'=>$unavailable]),
         'replayed'=>$replayed,'bound'=>(int)$row['assistant_message_id']>0,
         'source_message_id'=>(int)$row['assistant_message_id']];
+    if(isset($meta['history_ref']))$out['history_operation']=$meta['history_operation'];
     if(($row['playlist_changed']??null)!==null)$out['playlist_changed']=(bool)$row['playlist_changed'];
     if($row['playlist_id']!==null){
         $q=$pdo->prepare('SELECT * FROM music_chat_playlists_v1 WHERE playlist_id=? AND owner_user_id=?');
@@ -344,6 +372,10 @@ function vp3_music_chat_result_store_v1(PDO $pdo,array $user,int $agent,int $cid
             return vp3_music_chat_result_projection_v1($pdo,$scope,$existing,true);
         }
         $normalized=vp3_music_chat_items_normalize_v1($pdo,$scope,$items);
+        if(isset($meta['history_ref'])){
+            vp3_music_chat_history_selection_v1($pdo,$scope,['meta_json'=>json_encode($meta,JSON_THROW_ON_ERROR),
+                'items_json'=>json_encode($normalized,JSON_THROW_ON_ERROR)]);
+        }
         foreach($normalized as $item)if($meta['source']!=='both'&&$meta['source']!==$item['source'])throw new RuntimeException('The selection does not match the requested music source.',422);
         if(count($normalized)>$meta['requested_count'])throw new RuntimeException('The music selection exceeds the requested number of songs.',422);
         if($meta['existing_playlist_id']!==null){
@@ -403,6 +435,7 @@ function vp3_music_chat_result_bind_v1(PDO $pdo,array $user,int $agent,int $cid,
         $q->execute([$messageId,$cid]);
         if(!$q->fetchColumn())throw new RuntimeException('Music reply binding changed.',409);
         $items=vp3_music_chat_json_v1($row['items_json']);$meta=vp3_music_chat_json_v1($row['meta_json']);$videos=[];$expires=(int)$row['expires_at'];
+        vp3_music_chat_history_selection_v1($pdo,$scope,$row);
         if(($meta['existing_playlist_id']??null)!==null){
             $saved=vp3_music_chat_playlist_row_v1($pdo,$scope,$meta['existing_playlist_id'],true);
             if((int)$saved['revision']!==$meta['expected_playlist_revision'])throw new RuntimeException('Playlist changed before playback. Open it again.',409);
@@ -488,6 +521,7 @@ function vp3_music_chat_result_items_v1(PDO $pdo,array $user,int $agent,int $cid
     $scope=vp3_music_chat_scope_v1($pdo,$user,$agent,$cid);$row=vp3_music_chat_result_row_v1($pdo,$scope,$id,false,true);$items=[];
     if((int)$row['assistant_message_id']<1)throw new RuntimeException('The music selection has not been saved to Chat.',409);
     if($row['playlist_id']!==null)return vp3_music_chat_playlist_items_v1($pdo,$user,$agent,$cid,$row['playlist_id']);
+    vp3_music_chat_history_selection_v1($pdo,$scope,$row);
     foreach(vp3_music_chat_json_v1($row['items_json']) as $item){
         if(!vp3_music_chat_result_item_v1($pdo,$scope,$item)['available'])throw new RuntimeException('That selected song changed. Search again.',409);
         $items[]=$item;
@@ -499,6 +533,7 @@ function vp3_music_chat_result_item_reference_v1(PDO $pdo,array $user,int $agent
 {
     $scope=vp3_music_chat_scope_v1($pdo,$user,$agent,$cid);$row=vp3_music_chat_result_row_v1($pdo,$scope,$id,false,true);
     if($row['playlist_id']!==null)return vp3_music_chat_playlist_items_v1($pdo,$user,$agent,$cid,$row['playlist_id'],null,[$index])[0];
+    vp3_music_chat_history_selection_v1($pdo,$scope,$row);
     $items=vp3_music_chat_json_v1($row['items_json']);
     if((int)$row['assistant_message_id']<1||$index<0||!isset($items[$index]))throw new RuntimeException('Choose a saved song result.',422);
     if(!vp3_music_chat_result_item_v1($pdo,$scope,$items[$index])['available'])throw new RuntimeException('That selected song changed. Search again.',409);
@@ -557,6 +592,7 @@ function vp3_music_chat_playlist_refs_v1(array $items,?string $youtube): array
 function vp3_music_chat_playlist_create_locked_v1(PDO $pdo,array $scope,array $result,string $title,string $requestKey): array
 {
     if((int)$result['assistant_message_id']<1)throw new RuntimeException('The music selection has not been saved to Chat.',409);
+    vp3_music_chat_history_selection_v1($pdo,$scope,$result);
     $title=vp3_music_chat_text_v1($title,200);
     if($title===''||$requestKey===''||strlen($requestKey)>256||preg_match('/[\x00-\x1f\x7f]/',$requestKey))throw new RuntimeException('Give the playlist a title and valid request identity.',422);
     $key=hash('sha256',$requestKey);
@@ -762,6 +798,7 @@ function vp3_music_chat_playlist_add_v1(PDO $pdo,array $user,int $agent,int $cid
         $scope=vp3_music_chat_scope_v1($pdo,$user,$agent,$cid,true);$row=vp3_music_chat_playlist_row_v1($pdo,$scope,$id,true);
         if((int)$row['revision']!==$revision)throw new RuntimeException('Playlist changed. Refresh before editing.',409);
         $result=vp3_music_chat_result_row_v1($pdo,$scope,$resultId,true);$selected=vp3_music_chat_json_v1($result['items_json']);
+        vp3_music_chat_history_selection_v1($pdo,$scope,$result);
         if($result['playlist_id']!==null)throw new RuntimeException('Choose a standalone song result to add to a playlist.',409);
         if((int)$result['assistant_message_id']<1||$index<0||!isset($selected[$index]))throw new RuntimeException('Choose a saved song result.',422);
         $item=$selected[$index];
@@ -798,7 +835,7 @@ function vp3_music_chat_resolve_v1(PDO $pdo,array $user,int $agent,int $cid,arra
     if(!is_int($index)||$index<0||$index>=VP3_MUSIC_CHAT_LIMIT_V1)throw new RuntimeException('Choose a song from the selection.',422);
     $hasResult=is_string($input['result_id']??null);$hasPlaylist=is_string($input['playlist_id']??null);
     if($hasResult===$hasPlaylist)throw new RuntimeException('Choose one saved selection.',422);
-    $result=null;$playlist=null;$youtubeChild=null;$messageId=0;
+    $result=null;$playlist=null;$youtubeChild=null;$messageId=0;$history=null;
     if($hasResult){
         $result=vp3_music_chat_result_row_v1($pdo,$scope,$input['result_id']);
         if($result['playlist_id']!==null)throw new RuntimeException('Use the current saved playlist to play this selection.',409);
@@ -806,6 +843,7 @@ function vp3_music_chat_resolve_v1(PDO $pdo,array $user,int $agent,int $cid,arra
         $stored=vp3_music_chat_json_v1($result['items_json']);
         if(!isset($stored[$index]))throw new RuntimeException('Choose a song from the selection.',422);
         $ref=$stored[$index];$item=vp3_music_chat_result_item_v1($pdo,$scope,$ref);$messageId=(int)$result['assistant_message_id'];
+        $history=vp3_music_chat_history_selection_v1($pdo,$scope,$result);
     }else{
         $playlist=vp3_music_chat_playlist_row_v1($pdo,$scope,$input['playlist_id']);
         if(!is_int($input['revision']??null)||(int)$playlist['revision']!==$input['revision'])throw new RuntimeException('Playlist changed. Refresh before playing.',409);
@@ -819,8 +857,12 @@ function vp3_music_chat_resolve_v1(PDO $pdo,array $user,int $agent,int $cid,arra
     if($item['source']==='vp3'){
         $native=vp3_music_chat_native_item_v1($pdo,$scope,$item['source_id'],$ref['native_revision']??null);
         if(!$native)throw new RuntimeException('VP3 song changed before playback.',409);
-        $out['media_playback']=vp3_media_playback_action_v1($scope['user'],$agent,$cid,'play',[
-            'track_id'=>(int)$native['source_id'],'revision'=>$native['native_revision']]);
+        $selection=['track_id'=>(int)$native['source_id'],'revision'=>$native['native_revision']];
+        if($history!==null){
+            $selection['history_ref']=$history['entry_ref'];
+            if($history['operation']==='resume')$selection['position_seconds']=(float)$history['resume_seconds'];
+        }
+        $out['media_playback']=vp3_media_playback_action_v1($scope['user'],$agent,$cid,$history['operation']??'play',$selection);
     }else{
         if($youtubeChild!==null){
             $source=vp3_youtube_playlist_open_v1($pdo,$scope['owner_user_id'],$youtubeChild,$http);
@@ -837,12 +879,14 @@ function vp3_music_chat_resolve_v1(PDO $pdo,array $user,int $agent,int $cid,arra
         $out['youtube_results']=['query'=>$item['title'],'expires_at'=>$expires,'videos'=>[$video],'music_suggestion'=>true];
         $out['source_message_id']=$messageId;
         if($youtubeChild!==null)$out['youtube_playlist_id']=$youtubeChild;
+        if($history!==null&&$history['operation']==='resume')$out['resume_ms']=(int)round($history['resume_seconds']*1000);
     }
     $automatic=$input['auto_action_id']??null;
     if($automatic!==null){
         $automatic=vp3_music_chat_id_v1($automatic);
         $claimed=agent_commerce_atomic_pa2($pdo,static function()use($pdo,$user,$agent,$cid,$scope,$automatic,$result,$playlist,$item):bool{
             vp3_music_chat_scope_v1($pdo,$user,$agent,$cid,true);
+            if($result!==null)vp3_music_chat_history_selection_v1($pdo,$scope,$result);
             if($playlist!==null){
                 $latest=vp3_music_chat_playlist_row_v1($pdo,$scope,$playlist['playlist_id'],true);
                 if((int)$latest['revision']!==(int)$playlist['revision'])throw new RuntimeException('Playlist changed before playback. Refresh it.',409);
@@ -872,6 +916,8 @@ function vp3_music_chat_resolve_v1(PDO $pdo,array $user,int $agent,int $cid,arra
     }elseif($result!==null){
         $latest=vp3_music_chat_result_row_v1($pdo,$scope,$result['result_id']);
         if(!hash_equals($latest['revision'],$result['revision'])||(int)$latest['assistant_message_id']!==(int)$result['assistant_message_id'])throw new RuntimeException('Music selection changed before playback.',409);
+        $currentHistory=vp3_music_chat_history_selection_v1($pdo,$scope,$latest);
+        if($history!==null&&$currentHistory['resume_seconds']!==$history['resume_seconds'])throw new RuntimeException('The history position changed before playback. Try again.',409);
     }
     if($item['source']==='youtube'&&!vp3_music_chat_youtube_allowed_v1($pdo,$scope))throw new RuntimeException('YouTube access changed.',403);
     vp3_music_chat_scope_v1($pdo,$user,$agent,$cid);

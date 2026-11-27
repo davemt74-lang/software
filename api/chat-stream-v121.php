@@ -74,9 +74,12 @@ $emailOffer=$connectedSitePlan===null&&$initiativeReply===null&&$participantActo
     ?agent_connection_email_offer_request_v1($query,$input['gmail_offer_message_id']??null):null;
 $emailRequest=$emailPlan!==null||$emailOffer!==null;
 $emailQueryHash=hash('sha256',$emailOffer===null?$query:json_encode([$query,$emailOffer['message_id']],JSON_THROW_ON_ERROR));
-$youtubeHistoryRequest=$initiativeReply===null&&empty($input['ephemeral_protocol'])&&agent_connection_youtube_history_request_v1($query);
+$musicHistoryRequest=$initiativeReply===null&&$participantActor===null&&empty($input['ephemeral_protocol'])
+    &&vp3_music_history_chat_request_v1($pdo,$user,$agentScopeId,$conversationId,$query,$input);
+if($participantActor!==null&&vp3_music_history_chat_plan_v1($query)!==null)throw new RuntimeException('Use your private Agent Chat to review listening history.',403);
+$youtubeHistoryRequest=$initiativeReply===null&&empty($input['ephemeral_protocol'])&&!$musicHistoryRequest&&agent_connection_youtube_history_request_v1($query);
 if($youtubeHistoryRequest&&$participantActor!==null)throw new RuntimeException('Use your private Agent Chat to review your YouTube playback in VP3.',403);
-$youtubeAllowed=$connectedSitePlan===null&&$initiativeReply===null&&!$emailRequest&&$participantActor===null
+$youtubeAllowed=$connectedSitePlan===null&&$initiativeReply===null&&!$emailRequest&&!$musicHistoryRequest&&$participantActor===null
     &&vp3_participant_scope_v1()===null&&empty($input['ephemeral_protocol']);
 $youtubeFollowup=$youtubeAllowed&&!$youtubeHistoryRequest
     ?agent_connection_youtube_scoped_followup_plan_v1($pdo,$userId,$agentScopeId,$conversationId,$query):null;
@@ -86,10 +89,10 @@ $casualRequest=false;
 if($participantActor===null&&vp3_participant_scope_v1()===null&&empty($input['ephemeral_protocol'])){
     require_once dirname(__DIR__).'/includes/agent-media-entertainment-v1.php';
     require_once dirname(__DIR__).'/includes/agent-casual-checkin-reply-v1.php';
-    $linkedTool=$initiativeReply!==null&&vp3_chat_reply_tool_plan_v1($query)!==null;
+    $linkedTool=$musicHistoryRequest||($initiativeReply!==null&&vp3_chat_reply_tool_plan_v1($query)!==null);
     $casualTarget=$linkedTool?null:vp3_casual_checkin_reply_target_v1($pdo,$user,$agentScopeId,$conversationId,$query,$initiativeReply);
     $casualRequest=$casualTarget!==null;
-    $mediaCommand=vp3_media_chat_command_v2160($query);
+    $mediaCommand=$musicHistoryRequest||vp3_media_chat_command_v2160($query);
     $mediaTarget=$mediaCommand||$linkedTool?null:vp3_media_reply_target_v1($pdo,$user,$agentScopeId,$conversationId,$query,$initiativeReply);
     $mediaRequest=$mediaCommand||$mediaTarget!==null;
     if($mediaCommand||vp3_agent_chat_reply_native_playback_v2160($casualTarget,$mediaTarget)){
@@ -175,12 +178,31 @@ if($idempotencyKey!==''){
             if(isset($input['working_context_ref'])||isset($replay['working_context_ref'])){
                 require_once dirname(__DIR__).'/includes/agent-working-context-v1.php';vp3_working_context_replay_v1($pdo,$user,$principal,$input,$replay);
             }
+            $historyReference=$replay['music_history_v1']??$replay['music_history_followup_v1']??null;
+            if(is_array($historyReference)||isset($replay['music_history_query_hash'])){
+                $replayConversationId=(int)($replay['conversation_id']??0);
+                if(!is_array($historyReference)||!empty($input['ephemeral_protocol'])||$participantActor!==null
+                    ||($conversationId>0&&$conversationId!==$replayConversationId)
+                    ||!hash_equals((string)($replay['music_history_query_hash']??''),vp3_music_history_chat_request_hash_v1($query,$input))){
+                    throw new RuntimeException('That listening history request changed. Send a new request.',409);
+                }
+                vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
+                $historyPage=vp3_music_history_chat_read_v1($pdo,$user,$agentScopeId,$replayConversationId,
+                    (int)($historyReference['source_message_id']??0),(string)($historyReference['revision']??''));
+                if(isset($replay['music_history_v1'])){
+                    $currentHistory=vp3_music_history_chat_reply_v1($historyPage);
+                    foreach(['answer','actions','sources','tool_receipt','music_history_v1'] as $field)$replay[$field]=$currentHistory[$field];
+                }
+                unset($replay['music_history_query_hash'],$replay['youtube_results'],$replay['media_playback']);$replay['media']=[];
+            }
             $musicReference=is_array($replay['music_chat_v1']??null)?$replay['music_chat_v1']:null;
             if($musicReference!==null||isset($replay['music_query_hash'])){
                 $replayConversationId=(int)($replay['conversation_id']??0);
                 if($musicReference===null||!empty($input['ephemeral_protocol'])||$participantActor!==null
                     ||($conversationId>0&&$conversationId!==$replayConversationId)
-                    ||!hash_equals((string)($replay['music_query_hash']??''),hash('sha256',$query))){
+                    ||!hash_equals((string)($replay['music_query_hash']??''),hash('sha256',$query))
+                    ||(isset($replay['music_history_selection_query_hash'])
+                        &&!hash_equals((string)$replay['music_history_selection_query_hash'],vp3_music_history_chat_request_hash_v1($query,$input)))){
                     throw new RuntimeException('That music request changed. Send a new request.',409);
                 }
                 vp3_agent_chat_followthrough_owner_v2160($pdo,$user,$input);
@@ -191,7 +213,7 @@ if($idempotencyKey!==''){
                 $music['replayed']=true;
                 $currentMusic=vp3_music_chat_reply_v1($music);
                 foreach(['answer','actions','sources','tool_receipt','music_chat_v1'] as $field)$replay[$field]=$currentMusic[$field];
-                unset($replay['music_query_hash'],$replay['youtube_results'],$replay['media_playback']);
+                unset($replay['music_query_hash'],$replay['music_history_selection_query_hash'],$replay['youtube_results'],$replay['media_playback']);
                 $replay['media']=[];
             }
             if($emailRequest||isset($replay['gmail_query_hash'])){
@@ -265,7 +287,7 @@ if($idempotencyKey!==''){
                 if(!has_permission('account.access',$live))throw new RuntimeException('Research access changed.',403);
                 unset($replay['public_research_query_hash'],$replay['artist_research_query_hash']);
             }
-            if($musicReference===null&&empty($replay['media_offer_reply_v1'])&&empty($replay['casual_checkin_reply_v1'])
+            if($musicReference===null&&!is_array($historyReference)&&empty($replay['media_offer_reply_v1'])&&empty($replay['casual_checkin_reply_v1'])
                 &&($youtubeRequest||isset($replay['youtube_query_hash']))){
                 $replayConversationId=(int)($replay['conversation_id']??0);
                 $savedFollowup=($replay['tool_receipt']['capability']??null)==='youtube.results';
@@ -343,10 +365,20 @@ if($imageReferenceId>0||array_key_exists('initiative_reply',$input)||$initiative
         }
         if($mediaRequest||$casualRequest)unset($replay['media_playback'],$replay['youtube_results']);
         if(is_array($replay['music_chat_v1']??null)){
+            if(isset($replay['music_chat_v1']['history_operation']))$replay['music_history_selection_query_hash']=vp3_music_history_chat_request_hash_v1($query,$input);
             $replay['music_query_hash']=hash('sha256',$query);
             $replay['music_chat_v1']=vp3_music_chat_result_reference_v1($replay['music_chat_v1']);
             $replay['answer']='Your music selection is saved in Chat.';
             $replay['sources']=$replay['media']=[];
+        }
+        if(is_array($replay['music_history_v1']??null)||is_array($replay['music_history_followup_v1']??null)){
+            $replay['music_history_query_hash']=vp3_music_history_chat_request_hash_v1($query,$input);
+            if(is_array($replay['music_history_v1']??null)){
+                $replay['music_history_v1']=vp3_music_history_chat_reference_v1($replay['music_history_v1']);
+                $replay['answer']='Retained listening history is saved in Chat.';
+            }
+            $replay['sources']=$replay['media']=$replay['actions']=[];
+            unset($replay['youtube_results'],$replay['media_playback']);
         }
         if(($replay['linked_reply_tool_v1']??null)==='youtube')unset($replay['youtube_results']);
         if($publicResearchRequest)$replay['public_research_query_hash']=hash('sha256',$query);
@@ -363,7 +395,8 @@ if($imageReferenceId>0||array_key_exists('initiative_reply',$input)||$initiative
                 $replay['sources']=$replay['actions']=[];
             }
         }
-        if(!isset($done['music_chat_v1'])&&$youtubeRequest&&empty($done['media_offer_reply_v1'])&&empty($done['casual_checkin_reply_v1'])){
+        if(!isset($done['music_chat_v1'])&&!isset($done['music_history_v1'])
+            &&!isset($done['music_history_followup_v1'])&&$youtubeRequest&&empty($done['media_offer_reply_v1'])&&empty($done['casual_checkin_reply_v1'])){
             unset($replay['youtube_results']);
             $replay['youtube_query_hash']=hash('sha256',$query);
         }

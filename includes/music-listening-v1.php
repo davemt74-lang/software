@@ -413,6 +413,12 @@ function music_listening_v1_handle(PDO $pdo, ?array $user, array $input, array $
             'source'=>$source,'source_url'=>music_listening_v1_safe_url((string)($input['source_url']??''),(string)($context['origin']??'')),
             'media_offer_playback'=>$input['media_offer_playback']??null]));
         $receipt=music_listening_v1_atomic($pdo,function()use($pdo,$user,$userId,$track,$trackId,$listener,$listenerKey,$play,$position,$rate,$muted,$loop,$now,$source,$attribution,$hash,$lock,$input,$context):array{
+            if(is_array($input['media_offer_playback']??null)&&array_key_exists('history_ref',$input['media_offer_playback'])){
+                require_once __DIR__.'/agent-media-playback-v1.php';
+                if(!vp3_media_history_start_authorized_v1($pdo,$user,$trackId,$source,$input['media_offer_playback'],$position/1000)){
+                    music_listening_v1_error('history_changed',409,'The selected history playback changed. Choose it again before playing.');
+                }
+            }
             $insert=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'
                 ?'INSERT OR IGNORE INTO music_listening_starts_v1(listener_key,play_id,request_hash) VALUES(?,?,?)'
                 :'INSERT INTO music_listening_starts_v1(listener_key,play_id,request_hash) VALUES(?,?,?) ON DUPLICATE KEY UPDATE listener_key=listener_key';

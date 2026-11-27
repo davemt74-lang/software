@@ -299,6 +299,7 @@
         });
         if (!accepted) {
           if (active === selection) playbackState(selection, 'unavailable');
+          if (record.payload.history_operation) await refreshMessage(record.message);
           return false;
         }
       } else {
@@ -316,6 +317,7 @@
         selection.state = 'unavailable';
         status(record, error.message || 'Playback is unavailable. Try again.', 'unavailable');
         updateTransport(record);
+        if (record.payload.history_operation) await refreshMessage(record.message);
       }
       return false;
     }
@@ -499,6 +501,9 @@
       actions.append(play, button(record.editing ? 'Done editing' : 'Edit playlist', () => { record.editing = !record.editing; render(record); }));
     }
     actions.append(button('My playlists', () => void showSaved(record)), button('Refresh', () => void refresh(record)));
+    if (window.VP3_MUSIC_HISTORY_V1) actions.append(button('Listening history', () => {
+      if (!window.STONEFELLOW_CHAT_CONTINUITY?.requestMusicHistory?.()) status(record, 'Finish the current Chat turn before opening listening history.');
+    }));
     record.card.append(actions);
     if (payload.playlist && record.editing) {
       const form = node('form', 'vp3-music-title-form');
@@ -548,13 +553,14 @@
       }
       details.append(meta); summary.append(details); row.append(summary);
       const controls = node('div', 'vp3-music-item-actions');
-      const play = button('Play', () => {
+      const playLabel = payload.history_operation === 'resume' ? 'Resume' : 'Play';
+      const play = button(playLabel, () => {
         const queuedIndex = !active && queueState?.entries.findIndex(entry => entry.record === record && entry.index === index && entry.payload === payload);
         if (Number.isInteger(queuedIndex) && queuedIndex >= 0) void playQueueEntry(queueState, queuedIndex);
         else void playIndex(record, index, false);
       }, 'vp3-music-primary');
       play.disabled = !item.available;
-      play.setAttribute('aria-label', 'Play ' + text(item.title));
+      play.setAttribute('aria-label', playLabel + ' ' + text(item.title));
       const playNext = button('Play next', () => void enqueue(record, [index], true));
       const addQueue = button('Add to queue', () => void enqueue(record, [index]));
       playNext.disabled = addQueue.disabled = !item.available;
@@ -602,8 +608,14 @@
       const response = await api(record.payload, record.payload.playlist ? 'playlist' : 'result', fields);
       if (!current(record)) return;
       if (!validPayload(response.music_chat_v1)) throw new Error('This music selection is unavailable.');
+      const preservePlayer = active?.record === record
+        && JSON.stringify(record.payload.items) === JSON.stringify(response.music_chat_v1.items)
+        && record.payload.playlist?.revision === response.music_chat_v1.playlist?.revision;
+      if (active?.record === record && !preservePlayer) cleanupActive();
       record.payload = response.music_chat_v1;
-      render(record);
+      if (!preservePlayer) render(record);
+      else playbackState(active, active.state);
+      return true;
     } catch (error) {
       if (current(record)) {
         if ([401,403,404,410].includes(error.status)) {
@@ -668,6 +680,24 @@
     return retry.id;
   };
   const completeRequest = id => { if (retry?.id === id) retry = null; };
+  async function openPlaylistPicker(message, index = 0) {
+    const record = attached.get(message);
+    if (!record || !current(record) || !Number.isSafeInteger(index) || !record.payload.items[index]?.available) return false;
+    await showSaved(record, index);
+    return current(record);
+  }
+  async function refreshMessage(message) {
+    const record = attached.get(message);
+    if (!record || !current(record)) return null;
+    const answer = message.querySelector('.message-text');
+    if (answer) answer.textContent = 'Selected history entry.';
+    const refreshed = await refresh(record);
+    if (!refreshed || !current(record)) return null;
+    if (answer) answer.textContent = record.payload.items[0]?.available
+      ? 'Selected ' + text(record.payload.items[0].title) + ' from your listening history.'
+      : 'The selected history entry is currently unavailable.';
+    return record.payload;
+  }
   window.VP3_MUSIC_CHAT_V1 = Object.freeze({attach, claimSource, command, runCommand:control, requestId, completeRequest,
-    isPlaying:() => active?.state === 'playing', stop:() => cleanupActive()});
+    openPlaylistPicker, refreshMessage, isPlaying:() => active?.state === 'playing', stop:() => cleanupActive()});
 })();

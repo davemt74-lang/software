@@ -31,6 +31,7 @@ These user requirements are distinct from engineering recommendations and unreso
 | [ML3 implementation](ML3-IMPLEMENTATION.md) | Workspace-scoped listening reports, cohort/timezone definitions, coverage, public page attribution and acceptance |
 | [ML3A lifetime totals](ML3A-LIFETIME-TOTALS.md) | All retained measured history per song/workspace and authorized platform, SQL aggregation, retention limits and acceptance |
 | [MC1 music Chat](MC1-MUSIC-CHAT.md) | Exact requests across VP3 and YouTube, durable private playlists, coordinated playback, source authority and scored release criteria |
+| [MC2 music history](MC2-MUSIC-HISTORY.md) | Shared private session history, filters/pagination, exact Agent recall, source coverage and scored acceptance |
 | [Development status](DEVELOPMENT-STATUS.md) | Current completion state, test evidence, pending verification and next action |
 
 ## First complete integration milestone
