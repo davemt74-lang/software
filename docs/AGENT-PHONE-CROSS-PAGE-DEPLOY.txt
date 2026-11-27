@@ -30,10 +30,9 @@ A Chat popup uses its embedding page's Phone runtime. It does not create another
 Twilio device or microphone owner. Existing native call cards remain backed by
 their saved Chat messages and authoritative call records.
 
-Browser audio belongs to its current document. Keep the calling tab open while
-talking; existing SDK close protection applies to navigation during a live call.
-This release restores the enabled choice across pages; it does not transfer a
-live WebRTC media session across a full page reload.
+Browser audio belongs to its current document. The subsequent persistent Phone
+window keeps that document open while the other VP3 pages navigate or reload.
+See PHONE-CALL-CONTINUITY-DEPLOY.txt for the current setup, recovery and checks.
 
 USER PAGES AND ADMIN
 

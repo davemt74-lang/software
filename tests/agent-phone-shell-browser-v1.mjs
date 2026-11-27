@@ -80,8 +80,10 @@ try{
  await check('a Chat popup shares the parent phone runtime without a duplicate device',async()=>{assert.equal(await page.evaluate(()=>phoneTest.devices.length),1);assert.equal(await page.frameLocator('iframe').locator('.vp3-phone-workspace').count(),0);});
  await card.getByRole('button',{name:'End call',exact:true}).click();
  notices=[{id:1,message_id:50,conversation_id:10,agent_id:0,speech:'A connected phone sent a chat message.',url:'/notifications.php?open=1'}];
+ await page.evaluate(()=>{const overlay=document.createElement('dialog');overlay.id='fixtureEditor';overlay.innerHTML='<h2>Open editor</h2><textarea aria-label="Unsent editor note">Keep this draft</textarea>';document.body.append(overlay);overlay.showModal();});
  await page.evaluate(()=>VP3AgentPhoneShellV1.refresh());await card.getByRole('link',{name:'Open Chat'}).waitFor();
- await check('connected-phone activity announces in Admin and links the durable personal Chat notice',async()=>{assert.equal(await card.getByRole('link',{name:'Open Chat'}).getAttribute('href'),base+'/notifications.php?open=1');await page.waitForFunction(()=>window.spoken?.length===1);assert.equal(await page.evaluate(()=>activity.length),1);});
+ await check('connected-phone activity announces behind an Admin editor overlay and links the durable personal Chat notice',async()=>{assert.equal(await card.getByRole('link',{name:'Open Chat'}).getAttribute('href'),base+'/notifications.php?open=1');await page.waitForFunction(()=>window.spoken?.length===1);assert.equal(await page.evaluate(()=>activity.length),1);assert.equal(await page.getByLabel('Unsent editor note').inputValue(),'Keep this draft');assert.equal(await page.evaluate(()=>document.getElementById('fixtureEditor').open),true);});
+ await page.evaluate(()=>document.getElementById('fixtureEditor').close());
  await page.evaluate(()=>VP3AgentPhoneShellV1.refresh());assert.equal(await page.evaluate(()=>activity.length),1);
  await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.phoneTest?.devices.length===1);await page.evaluate(()=>VP3AgentPhoneShellV1.refresh());
  await check('page changes do not repeat an already announced unread event',async()=>{assert.equal(await page.evaluate(()=>activity.length),0);assert.equal(await page.evaluate(()=>spoken.length),0);});

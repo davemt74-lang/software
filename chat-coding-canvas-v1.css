@@ -10,7 +10,7 @@
   overflow:hidden;
   scroll-padding:0;
 }
-.chat-main:has(> #chatThread[data-view="coding"]) > #chatComposerShell {
+.chat-main:has(> #chatThread[data-view="coding"][data-coding-mode="app"]) > #chatComposerShell {
   display:none !important;
 }
 .vp3-coding-canvas-dock {
