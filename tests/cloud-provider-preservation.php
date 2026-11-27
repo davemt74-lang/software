@@ -122,7 +122,7 @@ function curl_exec(object $handle): string|bool {
 require_once dirname(__DIR__).'/includes/schema-metadata.php';
 foreach(['ai-settings.php','ai-runtime-v100.php','ai-stream-v121.php','recommendations.php','agent-brain-context-v99.php','chat-engine.php','chat-execution-v019.php','cognitive-turn-v2430.php',
     'ai-service-policy-v1.php','ai-service-usage-v1.php','ai-usage-accounting-v032.php','user-llm-v1.php','agent-runtime-routing-v420.php',
-    'agent-tool-json-v1.php','coding-canvas-model-v1.php','coding-canvas-commands-v1.php','coding-canvas-response-schema-v1.php','coding-canvas-stream-v1.php','coding-canvas-provider-v1.php'] as $file){
+    'agent-tool-json-v1.php','coding-canvas-model-v1.php','coding-canvas-commands-v1.php','coding-canvas-checks-contract-v1.php','coding-canvas-response-schema-v1.php','coding-canvas-stream-v1.php','coding-canvas-provider-v1.php'] as $file){
     $source=file_get_contents(dirname(__DIR__).'/includes/'.$file);
     $source=preg_replace('/^require_once __DIR__[^\n]*\n/m','',$source);
     $source=str_replace('__DIR__',var_export(dirname(__DIR__).'/includes',true),$source);

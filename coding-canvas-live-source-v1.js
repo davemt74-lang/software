@@ -25,7 +25,17 @@
     for(let n=0;n<8&&i<raw.length;n++){
       space();const key=string();if(!key?.done)break;
       space();if(raw[i++]!==':')break;space();
-      if(raw[i]!=='"')break;
+      if(raw[i]!=='"'){
+        // Optional workflow definitions may precede a source field in the same object.
+        if(!['[','{'].includes(raw[i]))break;
+        let depth=0,complete=false;
+        while(i<raw.length){
+          if(raw[i]==='"'){if(!string()?.done)break;continue;}
+          const c=raw[i++];if(c==='['||c==='{')depth++;
+          if(c===']'||c==='}')if(--depth===0){complete=true;break;}
+        }
+        if(!complete)break;space();if(raw[i++]!==',')break;continue;
+      }
       const value=string();if(!value)break;
       if(Object.hasOwn(out,key.value))out[key.value]=value.value;
       if(!value.done)break;space();if(raw[i++]!==',')break;

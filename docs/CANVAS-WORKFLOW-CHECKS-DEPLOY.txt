@@ -1,0 +1,19 @@
+Canvas workflow checks and one-pass repair
+
+Deploy the full Cloud archive and run Database Upgrade once.
+
+In the owner Code / App Canvas editor:
+- Open an app or draft. Workflow checks are under Instructions & checks.
+- Record a workflow uses empty disposable app data and sample sources. Use the app controls, name the check and enter its expected visible text.
+- Must survive reloading the app verifies an acknowledged sample save in a fresh runtime.
+- Save workflow check creates a new untested draft. It preserves the working version and current records.
+- Test preview runs the saved actions without a model request.
+- Test & repair allows one Coding Agent attempt if a saved check fails, then retests its new draft once. A failed retest stops.
+- Review the resulting app, then explicitly choose Use this version.
+
+Limits: three cases, twelve actions per case, twenty-four total actions.
+Existing apps with no saved checks retain their startup test until checks are added.
+Email-connected apps keep their native sample-email test and original Chat.
+Changing Chat or source cancels local checking and fences delayed results.
+The live code view and response recovery from the preceding release are included.
+Passing selected sample workflows is evidence for those examples, not a guarantee of every possible app behavior.

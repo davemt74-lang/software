@@ -1,0 +1,61 @@
+<?php
+declare(strict_types=1);
+ob_start();require __DIR__.'/coding-canvas-jobs-v1.php';ob_end_clean();
+require __DIR__.'/../includes/coding-canvas-checks-v1.php';
+vp3_coding_canvas_job_v1($pdo,$owner,7,11,$replacementJob['run_id'],'stop');$checks=0;
+$id='7f000000-0000-4000-8000-000000000001';
+$code=['html'=>'<button id="add">Add</button><p id="count">0</p>','css'=>'','js'=>'CanvasUI.on("#add","click",()=>CanvasUI.text("#count","1"));'];
+$plan=[['name'=>'Add one item','steps'=>[['action'=>'click','selector'=>'#add']],
+    'expect'=>['kind'=>'text','selector'=>'#count','value'=>'1','match'=>'equals'],'persist'=>false]];
+$saved=vp3_coding_canvas_save_draft_v1($pdo,$owner,7,11,$id,'Checked app',$code,['kept'=>true],workflowChecks:$plan);
+check($saved['revision']['workflow_checks']===$plan&&$saved['revision']['workflow_result']===null,'A version stores its bounded declarative checks with the immutable code');
+rejects(fn()=>vp3_coding_canvas_checks_v1([array_replace($plan[0],['script'=>'fetch("private")'])]),422,'Check definitions cannot contain executable test code');
+rejects(fn()=>vp3_coding_canvas_checks_v1(array_fill(0,4,$plan[0])),422,'At most three workflow cases are admitted');
+rejects(fn()=>vp3_coding_canvas_checks_v1([array_replace($plan[0],['steps'=>array_fill(0,13,$plan[0]['steps'][0])])]),422,'Workflow actions remain bounded');
+rejects(fn()=>vp3_coding_canvas_mark_tested_v1($pdo,$owner,7,$id,1,$saved['state']['revision']),409,'Startup alone cannot pass a version with workflow checks');
+$request=agent_event_uuid_v1920();$before=(int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn();
+$begin=vp3_coding_canvas_check_begin_v1($pdo,$owner,7,11,$id,1,$request,$saved['revision']['source_hash'],$saved['state']['revision'],null);
+check($begin['revision']['workflow_result']['status']==='running'&&!$begin['revision']['test_passed'],'Starting checks clears only this version’s test proof');
+check(vp3_coding_canvas_check_begin_v1($pdo,$owner,7,11,$id,1,$request,$saved['revision']['source_hash'],$saved['state']['revision'],null)['revision']['workflow_result']===$begin['revision']['workflow_result'],'An uncertain begin recovers the same exact test request');
+check((int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn()===$before,'Defining and starting checks uses no inference');
+$pass=['passed'=>1,'failed_case'=>null,'step'=>0,'reason'=>'none','email_fixture_checked'=>false];
+$done=vp3_coding_canvas_check_finish_v1($pdo,$owner,7,11,$id,1,$request,$pass);
+check($done['revision']['test_passed']&&$done['revision']['workflow_result']['status']==='passed','A complete exact workflow result can test the current draft');
+check(vp3_coding_canvas_check_finish_v1($pdo,$owner,7,11,$id,1,$request,$pass)['revision']['workflow_result']===$done['revision']['workflow_result'],'Finishing is idempotent after a lost response');
+$fail=['passed'=>0,'failed_case'=>0,'step'=>1,'reason'=>'handler_missing','email_fixture_checked'=>false];
+rejects(fn()=>vp3_coding_canvas_check_finish_v1($pdo,$owner,7,11,$id,1,$request,$fail),409,'A completed check request cannot be assigned a different outcome');
+rejects(fn()=>vp3_coding_canvas_check_result_v1(array_replace($pass,['failed_case'=>0]),$plan),422,'A contradictory check result cannot mark a draft tested');
+$active=vp3_coding_canvas_activate_v1($pdo,$owner,7,$id,1,null);
+$changed=$code;$changed['css']='button{min-height:44px}';
+$draft=vp3_coding_canvas_source_save_v1($pdo,$owner,7,11,$id,1,$active['revision']['source_hash'],agent_event_uuid_v1920(),$changed,null,1);
+check($draft['revision']['workflow_checks']===$plan&&!$draft['revision']['test_passed'],'Manual source changes inherit the saved checks and need a new test');
+$request=agent_event_uuid_v1920();
+vp3_coding_canvas_check_begin_v1($pdo,$owner,7,11,$id,2,$request,$draft['revision']['source_hash'],$draft['state']['revision'],null);
+$failed=vp3_coding_canvas_check_finish_v1($pdo,$owner,7,11,$id,2,$request,$fail);
+check($failed['revision']['workflow_result']['status']==='failed'&&$failed['canvas']['active_revision']===1,'A failed check keeps the working version active');
+rejects(fn()=>vp3_coding_canvas_activate_v1($pdo,$owner,7,$id,2,1),409,'A failed workflow cannot activate the new draft');
+$repair=vp3_coding_canvas_check_repair_v1($pdo,$owner,7,11,$id,2,$request,agent_event_uuid_v1920());
+check(vp3_coding_canvas_check_repair_v1($pdo,$owner,7,11,$id,2,$request,agent_event_uuid_v1920())['job']['run_id']===$repair['job']['run_id'],'A failed test admits only one repair job even when retried with another admission ID');
+$calls=0;
+$result=vp3_coding_canvas_execute_v1($pdo,$owner,$claim($repair['job']['run_id']),static function($connection,$user,$pin,$run,$request,$prompt,$previous,$diagnostic,$attribution)use(&$calls,$plan,$changed):array{
+    $calls++;check(($attribution['workflow_checks']??null)===$plan,'Generation receives the original acceptance checks');
+    return ['title'=>'Checked app','artifact'=>$changed,'workflow_checks'=>[]];
+});
+$job=vp3_coding_canvas_job_v1($pdo,$owner,7,11,$repair['job']['run_id'],'job');
+$repaired=vp3_coding_canvas_read_v1($pdo,$owner,7,$id,$job['revision']);
+check($result['ok']&&$calls===1&&$job['revision']===3,'One explicit repair saves one separate draft');
+check($repaired['revision']['workflow_checks']===$plan&&!$repaired['revision']['test_passed'],'A model cannot remove checks to manufacture a passing repair');
+check($repaired['canvas']['active_revision']===1&&$repaired['state']['value']->kept===true,'Repair preserves current app records and working code');
+check(vp3_coding_canvas_check_repair_v1($pdo,$owner,7,11,$id,2,$request,agent_event_uuid_v1920())['job']['state']==='ready','Recovery after a completed repair returns its original saved run');
+$latestRequest=agent_event_uuid_v1920();
+vp3_coding_canvas_check_begin_v1($pdo,$owner,7,11,$id,3,$latestRequest,$repaired['revision']['source_hash'],$repaired['state']['revision'],null);
+vp3_coding_canvas_save_state_v1($pdo,$owner,7,$id,1,$repaired['state']['revision'],['kept'=>true,'newer'=>true]);
+rejects(fn()=>vp3_coding_canvas_check_finish_v1($pdo,$owner,7,11,$id,3,$latestRequest,$pass),409,'Newer saved records fence a late test result');
+rejects(fn()=>vp3_coding_canvas_check_begin_v1($pdo,$owner,7,11,$id,2,agent_event_uuid_v1920(),$draft['revision']['source_hash'],$draft['state']['revision'],null),409,'An older draft cannot replace current test evidence');
+rejects(fn()=>vp3_coding_canvas_check_begin_v1($pdo,$foreign,7,11,$id,3,agent_event_uuid_v1920(),$repaired['revision']['source_hash'],$repaired['state']['revision'],null),403,'Another account cannot start this owner’s tests');
+require_once __DIR__.'/../includes/coding-canvas-publishing-v1.php';
+$public=vp3_coding_canvas_publishing_source_v1($pdo,vp3_coding_canvas_require_row_v1($pdo,1,7,$id),1);
+check($public['source']!==null&&array_keys($public['source'])===['artifact','commands']
+    &&!str_contains(json_encode($public['source']),'workflow_checks')&&!str_contains(json_encode($public['source']),'workflow_result'),
+    'Published source excludes private workflow plans and reports');
+echo 'CODING_CANVAS_WORKFLOW=PASS ('.$checks.' assertions, '.($mysql?'mysql':'sqlite').")\n";
