@@ -281,7 +281,9 @@ try {
 
   // Queued results preserve the currently playing song and validate each saved
   // source selection when it reaches the front. Creating a ready queue is quiet.
-  const queueBase = await fixture.seed({playlist:true,title:'Queue base',items:[{source:'vp3',source_id:'41'},{source:'vp3',source_id:'42'}]});
+  // The earlier handoff test deliberately ended track 41. Use a fresh song so
+  // resuming its saved final fraction of a second cannot race this queue test.
+  const queueBase = await fixture.seed({playlist:true,title:'Queue base',items:[{source:'vp3',source_id:'45'},{source:'vp3',source_id:'42'}]});
   const queueCard = await attach(page, queueBase, true);
   await queueCard.getByRole('button', {name:'Play playlist', exact:true}).click();
   await nativeStarted(page, queueCard);
@@ -289,7 +291,7 @@ try {
   const appended = await fixture.seed({intent:'queue_append',autoplay:true,items:[{source:'youtube',source_id:'vp300000001'}]});
   const appendedCard = await attach(page, appended, true);
   await playbackState(appendedCard, 'queued');
-  equal(await page.locator('audio').evaluateAll(elements => elements.filter(audio => !audio.paused).map(audio => audio.dataset.trackId)), ['41'],
+  equal(await page.locator('audio').evaluateAll(elements => elements.filter(audio => !audio.paused).map(audio => audio.dataset.trackId)), ['45'],
     'Append leaves the current native song playing');
   equal(youtubeCount(), beforeQueuedYouTube, 'Queue append creates no YouTube listening receipt');
   const inserted = await fixture.seed({intent:'play_next',autoplay:true,items:[{source:'youtube',source_id:'vp300000002'}]});
