@@ -200,7 +200,7 @@ async function loadChat(conversationId) {
   for (const file of ['chat.css','chat-specialist-rail-v1.css','chat-coding-canvas-v1.css']) {
     await page.addStyleTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
   }
-  for (const file of ['chat-specialist-rail-v1.js','chat.js','coding-canvas-runtime-v1.js']) {
+  for (const file of ['chat-specialist-rail-v1.js','chat.js','coding-canvas-runtime-v1.js','coding-canvas-diff-v1.js']) {
     await page.addScriptTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
   }
   const resumed = conversationId > 0 ? page.waitForResponse(response =>
@@ -424,6 +424,8 @@ try {
   // checkbox afterwards, racing the iframe teardown that the test requires.
   await failingCheckbox.click();
   await status.getByText('Preview failed.',{exact:false}).waitFor();
+  await panel.locator('.vp3-coding-canvas-preview-check[data-state="failed"]').getByText('The app code stopped while running.',{exact:false}).waitFor();
+  await panel.locator('.vp3-coding-canvas-preview-error').getByText('Use Repair to prepare a change.',{exact:false}).waitFor();
   assert.equal(await panel.getByRole('button',{name:'Use this version'}).isEnabled(),false,'A runtime error invalidates the healthy preview');
 
   await codePrompt.fill('Hang during startup');

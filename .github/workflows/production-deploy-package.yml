@@ -504,6 +504,7 @@ jobs:
           test -f _deploy/chat-mobile-specialists-v1.js
           test -f _deploy/chat-research-specialist-v1.css
           test -f _deploy/chat-coding-canvas-v1.js
+          test -f _deploy/coding-canvas-diff-v1.js
           test -f _deploy/chat-coding-canvas-v1.css
           test -f _deploy/coding-canvas-sidebar-v1.js
           test -f _deploy/coding-canvas-sidebar-v1.css

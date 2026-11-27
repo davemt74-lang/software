@@ -127,6 +127,7 @@
   const pickerLabel = node('label','Saved canvases');
   pickerLabel.append(picker);
   const versions = node('select');
+  versions.setAttribute('aria-label','Version');
   const versionsLabel = node('label','Version');
   versionsLabel.append(versions);
   const savedControls = node('div','','vp3-coding-canvas-controls vp3-coding-canvas-pickers');
@@ -137,11 +138,60 @@
   editorAppIcons.setAttribute('aria-label','Canvas shortcuts');
   const workspace = node('section','','vp3-coding-canvas-workspace');
   const workspaceTitle = node('h3','','vp3-coding-canvas-workspace-title');
+  const versionStatus = node('p','','vp3-coding-canvas-version-status');
   const previewDescription = node('p','','vp3-coding-canvas-description');
   const frameHost = node('div','','vp3-coding-canvas-preview');
-  const source = node('details','','vp3-coding-canvas-source');
+  const source = node('section','','vp3-coding-canvas-source');
+  const sourceLanguage = node('select');
+  sourceLanguage.setAttribute('aria-label','Source language');
+  for (const [value,label] of [['html','HTML'],['css','CSS'],['js','JavaScript']]) sourceLanguage.append(option(label,value));
+  const sourceDescription = node('p','','vp3-coding-canvas-description');
   const code = node('pre');
-  source.append(node('summary','View source'),code);
+  source.append(sourceLanguage,sourceDescription,code);
+  sourceLanguage.addEventListener('change',() => { if (matches()) renderSource(); });
+  const changes = node('section','','vp3-coding-canvas-changes');
+  const compareVersion = node('select');
+  compareVersion.setAttribute('aria-label','Compare with version');
+  const compareLabel = node('label','Compare with version');
+  compareLabel.append(compareVersion);
+  const comparisonStatus = node('p','','vp3-coding-canvas-description');
+  comparisonStatus.setAttribute('role','status');
+  const comparisonResult = node('div','','vp3-coding-canvas-diff');
+  const compareReload = button('Reload selected version',() => {
+    if (current?.revision && !locked && matches()) void openSaved(current.canvas.id,current.revision.id,false);
+  });
+  compareReload.hidden = true;
+  changes.append(compareLabel,comparisonStatus,compareReload,comparisonResult);
+  compareVersion.addEventListener('change',() => void loadComparison());
+  const viewTabs = node('div','','vp3-coding-canvas-tabs');
+  viewTabs.setAttribute('role','tablist');
+  viewTabs.setAttribute('aria-label','Canvas views');
+  const viewPanels = {preview:frameHost,changes,source};
+  const viewButtons = Object.entries({preview:'Preview',changes:'Changes',source:'Source'}).map(([name,label]) => {
+    const tab = button(label,() => setEditorTab(name));
+    tab.setAttribute('role','tab');
+    tab.id = 'canvas-view-'+name+'-v1';
+    tab.dataset.canvasView = name;
+    tab.setAttribute('aria-controls','canvas-view-panel-'+name+'-v1');
+    const body = viewPanels[name];
+    body.id = 'canvas-view-panel-'+name+'-v1';
+    body.setAttribute('role','tabpanel');
+    body.setAttribute('aria-labelledby',tab.id);
+    viewTabs.append(tab);
+    return tab;
+  });
+  viewTabs.addEventListener('keydown',event => {
+    const index = viewButtons.indexOf(document.activeElement);
+    if (index < 0 || !['ArrowLeft','ArrowRight','Home','End'].includes(event.key)) return;
+    event.preventDefault();
+    const target = event.key === 'Home' ? 0 : event.key === 'End' ? 2 : (index+(event.key === 'ArrowRight' ? 1 : 2))%3;
+    setEditorTab(viewButtons[target].dataset.canvasView);
+    viewButtons[target].focus();
+  });
+  const previewCheck = node('section','','vp3-coding-canvas-preview-check');
+  const previewCheckText = node('p','','vp3-coding-canvas-description');
+  previewCheck.append(node('h3','Preview check'),previewCheckText);
+  previewCheck.hidden = true;
   const libraryImagePanel = node('details','','vp3-coding-canvas-commands vp3-coding-canvas-image');
   const libraryInfo = node('p','','vp3-coding-canvas-description');
   const libraryImageStatus = node('p','','vp3-coding-canvas-status');
@@ -332,7 +382,10 @@
     }catch(error){if(phoneController===controller&&phoneDialog.open&&error.name!=='AbortError')phoneStatus.textContent=error.message||'Delivery could not be confirmed. Retry to check the same delivery.';}
     finally{if(phoneController===controller){phoneController=null;phoneWriting=false;phoneControls();}}
   }
-  actions.append(openInApp,test,apply,sendPhone,hideApp,remove);
+  const viewWorking = button('View working version',() => {
+    if (!locked && matches() && current?.canvas.active_revision) void openSaved(current.canvas.id,current.canvas.active_revision);
+  });
+  actions.append(test,apply,viewWorking,openInApp,sendPhone,hideApp,remove);
 
   const deletion = node('div','','vp3-coding-canvas-controls');
   const deleteFolder = node('input');
@@ -343,11 +396,21 @@
   deletion.append(node('p','Deleting this Canvas takes any public link offline.','vp3-coding-canvas-delete-public-note'),
     deleteLabel,deleteConfirm,button('Cancel',() => showDelete(false)));
   deletion.hidden = true;
-  workspace.append(workspaceTitle,previewDescription,actions,phoneNotice,deletion,libraryImagePanel,permissions,publishing,frameHost,source);
+  const appSettings = node('div','','vp3-coding-canvas-app-settings');
+  appSettings.append(libraryImagePanel,permissions,publishing);
+  workspace.append(workspaceTitle,versionStatus,previewDescription,actions,phoneNotice,deletion,appSettings,viewTabs,frameHost,changes,source);
   workspace.hidden = true;
-  const editorControls = node('div','','vp3-coding-canvas-editor-controls');
-  editorControls.append(promptLabel,commandLibrary,controls,progress,savedControls,editorAppIcons);
-  panel.append(header,editorControls,appFeedback,workspace);
+  const editorControls = node('details','','vp3-coding-canvas-editor-controls');
+  editorControls.open = true;
+  const requestSummary = node('summary','Instructions & checks');
+  const editorControlBody = node('div','','vp3-coding-canvas-editor-body');
+  editorControlBody.append(promptLabel,commandLibrary,controls,progress,previewCheck);
+  editorControls.append(requestSummary,editorControlBody);
+  const editorEmpty = node('section','','vp3-coding-canvas-empty');
+  editorEmpty.append(node('h3','Build your next Canvas'),node('p','Describe an app or workflow, then choose Build new. Your draft will appear here for testing and review.'));
+  const editorLayout = node('div','','vp3-coding-canvas-editor-layout');
+  editorLayout.append(editorControls,editorEmpty,workspace);
+  panel.append(header,savedControls,editorAppIcons,appFeedback,editorLayout);
   thread.append(panel);
 
   const dock = node('div','','vp3-coding-canvas-dock');
@@ -388,6 +451,8 @@
   let commandCatalogRequest = 0;
   let footerTimer = 0;
   let current = null;
+  let editorTab = 'preview';
+  let comparisonRead = null;
   let frame = null;
   let artworkFrame = null;
   const artworkAttempts = new Set();
@@ -1051,6 +1116,7 @@
     panel.dataset.mode = mode;
     thread.dataset.codingMode = mode;
     heading.textContent = mode === 'app' ? current?.canvas?.title || 'Canvas app' : 'Code / App Canvas';
+    syncEditorViews();
   }
   function enterPanel(mode) {
     const runtime = chat();
@@ -1113,6 +1179,136 @@
   function previewFailed() {
     return failedPreview && failedPreview.canvas === current?.canvas.id && failedPreview.revision === current?.revision?.id;
   }
+
+  function closeComparison(clear = true) {
+    comparisonRead?.controller.abort();
+    comparisonRead = null;
+    if (clear) {
+      comparisonStatus.textContent = '';
+      comparisonResult.replaceChildren();
+      compareReload.hidden = true;
+    }
+  }
+  function setEditorTab(name) {
+    if (!Object.hasOwn(viewPanels,name) || !editing() || !matches()) return;
+    editorTab = name;
+    syncEditorViews(true);
+  }
+  function syncEditorViews(read = false) {
+    const inEditor = panel.dataset.mode === 'editor';
+    for (const tab of viewButtons) {
+      const selected = tab.dataset.canvasView === editorTab;
+      tab.setAttribute('aria-selected',String(selected));
+      tab.tabIndex = selected ? 0 : -1;
+    }
+    frameHost.hidden = inEditor && editorTab !== 'preview';
+    source.hidden = !inEditor || editorTab !== 'source';
+    changes.hidden = !inEditor || editorTab !== 'changes';
+    if (!inEditor || editorTab !== 'changes') closeComparison();
+    else if (read && current?.revision && editing() && matches()) void loadComparison();
+  }
+  function renderSource() {
+    const language = ['html','css','js'].includes(sourceLanguage.value) ? sourceLanguage.value : 'html';
+    const text = current?.revision?.artifact?.[language];
+    code.textContent = typeof text === 'string' ? text : '';
+    sourceDescription.textContent = current?.revision ?
+      'Saved '+({html:'HTML',css:'CSS',js:'JavaScript'}[language])+' source · Version '+current.revision.id+'. Describe edits in the instructions.' : '';
+  }
+  function updatePreviewCheck() {
+    previewCheck.hidden = !current?.revision;
+    if (!current?.revision) { previewCheckText.textContent = ''; return; }
+    const failed = previewFailed();
+    previewCheck.dataset.state = failed ? 'failed' : frame?.testing ? 'checking' : frame?.ready && tested() ? 'passed' : 'pending';
+    previewCheckText.textContent = failed ? 'Version '+current.revision.id+' · '+failedPreview.diagnostic :
+      frame?.testing ? 'Checking version '+current.revision.id+'…' :
+      frame?.ready && tested() ? 'Version '+current.revision.id+' · '+(current.email_source ? 'Startup and sample email checks passed.' : 'Startup check passed.')+' Try the app’s controls before using it.' :
+      frame?.ready ? 'Version '+current.revision.id+' loaded. Run Test preview, then try the app’s controls.' :
+      'Loading the preview for version '+current.revision.id+'…';
+  }
+  function comparisonCurrent(capture) {
+    return comparisonRead === capture && current === capture.selected && epoch === capture.epoch && load === capture.load
+      && scope() === capture.conversation && editing() && editorTab === 'changes' && matches();
+  }
+  async function loadComparison() {
+    closeComparison();
+    const selected = current,target = Number(compareVersion.value);
+    if (!selected?.revision || !editing() || editorTab !== 'changes' || !matches()) return;
+    if (!Number.isSafeInteger(target) || target < 1 || target === selected.revision.id) {
+      comparisonStatus.textContent = 'This is the first saved version. A comparison will be available after another version is saved.';
+      return;
+    }
+    if (!window.VP3CanvasDiffV1) { comparisonStatus.textContent = 'Reload the page to load version comparison.'; return; }
+    const capture = {selected,target,epoch,load,conversation:scope(),controller:new AbortController(),
+      active:selected.canvas.active_revision,draft:selected.canvas.draft_revision};
+    comparisonRead = capture;
+    comparisonStatus.textContent = 'Loading version '+target+' for comparison…';
+    try {
+      const data = await api('open',{canvas_id:selected.canvas.id,revision:target},capture.conversation,capture.controller.signal);
+      if (!comparisonCurrent(capture)) return;
+      if (data.canvas?.id !== selected.canvas.id || data.canvas.agent_id !== selected.canvas.agent_id
+        || data.canvas.conversation_id !== selected.canvas.conversation_id || data.revision?.id !== target
+        || data.canvas.active_revision !== capture.active || data.canvas.draft_revision !== capture.draft
+        || !['html','css','js'].every(key => typeof data.revision.artifact?.[key] === 'string' && data.revision.artifact[key].length <= 60000)) {
+        throw new Error('The saved versions changed. Reload the selected version before comparing again.');
+      }
+      renderComparison(data.revision.artifact,selected.revision.artifact,target,selected.revision.id);
+    } catch (error) {
+      if (!comparisonCurrent(capture) || error.name === 'AbortError') return;
+      comparisonStatus.textContent = error.message;
+      comparisonResult.replaceChildren();
+      compareReload.hidden = false;
+    } finally {
+      if (comparisonRead === capture) comparisonRead = null;
+    }
+  }
+  function renderComparison(before,after,baseline,selected) {
+    const files = [['html','HTML'],['css','CSS'],['js','JavaScript']].map(([key,label]) =>
+      ({key,label,...window.VP3CanvasDiffV1.compare(before[key],after[key])}));
+    const added = files.reduce((n,file) => n+file.added,0),removed = files.reduce((n,file) => n+file.removed,0);
+    const changed = files.filter(file => file.added || file.removed).length;
+    comparisonStatus.textContent = changed ? 'Version '+baseline+' → '+selected+' · '+changed+' file'+(changed === 1 ? '' : 's')+' changed · +'+added+' / −'+removed+' lines' :
+      'Versions '+baseline+' and '+selected+' have identical saved source.';
+    const fragment = document.createDocumentFragment();
+    let rendered = 0,omitted = 0;
+    for (const file of files) {
+      const section = node('section','','vp3-coding-canvas-diff-file');
+      section.append(node('h4',file.label+(file.added || file.removed ? ' · +'+file.added+' / −'+file.removed : ' · No changes')));
+      if (!file.added && !file.removed) { fragment.append(section); continue; }
+      if (file.coarse) section.append(node('p','Large rewrite: removed and added blocks are grouped.','vp3-coding-canvas-description'));
+      const rows = node('ol');
+      rows.setAttribute('aria-label',file.label+' changes');
+      let oldLine = 1,newLine = 1;
+      function row(type,text) {
+        const oldNumber = type === 'add' ? '' : oldLine++,newNumber = type === 'remove' ? '' : newLine++;
+        if (rendered >= 800) { omitted++; return; }
+        rendered++;
+        const item = node('li','','vp3-coding-canvas-diff-row');
+        item.dataset.change = type;
+        const numbers = node('span',oldNumber+' '+newNumber,'vp3-coding-canvas-diff-numbers');
+        numbers.setAttribute('aria-hidden','true');
+        const marker = node('span',type === 'add' ? '+' : type === 'remove' ? '−' : ' ','vp3-coding-canvas-diff-marker');
+        marker.setAttribute('aria-label',type === 'add' ? 'Added' : type === 'remove' ? 'Removed' : 'Unchanged');
+        const textNode = node('code',text || ' ');
+        item.append(numbers,marker,textNode);rows.append(item);
+      }
+      file.chunks.forEach((chunk,index) => {
+        if (chunk.type !== 'equal' || chunk.lines.length <= 6) { for (const line of chunk.lines) row(chunk.type,line); return; }
+        const first = index > 0 ? 3 : 0,last = index < file.chunks.length-1 ? 3 : 0;
+        for (let i=0;i<first;i++) row('equal',chunk.lines[i]);
+        const count = chunk.lines.length-first-last;
+        if (rendered < 800) rows.append(node('li',count+' unchanged lines','vp3-coding-canvas-diff-gap'));
+        oldLine+=count;newLine+=count;
+        for (let i=chunk.lines.length-last;i<chunk.lines.length;i++) row('equal',chunk.lines[i]);
+      });
+      const inspect = button('View '+file.label+' source',() => {
+        if (!matches() || !editing()) return;
+        sourceLanguage.value = file.key;renderSource();setEditorTab('source');
+      });
+      section.append(rows,inspect);fragment.append(section);
+    }
+    if (omitted) fragment.append(node('p',omitted+' further lines are omitted from this comparison. Open Source to inspect the complete selected version.','vp3-coding-canvas-diff-limit'));
+    comparisonResult.replaceChildren(fragment);
+  }
   function updateControls() {
     const working = activeJob(job);
     const uncertain = lastIntent?.pending === true;
@@ -1132,12 +1328,17 @@
     apply.disabled = locked || working || !current?.revision || !frame?.ready || !validFrame(frame) ||
       (!current.revision.can_rollback && (current.revision.status !== 'draft' || !tested())) || current.revision.id === current.canvas.active_revision;
     apply.textContent = current?.revision?.can_rollback ? 'Restore this version' : 'Use this version';
+    viewWorking.hidden = !current?.canvas.active_revision || current.canvas.active_revision === current.revision?.id;
+    viewWorking.disabled = locked;
     updateBuildProgress();
+    updatePreviewCheck();
     updateLibraryImageControls();
     updatePublicationControls();
   }
 
   function updateBuildProgress() {
+    requestSummary.textContent = activeJob(job) ? 'Instructions & checks · '+(jobLabels[job.state] || '') :
+      previewFailed() ? 'Instructions & checks · Preview failed' : 'Instructions & checks';
     progress.hidden = !job && !current?.revision && !lastIntent?.pending && !notice.textContent;
     const phase = activeJob(job) || ['failed','stopped'].includes(job?.state) || lastIntent?.pending ? 0 : !current?.revision ? (job?.state === 'ready' ? 1 : 0) :
       current.revision.id === current.canvas.active_revision ? 3 : tested() ? 2 : 1;
@@ -1426,6 +1627,7 @@
     frame = candidate;
     frameHost.replaceChildren(element);
     candidate.timer = setTimeout(() => failPreview(candidate,'timeout'),10000);
+    updatePreviewCheck();
   }
 
   function failPreview(candidate,reason) {
@@ -1433,6 +1635,7 @@
     closePreview();
     const diagnostic = Object.hasOwn(previewErrors,reason) ? previewErrors[reason] : previewErrors.render;
     failedPreview = {canvas:candidate.canvasId,revision:candidate.revision,diagnostic};
+    frameHost.replaceChildren(node('p',diagnostic+' Use Repair to prepare a change.','vp3-coding-canvas-preview-error'));
     const detail = reason === 'email_workflow' ?
       'The email deadline test failed. Show current deadlines in date order and leave out outdated deadlines.' :
       'Preview failed. ' + diagnostic + ' Open the source or choose Repair.';
@@ -1522,6 +1725,15 @@
   }
 
   function renderCanvas(data) {
+    const sameCanvas = Boolean(data?.canvas?.id && data.canvas.id === current?.canvas?.id);
+    const comparisonTarget = sameCanvas ? Number(compareVersion.value) : null;
+    closeComparison();
+    if (!sameCanvas) {
+      editorTab = 'preview'; sourceLanguage.value = 'html';
+      // Put the saved app within reach on a phone. Keep an unsent instruction
+      // visible, and keep the build form open when there is no selected app.
+      editorControls.open = !data?.revision || window.innerWidth > 1100 || Boolean(prompt.value.trim());
+    }
     closePhoneDelivery();phoneNotice.textContent='';
     const keepPublishingOpen = publishing.open && Boolean(data) && current?.canvas.id === data?.canvas?.id;
     publicationRequest?.abort();
@@ -1550,20 +1762,26 @@
     if (data && commandSettings?.app_data.app_access === false) clearPrivateAppState(data);
     if (shown() && !editing()) setMode('app');
     workspace.hidden = !data?.revision;
+    editorEmpty.hidden = Boolean(data?.revision);
     deletion.hidden = true;
     picker.value = data ? String(data.canvas.id) : '';
     if (!data?.revision) {
       workspaceTitle.textContent = '';
+      versionStatus.textContent = '';
       previewDescription.textContent = '';
-      code.textContent = '';
+      renderSource();
       versions.replaceChildren();
+      compareVersion.replaceChildren();
       frameHost.replaceChildren();
+      syncEditorViews();
       updateControls();
       return;
     }
     workspaceTitle.replaceChildren(canvasArt(data.canvas),document.createTextNode(data.canvas.title));
     const revision = data.revision;
     const isActive = revision.id === data.canvas.active_revision;
+    versionStatus.textContent = (data.canvas.active_revision ? 'Working version '+data.canvas.active_revision : 'No working version yet')+
+      ' · Reviewing version '+revision.id+' ('+revision.status+')';
     previewDescription.textContent = data.email_source ? 'Uses current Gmail deadline data through the Email Agent.' : isActive ?
       'Active app. Changes are saved in your Knowledge Base folder.' :
       'Preview. App changes here are temporary. The saved app data is kept when you switch versions.';
@@ -1571,11 +1789,15 @@
       'Version ' + item.id + ' · ' + item.status,item.id
     )));
     versions.value = String(revision.id);
-    source.open = false;
-    code.textContent = ['HTML','CSS','JavaScript'].map((label,index) =>
-      label + '\n' + revision.artifact[['html','css','js'][index]]
-    ).join('\n\n');
+    const comparable = data.revisions.filter(item => item.id !== revision.id);
+    compareVersion.replaceChildren(...comparable.map(item => option('Version '+item.id+' · '+item.status,item.id)));
+    const preferred = comparable.find(item => item.id === comparisonTarget) || comparable.find(item => item.id === data.canvas.active_revision)
+      || comparable.find(item => item.id < revision.id) || comparable[0];
+    if (preferred) compareVersion.value = String(preferred.id);
+    compareVersion.disabled = !comparable.length;
+    renderSource();
     startPreview();
+    syncEditorViews(true);
     if (declaredCommands()?.length && !commandSettings) void loadCommandSettings();
     if (keepPublishingOpen) void loadPublication();
     updateControls();
@@ -1711,6 +1933,7 @@
       else if (job?.state === 'ready') void openSaved(job.canvas_id,job.revision,false);
     }
     if (wasShown && !wasEditing && publishing.open && !publicationRequest) void loadPublication();
+    if (editorTab === 'changes' && current?.revision) void loadComparison();
     void refreshList(version).catch(error => {
       if (version === epoch && editing()) report(error.message);
     });
@@ -2049,6 +2272,7 @@
 
   async function testPreview() {
     if (!current?.revision || test.disabled || !matches()) return;
+    setEditorTab('preview');
     locked = true;
     updateControls();
     report(current.email_source ? 'Checking the email deadlines with sample data…' :
@@ -2221,6 +2445,7 @@
     panel.hidden = !shown();
     launch.setAttribute('aria-expanded',String(shown()));
     if (!shown()) {
+      closeComparison();
       delete thread.dataset.codingMode;
       cancelOpen();
       resetLibraryImagePicker();
@@ -2238,6 +2463,7 @@
     }
   });
   function resetContext() {
+    closeComparison();
     closeArtworkFrame();
     artworkAttempts.clear();
     epoch++;
@@ -2325,6 +2551,7 @@
     }
   });
   window.addEventListener('pagehide',() => {
+    closeComparison();
     suspended = true;
     resetLibraryImagePicker();
     closeArtworkFrame();
