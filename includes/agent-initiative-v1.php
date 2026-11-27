@@ -2102,6 +2102,9 @@ function vp3_initiative_execute_scoped_v1(PDO $pdo,array $user,array $claim,?cal
                 }
             }
             vp3_initiative_result_current_v1($pdo,$live,$binding,$payload,$toolResult,$evidence);
+            if(($payload['tool']??null)==='curiosity.analyze'){
+                vp3_curiosity_analysis_threads_commit_v1($pdo,$live,$binding,$toolResult,(int)$run['id']);
+            }
             if(!vp3_agent_chat_conversation_v380($pdo,$cid,$uid,$agentId>0?['id'=>$agentId]:null,true))throw new RuntimeException('Initiative conversation changed.',403);
             if($officeTask!==null)vp3_initiative_office_agent_task_parent_v1($pdo,$live,$payload);
             if($officeEntry)vp3_initiative_office_agent_task_enqueue_v1($pdo,$live,$payload,(int)$run['id'],$toolResult);

@@ -65,6 +65,7 @@
       if(!part||!/^0(?:\.[0-9]{1,3}){0,12}$/.test(part.part)||!text(part.name,180)||!Number.isSafeInteger(part.size)||part.size<0
         ||typeof part.supported!=='boolean')throw Error('Attachment metadata could not be verified.');
       const box=node('details'),title=node('summary',part.name+' · '+Math.max(1,Math.ceil(part.size/1024))+' KB');box.append(title);
+      box.dataset.attachmentPart=part.part;
       const status=node('p',!part.supported?(part.reason==='over_limit'?'This attachment exceeds the 2 MiB review limit.':'PDF, JPEG, PNG and WebP attachments are supported.')
         :!installed?'Run Database Upgrade to analyze this attachment.':'Open the original or ask the Agent to review it.');status.setAttribute('role','status');box.append(status);root.append(box);
       if(!part.supported)return;
@@ -130,15 +131,49 @@
         catch(error){if(current()){fail(status,error);setBusy(false);const check=button('Check saved review',()=>get());output.replaceChildren(check);}}
         finally{if(current()&&!['preparing','dispatched'].includes(review?.state))setBusy(false);}
       });
-      analyze.disabled=!installed;actions.append(open,analyze);box.append(actions,output);
+      analyze.disabled=!installed;actions.append(open,analyze);
+      if(options.part===part.part)box.append(output,label,actions);else box.append(actions,output);
       box.addEventListener('toggle',()=>{if(box.open&&!loaded&&installed){loaded=true;void get();}});
     }
     if(source.unavailable)message.textContent=source.unavailable;
     else void request('list').then(r=>{if(!current())return;if(!Array.isArray(r.parts)||r.parts.length>20||typeof r.installed!=='boolean')throw Error('Attachment details could not be verified.');
       message.textContent='Review one attachment at a time. Supported files: PDF and images up to 2 MiB.';for(const p of r.parts)row(p,r.installed);
+      if(options.part){const selected=[...root.querySelectorAll('details[data-attachment-part]')].find(el=>el.dataset.attachmentPart===options.part);if(selected)selected.open=true;}
     }).catch(e=>fail(message,e));
     return {root,dispose};
   }
+  async function openSavedReview(reviewId,event){
+    if(event&&!event.isTrusted)return false;
+    const captured=scope();if(!captured||!id.test(reviewId))return false;
+    const signature=key(captured),dialog=node('dialog','','vp3-gmail-document-dialog'),host=node('div'),status=node('p','Opening saved attachment review…');
+    dialog.setAttribute('aria-label','Saved attachment review');
+    const abort=new AbortController();let mounted=null,disposed=false;
+    const dispose=()=>{if(disposed)return;disposed=true;abort.abort();mounted?.dispose();dialog.close();dialog.remove();views.delete(dispose);};
+    dialog.append(button('Close',dispose),status,host);dialog.addEventListener('cancel',event=>{event.preventDefault();dispose();});
+    document.body.append(dialog);dialog.showModal();views.add(dispose);
+    const timer=setTimeout(()=>abort.abort(),25000);
+    try{
+      const {binding,...context}=captured;
+      const response=await fetch(endpoint().href,{method:'POST',credentials:'same-origin',cache:'no-store',redirect:'error',signal:abort.signal,
+        headers:{'Content-Type':'application/json'},body:JSON.stringify({...context,action:'reopen',review_id:reviewId})});
+      const result=await response.json();if(disposed||key(scope())!==signature){dispose();return false;}
+      if(!response.ok||result?.ok!==true)throw Error(result?.error||'This saved attachment review is unavailable.');
+      if(typeof result.documents?.source_ref!=='string'||result.documents.source_ref.length>6000||!/^0(?:\.[0-9]{1,3}){0,12}$/.test(result.part))throw Error('The attachment source could not be verified.');
+      status.textContent='Saved attachment review.';
+      mounted=mount(host,result.documents,{part:result.part,isCurrent:()=>!disposed&&key(scope())===signature});
+    }catch(error){if(!disposed){if(key(scope())!==signature)dispose();else status.textContent=error.name==='AbortError'?'The attachment source could not be checked. Try reopening the original email.':error.message;}}
+    finally{clearTimeout(timer);}
+    return true;
+  }
   for(const event of ['stonefellow:chat-context-changing','vp3:participant-selection-changed','vp3:phone-agent-access-changed'])window.addEventListener(event,()=>{for(const dispose of [...views])dispose();});
-  window.VP3GmailDocumentsV1=Object.freeze({mount,checkedReview});
+  window.VP3GmailDocumentsV1=Object.freeze({mount,checkedReview,openSavedReview});
+  const requested=new URL(location.href).searchParams.get('attachment_review');
+  if(id.test(requested||'')){
+    let tries=0;const timer=setInterval(()=>{
+      const live=scope(),params=new URL(location.href).searchParams;
+      if(live&&Number(params.get('conversation_id'))===live.conversation_id&&Number(params.get('agent')==='system'?0:params.get('agent'))===live.agent_id){
+        clearInterval(timer);void openSavedReview(requested);
+      }else if(++tries>=60)clearInterval(timer);
+    },500);
+  }
 })();

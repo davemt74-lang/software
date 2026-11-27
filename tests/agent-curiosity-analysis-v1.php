@@ -101,6 +101,7 @@ catch(RuntimeException $error){if($error->getCode()!==403)throw $error;}
 canvas_pipeline_check($foreign===[],
     'Another owner cannot read this mailbox activity');
 $beforeReads=$httpCalls;$beforeMessages=canvas_pipeline_count('chat_messages');
+if(defined('VP3_CURIOSITY_ANALYSIS_FIXTURE'))return;
 $snapshot=vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding);
 canvas_pipeline_check($httpCalls===$beforeReads&&in_array('gmail',$snapshot['input_specialists'],true),
     'A Curiosity snapshot observes activity without fetching email or running a model');
