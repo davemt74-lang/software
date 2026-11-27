@@ -98,6 +98,21 @@ $request=bin2hex(random_bytes(16));$review=gd_action('analyze',['request_id'=>$r
 gd_check($review['state']==='ready'&&$review['result']['facts'][1]['page']===2&&$GLOBALS['gdModels']===1,'explicit analysis persists structured summary, missing details and Agent page references');
 $stored=agent_gmail_document_row_v1($pdo,1,7,11,$review['id']);
 gd_check(!str_contains($stored['result_enc'],'Quote Q-104')&&str_contains(ai_decrypt_secret($stored['result_enc']),'Quote Q-104'),'document review is encrypted at rest');
+$origin=agent_gmail_document_origin_v1($pdo,pec_user_v1(),$GLOBALS['gdPrincipal'],11,$stored);
+gd_check($origin['source']['message']==='doc_one'&&$origin['part']['part']==='0.1'&&$origin['bytes_sha256']===hash('sha256',$pdf),
+    'a saved review retains sealed exact-source provenance and byte identity');
+$reopened=agent_gmail_document_reopen_v1($pdo,pec_user_v1(),$GLOBALS['gdPrincipal'],11,$review['id'],gd_current(),'gd_http');
+gd_check($reopened['part']==='0.1'&&$GLOBALS['gdModels']===1,'a source link reopens the exact original attachment without inference');
+gd_reject(static fn()=>agent_gmail_document_reopen_v1($pdo,pec_user_v1(),$GLOBALS['gdPrincipal'],12,$review['id'],gd_current(),'gd_http'),
+    'a saved review cannot be reopened from another private Chat');
+$legacy=json_decode(ai_decrypt_secret($stored['result_enc']),true);unset($legacy['provenance']);
+$pdo->prepare('UPDATE agent_gmail_document_reviews_v1 SET result_enc=? WHERE id=?')->execute([ai_encrypt_secret(json_encode($legacy)),$review['id']]);
+gd_reject(static fn()=>agent_gmail_document_reopen_v1($pdo,pec_user_v1(),$GLOBALS['gdPrincipal'],11,$review['id'],gd_current(),'gd_http'),
+    'older summaries cannot guess a missing document origin');
+gd_action('get');
+gd_check(agent_gmail_document_origin_v1($pdo,pec_user_v1(),$GLOBALS['gdPrincipal'],11,
+    agent_gmail_document_row_v1($pdo,1,7,11,$review['id']))!==null&&$GLOBALS['gdModels']===1,
+    'explicitly reopening an older review binds verified provenance without another analysis');
 gd_check(gd_state()===$state&&agent_brain_soul_profile_v1(pec_user_v1(),'email')['revision']===$soul['revision'],'analysis preserves drafts, send approvals, follow-up watches and Email Soul');
 gd_check(gd_action('get')['review']===$review&&$GLOBALS['gdModels']===1,'reopening reuses the stored review without inference');
 gd_check(gd_action('analyze',['request_id'=>$request,'instruction'=>'Check total and delivery date.'])['review']===$review&&$GLOBALS['gdModels']===1,'replaying the same analysis request cannot redispatch');
@@ -107,6 +122,8 @@ gd_check(isset($prompt['email_soul'])&&str_contains($json,'SEND NOW')&&!str_cont
 gd_reject(static fn()=>gd_action('analyze',['request_id'=>bin2hex(random_bytes(16)),'instruction'=>"line\nbreak"]),'invalid owner direction is rejected before inference');
 $GLOBALS['gdBytes']=substr_replace($pdf,'9',7,1);
 gd_reject(static fn()=>gd_action('get'),'saved reviews reject bytes changed under identical Gmail metadata');
+gd_reject(static fn()=>agent_gmail_document_reopen_v1($pdo,pec_user_v1(),$GLOBALS['gdPrincipal'],11,$review['id'],gd_current(),'gd_http'),
+    'a source link cannot reopen bytes changed under identical metadata');
 gd_reject(static fn()=>gd_action('reply',['review_id'=>$review['id']]),'changed bytes cannot seed a reply from a saved review');
 $GLOBALS['gdBytes']=$pdf;
 $reply=gd_action('reply',['review_id'=>$review['id']])['draft'];

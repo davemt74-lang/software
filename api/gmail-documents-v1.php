@@ -15,12 +15,15 @@ try {
     if (!is_string($raw)||strlen($raw)>12000) throw new DomainException('Attachment request is too large.',413);
     $input=json_decode($raw,true,8,JSON_THROW_ON_ERROR);
     if (!is_array($input)||array_is_list($input)||array_diff(array_keys($input),['action','owner_key','agent_id','conversation_id','csrf_token','source_ref','part','request_id','instruction','review_id'])
-        ||!in_array($input['action']??null,['list','open','get','analyze','reply'],true)||!is_string($input['source_ref']??null)) throw new DomainException('Choose an attachment action.',422);
-    $allowed=['action','owner_key','agent_id','conversation_id','csrf_token','source_ref'];
-    if ($input['action']!=='list') $allowed[]='part';
+        ||!in_array($input['action']??null,['list','open','get','analyze','reply','reopen'],true)
+        ||($input['action']!=='reopen'&&!is_string($input['source_ref']??null))) throw new DomainException('Choose an attachment action.',422);
+    $allowed=['action','owner_key','agent_id','conversation_id','csrf_token'];
+    if($input['action']==='reopen')$allowed[]='review_id';else $allowed[]='source_ref';
+    if (!in_array($input['action'],['list','reopen'],true)) $allowed[]='part';
     if ($input['action']==='analyze') $allowed=[...$allowed,'request_id','instruction'];
     if ($input['action']==='reply') $allowed[]='review_id';
-    if (array_diff(array_keys($input),$allowed)||($input['action']!=='list'&&!is_string($input['part']??null))) throw new DomainException('Choose a valid attachment action.',422);
+    if (array_diff(array_keys($input),$allowed)||(!in_array($input['action'],['list','reopen'],true)&&!is_string($input['part']??null))
+        ||($input['action']==='reopen'&&!is_string($input['review_id']??null))) throw new DomainException('Choose a valid attachment action.',422);
     $user=current_user();
     if (!$user||!has_permission('chat.access',$user)) throw new DomainException('Sign in to review private attachments.',401);
     if (($input['owner_key']??null)!==(string)$user['id']) throw new DomainException('The Chat account changed.',409);
@@ -34,8 +37,10 @@ try {
     $current=agent_email_preferences_http_current_v1($pdo,$user,$principal,$input['conversation_id']);
     session_write_close();
     if ($input['action']==='analyze') ignore_user_abort(true);
-    $result=agent_gmail_document_action_v1($pdo,$user,$principal,$input['conversation_id'],$input,$current);
-    $source=agent_gmail_document_source_open_v1($user,$input['source_ref']);
+    $result=$input['action']==='reopen'
+        ?agent_gmail_document_reopen_v1($pdo,$user,$principal,$input['conversation_id'],$input['review_id'],$current)
+        :agent_gmail_document_action_v1($pdo,$user,$principal,$input['conversation_id'],$input,$current);
+    $source=agent_gmail_document_source_open_v1($user,$input['action']==='reopen'?$result['documents']['source_ref']:$input['source_ref']);
     agent_gmail_document_current_v1($pdo,$user,$principal,$input['conversation_id'],$source,$current);
     echo json_encode(['ok'=>true]+$result,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);
 } catch (Throwable $error) {

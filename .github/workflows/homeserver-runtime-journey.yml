@@ -242,6 +242,7 @@ jobs:
           php tests/agent-initiative-brainstorm-specialist-v1.php
           php tests/agent-initiative-creative-starters-v1.php
           php tests/agent-curiosity-analysis-v1.php
+          php tests/agent-curiosity-attachment-threads-v1.php
           php tests/agent-curiosity-live-screen-v1.php
           php tests/agent-creative-feedback-v1.php
           php tests/agent-initiative-opportunity-sources-v1.php
@@ -552,6 +553,7 @@ jobs:
           php tests/agent-initiative-brainstorm-specialist-v1.php
           php tests/agent-initiative-creative-starters-v1.php
           php tests/agent-curiosity-analysis-v1.php
+          php tests/agent-curiosity-attachment-threads-v1.php
           php tests/agent-creative-feedback-v1.php
           php tests/agent-initiative-opportunity-view-v1.php
           php tests/agent-initiative-opportunity-sources-v1.php
