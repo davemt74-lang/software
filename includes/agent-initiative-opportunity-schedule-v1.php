@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 require_once __DIR__.'/agent-initiative-followthrough-v1.php';
 
-const VP3_INITIATIVE_OPPORTUNITY_LANES_V1=['app_suggestions','research','missions','media_images','brainstorm'];
+const VP3_INITIATIVE_OPPORTUNITY_LANES_V1=['app_suggestions','research','missions','media_images','curiosity_analysis','brainstorm'];
 const VP3_INITIATIVE_OPPORTUNITY_INTERVAL_V1=120;
 const VP3_INITIATIVE_OPPORTUNITY_STATES_V1=['checking','queued','already_handled','no_opportunity','not_ready','blocked','failed'];
 
@@ -84,6 +84,7 @@ function vp3_initiative_schedule_opportunities_v1(PDO $pdo,array $user,array $po
             'missions'=>'mission-schedule-v1.php',
             'media_images'=>'media-image-schedule-v1.php',
             'brainstorm'=>'brainstorm-specialist-v1.php',
+            'curiosity_analysis'=>'curiosity-analysis-v1.php',
         };
         require_once __DIR__.'/agent-initiative-'.$laneFile;
         $state=match($lane){
@@ -92,6 +93,7 @@ function vp3_initiative_schedule_opportunities_v1(PDO $pdo,array $user,array $po
             'missions'=>vp3_initiative_schedule_missions_v1($pdo,$user,$policy),
             'media_images'=>vp3_initiative_schedule_media_images_v1($pdo,$user,$policy),
             'brainstorm'=>vp3_brainstorm_schedule_v1($pdo,$user,$policy),
+            'curiosity_analysis'=>vp3_curiosity_analysis_schedule_v1($pdo,$user,$policy),
         };
         if(!in_array($state,VP3_INITIATIVE_OPPORTUNITY_STATES_V1,true)||$state==='checking'){
             $state='failed';

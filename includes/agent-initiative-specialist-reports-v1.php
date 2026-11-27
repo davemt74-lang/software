@@ -128,6 +128,13 @@ function vp3_initiative_specialist_reports_v1(PDO $pdo,array $user,array $bindin
         }
     }
     if($includeBrainstorm){
+        require_once __DIR__.'/agent-initiative-curiosity-analysis-v1.php';
+        $analysis=vp3_curiosity_analysis_report_v1($pdo,$user,$binding);
+        if($analysis!==null){
+            $reports[]=$analysis['report'];
+            $authority['curiosity_analysis']=array_intersect_key($analysis,array_flip(['run_id','key']));
+            $authority['report_keys'][$analysis['key']]=$analysis['report'];
+        }
         require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
         $creative=vp3_brainstorm_report_v1($pdo,$user,$binding);
         if($creative!==null){
@@ -165,6 +172,13 @@ function vp3_initiative_specialist_reports_current_v1(PDO $pdo,array $user,array
         require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
         $current=vp3_brainstorm_report_v1($pdo,$user,$binding);
         if($current===null||array_intersect_key($current,array_flip(['run_id','key']))!==$authority['brainstorm']){
+            throw new Vp3InitiativeSourcesChangedV1();
+        }
+    }
+    if(!empty($authority['curiosity_analysis'])){
+        require_once __DIR__.'/agent-initiative-curiosity-analysis-v1.php';
+        $current=vp3_curiosity_analysis_report_v1($pdo,$user,$binding);
+        if($current===null||array_intersect_key($current,array_flip(['run_id','key']))!==$authority['curiosity_analysis']){
             throw new Vp3InitiativeSourcesChangedV1();
         }
     }

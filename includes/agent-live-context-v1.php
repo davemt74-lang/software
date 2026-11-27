@@ -280,7 +280,11 @@ function vp3_live_context_snapshot_v1(PDO $pdo,array $user,array $principal,int 
     if(!$row)return null;
     $packet=vp3_live_context_row_v1($row,(int)$scope['user']['id'],$scope['agent_id'],$cid,$tab,$clock);if(!$packet)return null;
     $semantic=vp3_live_context_semantic_v1($packet);
+    $screenSessions=[];foreach($packet['screens'] as $screen)$screenSessions[$screen['source_id']]=$screen['session_id'];
     return ['ref'=>'live-context:'.$packet['session_id'],'revision'=>vp3_live_context_revision_v1($packet),
+        'screen_source_revision'=>vp3_live_context_fingerprint_v1([
+            'binding'=>array_intersect_key($packet,array_flip(['owner_user_id','agent_id','conversation_id','activity_tab','session_id'])),
+            'shares'=>$screenSessions]),
         'eyes_visit_ref'=>$packet['eyes']['visit_ref']??null,
         'semantic'=>$semantic,'freshness'=>['received_at_ms'=>$packet['received_at_ms'],'observed_at'=>$packet['observed_at'],
             'checked_at_ms'=>$clock,'ttl_ms'=>VP3_LIVE_CONTEXT_TTL_MS_V1]];

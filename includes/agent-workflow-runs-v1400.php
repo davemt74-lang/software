@@ -171,6 +171,10 @@ function agent_workflow_initiative_result_v1400(array $value): array
         require_once __DIR__.'/agent-initiative-brainstorm-specialist-v1.php';
         return vp3_brainstorm_tool_result_v1($value)??[];
     }
+    if(($output['type']??null)==='initiative_curiosity_analysis'){
+        require_once __DIR__.'/agent-initiative-curiosity-analysis-v1.php';
+        return vp3_curiosity_analysis_tool_result_v1($value)??[];
+    }
     if(($output['type']??null)==='initiative_brainstorm'){
         require_once __DIR__.'/agent-initiative-brainstorm-v1.php';
         return vp3_initiative_brainstorm_tool_result_v1($value)??[];

@@ -213,6 +213,22 @@ if(!table_exists('fixture_model_calls')){
     }
 }
 
+// These browser journeys measure the selected handoff's exact worker budget.
+// Curiosity has its own native analysis/handoff gates. Keep its independent
+// checkpoint current before a mutating tick; GET health remains untouched and
+// the production scheduler, policy, leases and source readers stay in use.
+if(getenv('VP3_INITIATIVE_HTTP_BROWSER')==='1'&&($_SERVER['REQUEST_METHOD']??'')==='POST'
+    &&parse_url($_SERVER['REQUEST_URI']??'',PHP_URL_PATH)==='/api/cognitive-presentation-v510.php'
+    &&(json_decode((string)file_get_contents('php://input'),true)['action']??null)==='initiative_tick'){
+    require_once $source.'/includes/agent-initiative-opportunity-schedule-v1.php';
+    $fixtureUser=current_user();$fixturePolicy=vp3_initiative_policy_v1($fixtureUser,7);
+    if(!empty($fixturePolicy['enabled']))vp3_initiative_in_scope_v1($fixtureUser,7,static function()use($fixtureUser,$fixturePolicy):void{
+        $lanes=vp3_initiative_opportunity_checkpoint_v1($fixtureUser,$fixturePolicy);
+        $lanes['curiosity_analysis']=['checked_at'=>time(),'state'=>'no_opportunity'];
+        vp3_initiative_opportunity_save_v1($fixtureUser,$fixturePolicy,$lanes);
+    });
+}
+
 function initiative_http_chat_v1():never
 {
     header('Content-Type: application/json');

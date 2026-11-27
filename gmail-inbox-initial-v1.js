@@ -131,6 +131,23 @@
           working_attention_binding:binding,...(itemRef(ref) ? {item_ref:ref} : {})} : null;
   }
 
+  function recordableLink(proof,target) {
+    if (!proof || !target?.isConnected || !inScope()) return false;
+    return proof.mailbox === true ? Boolean(openedMessage?.panel?.contains(target))
+      : Boolean(thread?.contains(target) && chatTarget() === proof.conversation_id);
+  }
+
+  function linkObservation(proof,url,receipt) {
+    const {mailbox,...scope} = proof;
+    return {action:mailbox === true ? 'record_mailbox_link_open' : 'record_link_open',...scope,url,
+      ...(receipt?.token ? {link_token:receipt.token,link_label:receipt.label} : {})};
+  }
+
+  function followEmailLink(event,proof,receipt) {
+    if(!receipt?.token||!proof)return;
+    try{window.VP3AgentScreenShare?.activateFromEmailLink?.(event,{ownerKey:owner});}catch{}
+  }
+
   function gmailLink(value,label,proof = null,receipt = null) {
     const anchor = node('a',label,'vp3-gmail-text-link');
     anchor.href = value;
@@ -139,10 +156,10 @@
     if (proof) {
       const record = event => {
         if (!event.isTrusted || event.defaultPrevented || event.button !== (event.type === 'auxclick' ? 1 : 0)
-            || !thread?.contains(anchor) || chatTarget() !== proof.conversation_id
+            || !recordableLink(proof,anchor)
             || anchor.getAttribute('href') !== value) return;
-        const linkProof = receipt?.token ? {link_token:receipt.token,link_label:receipt.label} : {};
-        void send({action:'record_link_open',...proof,url:value,...linkProof},undefined,true)
+        followEmailLink(event,proof,receipt);
+        void send(linkObservation(proof,value,receipt),undefined,true)
           .catch(() => { /* Opening the anchor is independent of recording the click. */ });
       };
       anchor.addEventListener('click',record);
@@ -199,9 +216,9 @@
     const formatted = window.VP3GmailEmailDisplayV1?.mount(panel,{body:text,display,subject},{renderPlain,
       onLink:(event,value) => {
         const receipt = approved.get(value);
-        if (!event.isTrusted || !receipt?.token || !proof || !thread?.contains(panel)
-            || chatTarget() !== proof.conversation_id) return;
-        void send({action:'record_link_open',...proof,url:receipt.url,link_token:receipt.token,link_label:receipt.label},undefined,true)
+        if (!event.isTrusted || !receipt?.token || !recordableLink(proof,panel)) return;
+        followEmailLink(event,proof,receipt);
+        void send(linkObservation(proof,receipt.url,receipt),undefined,true)
           .catch(() => {});
       }});
     if (!formatted) renderPlain(panel);
@@ -382,7 +399,8 @@
       delete panel.dataset.gmailReviewMatches;
       panel.replaceChildren(node('strong',message.subject || '(No subject)'),node('small',message.from));
       const ref = itemRef(payload.item_ref) ? payload.item_ref : itemRef(message.item_ref) ? message.item_ref : null;
-      const proof = ref ? linkScope({conversation_id:payload.conversation_id,message_id:payload.chat_message_id},ref) : null;
+      const proof = ref ? linkScope({conversation_id:payload.conversation_id,message_id:payload.chat_message_id},ref)
+        || {mailbox:true,item_ref:ref} : null;
       renderOpenedEmail(panel,message.body || 'No readable text in this message.',message.links,proof,'',message.display,message.subject,message.documents);
       if (message.answered_in_gmail === true) {
         panel.append(node('small','Already replied in Gmail.'));

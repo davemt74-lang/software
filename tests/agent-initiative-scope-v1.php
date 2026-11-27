@@ -146,6 +146,7 @@ scope_check(!$stale['ok']&&count(scope_runs(1,17,'initiative.prepare'))===$befor
     'a named source changed during inference cannot queue stale preparation or deliver a report');
 
 $newPlan=scope_make_plan($one,17,'Source before owner revokes initiative');
+$before=count(scope_runs(1,17,'initiative.prepare'));
 $revoked=vp3_initiative_execute_v1($pdo,$one,scope_claim($one,$newPlan),static function(string $prompt,string $protocol)use($one):string{
     $answer=($GLOBALS['scopeModel'])($prompt,$protocol);scope_command($one,17,170,'off');return $answer;
 });
