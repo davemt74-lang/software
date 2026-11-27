@@ -5,6 +5,7 @@ declare(strict_types=1);
 require dirname(__DIR__).'/includes/phone-workspace-v1.php';
 require dirname(__DIR__).'/includes/phone-workspace-ui-v1.php';
 require_once dirname(__DIR__).'/includes/agent-catch-up-v1.php';
+require_once dirname(__DIR__).'/includes/member-navigation.php';
 
 $pdo=new PDO('sqlite::memory:');
 $pdo->setAttribute(PDO::ATTR_ERRMODE,PDO::ERRMODE_EXCEPTION);
@@ -82,6 +83,16 @@ phone_ui_reset_runtime();
 phone_ui_check(vp3_phone_workspace_button_v1($owner)===''&&vp3_phone_workspace_runtime_v1($owner)==='','Revoking the last assignment removes both entry point and runtime on the next render.');
 phone_ui_check(vp3_phone_workspace_button_v1(phone_ui_user(2))!=='','The actual current assignee receives the entry point.');
 phone_ui_check(!vp3_phone_workspace_available_v1($pdo,phone_ui_user(999)),'A deleted account cannot use a stale assignment/session.');
+
+unset($GLOBALS['VP3_AGENT_PHONE_SHELL_ASSETS_V1']);$_SERVER['SCRIPT_NAME']='/chat.php';
+$memberAssets=vp3_agent_phone_shell_assets_v1($owner);
+phone_ui_check(str_contains($memberAssets,'chat-sidebar-unread-v1.js')&&str_contains($memberAssets,'chat-sidebar-unread-v1.css'),'The existing authenticated Agent bootstrap supplies member sidebar assets.');
+phone_ui_check(preg_match('/window\.VP3_CHAT_SIDEBAR_UNREAD_V1=(.*?);<\/script>/s',$memberAssets,$sidebarMatch)===1,'The member sidebar receives an authenticated count configuration.');
+$sidebarConfig=json_decode($sidebarMatch[1],true,512,JSON_THROW_ON_ERROR);
+phone_ui_check($sidebarConfig===['owner_id'=>1,'binding'=>vp3_catch_up_page_binding_v1($owner),'endpoint'=>'/installed-vp3/api/agent-chat-read-v1.php'],'Sidebar counts reuse the native owner/session binding and installation path.');
+unset($GLOBALS['VP3_AGENT_PHONE_SHELL_ASSETS_V1']);$_SERVER['SCRIPT_NAME']='/admin/phone.php';
+$adminAssets=vp3_agent_phone_shell_assets_v1($owner);
+phone_ui_check(!str_contains($adminAssets,'chat-sidebar-unread-v1')&&str_contains($adminAssets,'agent-phone-shell-v1.js'),'Admin keeps personal phone activity without the public member Chat badge widget.');
 
 foreach($argv as $arg)if(str_starts_with($arg,'--emit-ui=')){
     $target=substr($arg,10);

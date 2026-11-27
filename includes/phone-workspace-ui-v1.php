@@ -55,7 +55,13 @@ function vp3_agent_phone_shell_assets_v1(array $user,bool $activity=true): strin
         'voice_enabled'=>member_agent_voice_enabled($user),'voice_script'=>url('/premium-voice-v117.js?v='.substr(hash_file('sha256',$root.'/premium-voice-v117.js'),0,12)),
         'drawer_script'=>url('/chat-notifications-drawer-v240.js?v='.substr(hash_file('sha256',$root.'/chat-notifications-drawer-v240.js'),0,12)),
         'notifications_endpoint'=>url('/api/chat-notifications-brain-v240.php'),'chat_endpoint'=>url('/api/chat.php')];
+    // The authenticated Agent bootstrap already owns the account binding.
+    // Keep the navigation template free of Agent runtime dependencies, and
+    // leave Admin's separate Agent/chat list untouched.
+    $sidebar=$config['admin_surface']?'':'<link rel="stylesheet" href="'.e(url('/chat-sidebar-unread-v1.css?v='.substr(hash_file('sha256',$root.'/chat-sidebar-unread-v1.css'),0,12))).'">'
+        .'<script>window.VP3_CHAT_SIDEBAR_UNREAD_V1='.json_encode(['owner_id'=>$config['owner_id'],'binding'=>$config['binding'],'endpoint'=>url('/api/agent-chat-read-v1.php')],JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES|JSON_THROW_ON_ERROR).';</script>'
+        .'<script src="'.e(url('/chat-sidebar-unread-v1.js?v='.substr(hash_file('sha256',$root.'/chat-sidebar-unread-v1.js'),0,12))).'" defer></script>';
     return '<link rel="stylesheet" href="'.e(url('/agent-composer-v1.css?v='.substr(hash_file('sha256',$root.'/agent-composer-v1.css'),0,12))).'">'
         .'<script>window.VP3_AGENT_PHONE_SHELL_V1='.json_encode($config,JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_THROW_ON_ERROR).';</script>'
-        .'<script src="'.e(url('/agent-phone-shell-v1.js?v='.substr(hash_file('sha256',$root.'/agent-phone-shell-v1.js'),0,12))).'" defer></script>';
+        .'<script src="'.e(url('/agent-phone-shell-v1.js?v='.substr(hash_file('sha256',$root.'/agent-phone-shell-v1.js'),0,12))).'" defer></script>'.$sidebar;
 }
