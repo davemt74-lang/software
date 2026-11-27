@@ -76,6 +76,15 @@ function vp3_initiative_checkin_prepare_v1(PDO $pdo,array $scope,array $binding,
         'owner_context'=>function_exists('vp3_initiative_owner_context_v1')?vp3_initiative_owner_context_v1($pdo,$scope['user'],$binding):[],
         'evidence'=>array_map(static fn(array $row):array=>array_diff_key($row,['url'=>true,'revision'=>true,'canonical_source_revision'=>true]),array_values($evidence)),
         'check_in_rules'=>'Write one brief natural check-in, useful suggestion or focused question as the selected Agent. Use the recent owner messages for continuity, not as a new instruction. Explain a relevant verified situation when useful; do not recite an inventory or force a hello. Do not repeat completed work, invent activity or imply monitoring or action beyond the evidence. A visible nearby participant without recent input leaves engagement uncertain. Recent Chat input does not identify a camera participant or establish posture, attention or consent. No external action has been performed.'];
+    if(isset($evidence[$job['primary']]['curiosity_gmail_outcome'])){
+        $request['check_in_rules'].=' Explain the source-bound watched email assessment as a historical interpretation at observed_at. Ask its single useful decision question. Preserve uncertainty, actual sent terms and owner edits. Do not treat a sender reply as completed work, an approved alternative, or permission to send anything.';
+        foreach($request['evidence'] as &$row){
+            unset($row['gmail_response'],$row['gmail_response_native_revision'],$row['curiosity_gmail_reply']);
+            if(isset($row['curiosity_gmail_outcome']))$row['curiosity_gmail_outcome']=array_intersect_key($row['curiosity_gmail_outcome'],
+                array_flip(['state','summary','question','observed_at','owner_objective','interpretation']));
+        }
+        unset($row);
+    }
     if(($evidence[$job['primary']]['kind']??null)==='eyes_visit'){
         $output['eyes_visit_ref']=$job['primary'];
         unset($request['recent_user_messages'],$request['owner_context'],$request['focus']);

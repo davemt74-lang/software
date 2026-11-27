@@ -58,6 +58,20 @@ function vp3_initiative_curiosity_evidence_v1(PDO $pdo,array $scope,?array $sele
             $evidence[$ref]['curiosity_gmail_reply']=$request['request_key'];
             $evidence[$ref]['revision']=hash('sha256',$row['revision'].'|gmail-reply:'.$request['request_key']);
             $evidence[$ref]['detail'].=' This verified answer requests private Gmail reply preparation; use gmail.prepare_reply when ready.';
+            require_once __DIR__.'/agent-curiosity-gmail-outcomes-v1.php';
+            try{$response=vp3_curiosity_gmail_response_v1($pdo,$scope['user'],vp3_initiative_policy_v1($scope['user'],$agent),$ref);}
+            catch(PDOException $error){throw $error;}
+            catch(RuntimeException|DomainException|JsonException $error){$response=null;}
+            if($response!==null){
+                $evidence[$ref]['gmail_response']=$response['response'];
+                $evidence[$ref]['revision']=hash('sha256',$evidence[$ref]['revision'].'|response:'.$response['response']['revision']);
+                $evidence[$ref]['gmail_response_native_revision']=$evidence[$ref]['revision'];
+                $outcome=vp3_curiosity_gmail_outcome_v1($pdo,$scope['user'],vp3_initiative_policy_v1($scope['user'],$agent),$response['response']);
+                if($outcome!==null){
+                    $evidence[$ref]['curiosity_gmail_outcome']=$outcome;
+                    $evidence[$ref]['revision']=hash('sha256',$evidence[$ref]['revision'].'|assessment:'.$outcome['receipt_key']);
+                }
+            }
         }
     }
     return $evidence;

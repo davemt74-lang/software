@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 $scenario=$argv[1]??'gmail';
+$outcomeMode=str_starts_with($scenario,'gmail-outcome');
 if($scenario==='gmail-new-mail')$GLOBALS['curiosityNewMail']=true;
 if($scenario==='gmail-outbound')$GLOBALS['curiosityNewMail']='sent';
 $beforeDrafts=canvas_pipeline_count('agent_connection_email_drafts_v1');$modelCalls=0;
@@ -20,7 +21,7 @@ $done=vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_claim($work),static 
     }
     return json_encode(['draft'=>'Thanks for the quote. Could you confirm whether delivery by December 4 is possible?']);
 },['gmail_http'=>$docHttp],false);
-if($scenario!=='gmail'){
+if($scenario!=='gmail'&&!$outcomeMode){
     if($scenario==='gmail-soul'){
         $directory=agent_brain_user_dir(1);$files=new RecursiveIteratorIterator(new RecursiveDirectoryIterator($directory,FilesystemIterator::SKIP_DOTS),RecursiveIteratorIterator::CHILD_FIRST);
         foreach($files as $file){if($file->isDir())rmdir($file->getPathname());else unlink($file->getPathname());}rmdir($directory);
@@ -56,6 +57,7 @@ $delivered=vp3_initiative_deliver_pending_v1($pdo,$owner,7);
 $q=$pdo->prepare("SELECT context_json FROM chat_messages WHERE conversation_id=11 AND role='assistant' ORDER BY id DESC LIMIT 1");$q->execute();$postContext=json_decode($q->fetchColumn(),true);
 canvas_pipeline_check(($postContext['actions'][0]['type']??null)==='email_review'&&($postContext['actions'][0]['id']??null)===$draftId,
     'the actual Agent Chat delivery carries the existing authenticated Gmail review action');
+if($outcomeMode){require __DIR__.'/curiosity-gmail-outcome-assertions-v1.php';return;}
 // Busy accounts keep draft progress even after many unrelated completed jobs.
 for($index=0;$index<35;++$index){
     $unrelated=$goal;$unrelated['tool']='work.prepare_private';$unrelated['report']=false;
