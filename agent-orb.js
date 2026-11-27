@@ -269,7 +269,8 @@
         setAssessmentJobs:jobs=>window.VP3AgentOrb?.setJobs?.('initiative_work',jobs),
         read:(signal,cid)=>readWorkStatus(workEndpoint,Number(pageOwner),pageAgent,pageBinding,signal,cid)});
     }
-    const state=()=>({...window.VP3EyesCore.visualState(adapter.state()),working});
+    const state=()=>{const view=adapter.state();return {...window.VP3EyesCore.visualState(view),working,
+      ...(typeof view?.voiceEnabled==='boolean'?{voiceEnabled:view.voiceEnabled}:{})};};
     const photoRouteEvent=(id,state)=>window.dispatchEvent(new CustomEvent('vp3:chat-route',{detail:{id,state,voiceTurn:true}}));
     const finishPhotoRoute=id=>{if(id&&photoRoute===id){photoRoute='';photoRouteEvent(id,'handled');}};
     const userTurn=event=>{
