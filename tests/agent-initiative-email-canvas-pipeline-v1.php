@@ -267,4 +267,44 @@ canvas_pipeline_check($repaired['ok'] && $repairedView['revision']>$manualSaved[
     && count(vp3_coding_canvas_email_data_v1($pdo,$owner,7,11,$repairedView['canvas_id'],$repairedView['revision'])['rows']??[])===1,
     'an explicit repair preserves the email connection through the exact previous version and saved receipt');
 
+// A manual code draft must preserve the canonical email ancestry without forging a model run.
+$sourceBase=vp3_coding_canvas_read_v1($pdo,$owner,7,$repairedView['canvas_id'],$repairedView['revision']);
+$sourceEdited=$sourceBase['revision']['artifact'];$sourceEdited['html'].='<p>Owner-edited layout</p>';
+$runsBeforeManual=(int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn();
+$sourceManual=vp3_coding_canvas_source_save_v1($pdo,$owner,7,11,$sourceBase['canvas']['id'],$sourceBase['revision']['id'],
+    $sourceBase['revision']['source_hash'],'074d38b4-eadc-4d59-b82a-5f4cb204f089',$sourceEdited,
+    $sourceBase['canvas']['draft_revision'],$sourceBase['canvas']['active_revision']);
+canvas_pipeline_check(vp3_coding_canvas_email_binding_v1($pdo,$owner,7,$sourceManual['canvas']['id'],$sourceManual['revision']['id'])
+    ===vp3_coding_canvas_email_binding_v1($pdo,$owner,7,$sourceBase['canvas']['id'],$sourceBase['revision']['id'])
+    && count(vp3_coding_canvas_email_data_v1($pdo,$owner,7,11,$sourceManual['canvas']['id'],$sourceManual['revision']['id'])['rows']??[])===1,
+    'manual source preserves the exact verified email connection and read-only source classification');
+$withoutSample=false;
+try{vp3_coding_canvas_email_test_v1($pdo,$owner,7,11,$sourceManual['canvas']['id'],$sourceManual['revision']['id'],$sourceManual['state']['revision'],false);}
+catch(RuntimeException $error){$withoutSample=$error->getCode()===409;}
+canvas_pipeline_check($withoutSample,'manual code cannot bypass the native sample-email test');
+$crossChat=false;
+try{vp3_coding_canvas_source_save_v1($pdo,$owner,7,18,$sourceManual['canvas']['id'],$sourceManual['revision']['id'],
+    $sourceManual['revision']['source_hash'],'084d38b4-eadc-4d59-b82a-5f4cb204f089',$sourceBase['revision']['artifact'],
+    $sourceManual['canvas']['draft_revision'],$sourceManual['canvas']['active_revision']);}
+catch(RuntimeException $error){$crossChat=$error->getCode()===409;}
+canvas_pipeline_check($crossChat,'another owned Chat cannot manually rebind an email-connected app');
+for($i=0;$i<18;$i++){
+    $sourceEdited['css']='p{padding:'.($i+1).'px}';
+    $sourceManual=vp3_coding_canvas_source_save_v1($pdo,$owner,7,11,$sourceManual['canvas']['id'],$sourceManual['revision']['id'],
+        $sourceManual['revision']['source_hash'],agent_event_uuid_v1920(),$sourceEdited,$sourceManual['canvas']['draft_revision'],$sourceManual['canvas']['active_revision']);
+}
+canvas_pipeline_check(count(vp3_coding_canvas_email_data_v1($pdo,$owner,7,11,$sourceManual['canvas']['id'],$sourceManual['revision']['id'])['rows']??[])===1,
+    'many manual edits keep a bounded native email origin rather than losing the connection');
+canvas_pipeline_check((int)$pdo->query('SELECT COUNT(*) FROM agent_workflow_runs')->fetchColumn()===$runsBeforeManual,
+    'manual editing never creates or meters a model run');
+$originQuery=$pdo->prepare('SELECT edit_origin_revision FROM vp3_coding_canvas_versions_v1 WHERE canvas_id=? AND revision=?');
+$originQuery->execute([$sourceManual['canvas']['id'],$sourceManual['revision']['id']]);$manualOrigin=(int)$originQuery->fetchColumn();
+$corrupt=$pdo->prepare('UPDATE vp3_coding_canvas_versions_v1 SET edit_origin_revision=? WHERE canvas_id=? AND revision=?');
+$corrupt->execute([$sourceManual['revision']['id'],$sourceManual['canvas']['id'],$sourceManual['revision']['id']]);
+$invalidOrigin=false;
+try{vp3_coding_canvas_email_binding_v1($pdo,$owner,7,$sourceManual['canvas']['id'],$sourceManual['revision']['id']);}
+catch(RuntimeException $error){$invalidOrigin=$error->getCode()===409;}
+$corrupt->execute([$manualOrigin,$sourceManual['canvas']['id'],$sourceManual['revision']['id']]);
+canvas_pipeline_check($invalidOrigin,'malformed manual provenance fails closed rather than becoming a writable generic app');
+
 echo 'INITIATIVE_EMAIL_CANVAS_PIPELINE=PASS ('.$checks.' email assertions, '.($mysql ? 'mysql' : 'sqlite').")\n";

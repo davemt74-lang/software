@@ -117,7 +117,7 @@ try{
     };
   });
   for(const file of ['chat.css','chat-coding-canvas-v1.css'])await page.addStyleTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
-  for(const file of ['coding-canvas-runtime-v1.js','coding-canvas-diff-v1.js','chat-coding-canvas-v1.js'])await page.addScriptTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
+  for(const file of ['coding-canvas-runtime-v1.js','coding-canvas-diff-v1.js','assets/vendor/acorn-8.19.0.js','coding-canvas-source-editor-v1.js','chat-coding-canvas-v1.js'])await page.addScriptTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
   await open();
   assert.equal(await tab('Preview').getAttribute('aria-selected'),'true');
   assert.equal(await panel.getByRole('button',{name:'Use this version',exact:true}).isDisabled(),true,'A new draft cannot be used before the native preview test');

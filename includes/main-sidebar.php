@@ -329,6 +329,8 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
 <script src="<?= e(url('/coding-canvas-icon-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-icon-v1.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/coding-canvas-runtime-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-runtime-v1.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/coding-canvas-diff-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-diff-v1.js'), 0, 12))) ?>" defer></script>
+<script src="<?= e(url('/assets/vendor/acorn-8.19.0.js?v='.substr(hash_file('sha256', __DIR__.'/../assets/vendor/acorn-8.19.0.js'), 0, 12))) ?>" defer></script>
+<script src="<?= e(url('/coding-canvas-source-editor-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-source-editor-v1.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/chat-coding-canvas-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../chat-coding-canvas-v1.js'), 0, 12))) ?>" defer></script>
 <?php endif; ?>
 <?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v='.substr(hash_file('sha256', __DIR__.'/../chat-rail-controls-v132.js'), 0, 12))) ?>" defer></script><?php endif; ?>

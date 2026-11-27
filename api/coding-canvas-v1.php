@@ -16,15 +16,17 @@ try {
     }
     $user = defined('VP3_PHONE_AGENT_NATIVE_V1')&&function_exists('vp3_phone_agent_native_user_v1')?vp3_phone_agent_native_user_v1():current_user();
     if (!$user) throw new RuntimeException('Sign in to use private Canvases.', 401);
-    $raw = file_get_contents('php://input', false, null, 0, 98305);
-    if ($raw === false || strlen($raw) > 98304) throw new RuntimeException('This Canvas request is too large.', 413);
-    $input = json_decode($raw, false, 64, JSON_THROW_ON_ERROR);
+    $raw = file_get_contents('php://input', false, null, 0, 393217);
+    if ($raw === false || strlen($raw) > 393216) throw new RuntimeException('This Canvas request is too large.', 413);
+    try {$input = json_decode($raw, false, 64, JSON_THROW_ON_ERROR);}
+    catch (JsonException $error) {if(strlen($raw)>98304)throw new RuntimeException('This Canvas request is too large.',413);throw $error;}
     if (!$input instanceof stdClass) throw new InvalidArgumentException('Enter a valid Canvas request.');
     if (!is_string($input->csrf_token ?? null) || !hash_equals(csrf_token(), $input->csrf_token)) {
         throw new RuntimeException('Refresh the page to restore this session.', 419);
     }
 
     $action = $input->action ?? '';
+    if(strlen($raw)>98304&&$action!=='save_source')throw new RuntimeException('This Canvas request is too large.',413);
     $aid = $input->agent_id ?? null;
     $cid = $input->conversation_id ?? null;
     if (!is_int($aid) || $aid < 0 || !is_int($cid) || $cid < 0) {
@@ -33,15 +35,15 @@ try {
     $pdo = db();
     if (!$pdo) throw new RuntimeException('Canvas storage is unavailable.', 503);
     $user = vp3_coding_canvas_scope_v1($pdo, $user, $aid, $cid);
-    vp3_coding_canvas_authority_v1($pdo, $user, $aid, in_array($action, ['build', 'repair', 'retry'], true));
+    vp3_coding_canvas_authority_v1($pdo, $user, $aid, in_array($action, ['build', 'repair', 'retry','save_source'], true));
     if (session_status() === PHP_SESSION_ACTIVE) session_write_close();
 
     $canvasId = $input->canvas_id ?? null;
     $revision = $input->revision ?? null;
-    if (in_array($action, ['open', 'repair', 'test', 'apply', 'save_state', 'delete', 'email_data',
+    if (in_array($action, ['open', 'repair', 'test', 'apply', 'save_state', 'save_source', 'delete', 'email_data',
         'phone_targets','phone_send','command_grants','save_command_grants','command_data','publication_status','publish','unpublish','set_hidden','save_library_image'], true)
         && !is_string($canvasId)) throw new InvalidArgumentException('Choose a saved Canvas.');
-    if (($revision !== null || in_array($action, ['repair', 'test', 'apply', 'save_state', 'email_data','command_data','publish','save_library_image'], true))
+    if (($revision !== null || in_array($action, ['repair', 'test', 'apply', 'save_state', 'save_source', 'email_data','command_data','publish','save_library_image'], true))
         && (!is_int($revision) || $revision < 1)) throw new InvalidArgumentException('Choose an exact Canvas revision.');
 
     if(in_array($action,['phone_targets','phone_send'],true)){
@@ -63,10 +65,21 @@ try {
             throw new InvalidArgumentException('Enter a valid Canvas instruction within the size limit.');
         }
         $commands = property_exists($input,'commands') ? vp3_coding_canvas_command_list_v1($input->commands) : null;
+        $context=$input->edit_context??null;
+        if ($context!==null&&!$context instanceof stdClass)throw new InvalidArgumentException('Select a saved source range.',422);
         $job = vp3_coding_canvas_queue_v1($pdo, $user, $aid, $cid, vp3_coding_canvas_id_v1($request), trim($prompt),
             $action === 'repair' ? vp3_coding_canvas_id_v1($canvasId) : null,
-            $action === 'repair' ? $revision : null, $diagnostic, commands:$commands);
+            $action === 'repair' ? $revision : null, $diagnostic, commands:$commands,editContext:$context===null?null:(array)$context);
         $result = ['job' => $job];
+    } elseif ($action === 'save_source') {
+        if (defined('VP3_PHONE_AGENT_NATIVE_V1')) throw new RuntimeException('Open the owner Canvas editor to edit source.',403);
+        foreach (['expected_active_revision','expected_draft_revision'] as $key) {
+            if (!property_exists($input,$key)||($input->$key!==null&&(!is_int($input->$key)||$input->$key<1))) throw new InvalidArgumentException('Open the current saved app before editing source.',422);
+        }
+        if (!is_string($input->request_id??null)||!is_string($input->source_hash??null)||!($input->artifact??null) instanceof stdClass
+            || property_exists($input,'commands'))throw new InvalidArgumentException('Choose the saved source and its unchanged data commands.',422);
+        $result=vp3_coding_canvas_source_save_v1($pdo,$user,$aid,$cid,$canvasId,$revision,$input->source_hash,$input->request_id,
+            (array)$input->artifact,$input->expected_draft_revision,$input->expected_active_revision);
     } elseif ($action === 'command_grants') {
         $result=['commands'=>vp3_coding_canvas_commands_v1($pdo,$user,$aid,$cid,$canvasId)];
     } elseif ($action === 'save_command_grants') {
@@ -173,7 +186,9 @@ try {
                 $result['email_start_available'] = false;
             }
         }
-        if (in_array($action,['open','test','apply','save_library_image'],true)) {
+    }
+        if (in_array($action,['open','test','apply','save_library_image','save_source'],true)) {
+            require_once dirname(__DIR__).'/includes/coding-canvas-email-v1.php';
             $result['email_source'] = vp3_coding_canvas_email_binding_v1($pdo,$user,$aid,$canvasId,$result['revision']['id']) !== null;
             $canvas=vp3_coding_canvas_require_row_v1($pdo,(int)$user['id'],$aid,vp3_coding_canvas_id_v1($canvasId));
             $result['library_image']=vp3_coding_canvas_library_image_view_v1($pdo,$user,$canvas,$cid,$result['revision']['id']);
@@ -181,8 +196,9 @@ try {
             if(empty($result['command_grants']['app_data']['app_access'])){
                 $result['state']['value']=(object)[];
             }
+            $result['source_editor']=['ready'=>vp3_coding_canvas_source_ready_v1($pdo),
+                'can_edit'=>!defined('VP3_PHONE_AGENT_NATIVE_V1')&&personal_capability_has_v242('personal_knowledge.manage',$user)];
         }
-    }
     echo json_encode(['ok' => true] + $result, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
 } catch (Throwable $error) {
     $code = $error->getCode();

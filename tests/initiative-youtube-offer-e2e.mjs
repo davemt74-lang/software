@@ -39,6 +39,7 @@ writeFileSync(chatLoopFixture,readFileSync(chatLoopFixture,'utf8')
   .replace('$pdo=new InitiativeHttpPDO',"$pdo=$GLOBALS['fixtureVoiceDatabase']=new InitiativeHttpPDO"));
 writeFileSync(join(temp,'includes','bootstrap.php'),`<?php
 session_start();
+$_SESSION['csrf_token']='fixture';
 define('STONEFELLOW_ROOT', dirname(__DIR__));
 require __DIR__.'/../tests/fixtures/initiative-chat-loop-http.php';
 require __DIR__.'/../tests/fixtures/initiative-media-chat-http.php';
@@ -972,6 +973,10 @@ try{
     let prerequisites=await read(),snapshot=await state();
     const policy=prerequisites.policy,starters=prerequisites.starters;
     assert.deepEqual([policy.enabled,policy.owner_user_id,policy.agent_id,policy.conversation_id],[true,1,7,17]);
+    // A heartbeat may already be in flight when refreshCoreContext is called.
+    // Wait for its exact current-bound result, without changing policy or work.
+    await page.waitForFunction(revision=>window.StonefellowAgentActivity.coreContext()?.health.policy_revision===revision,
+      policy.revision,{timeout:45000});
     assert.equal(policy.revision,await page.evaluate(()=>window.StonefellowAgentActivity.coreContext()?.health.policy_revision));
     const current=row=>row.owner_user_id===1&&row.agent_id===7&&isDeepStrictEqual(JSON.parse(row.goal).binding,policy);
     const starter=row=>Object.hasOwn(starters,JSON.parse(row.goal).primary);

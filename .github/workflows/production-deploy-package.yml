@@ -65,6 +65,7 @@ jobs:
             "phone_push_delivery_default": "off",
             "phone_agent_workspace": "paired-owner-approved-v2",
             "phone_canvas_delivery": "canonical-private-v1",
+            "canvas_source_editor": "owner-draft-v1",
             "notification_reliability": "semantic-wake-v1",
             "agent_phone_shell": "account-context-v1",
             "member_transcriptions": "account-bound-library-v1",
@@ -519,6 +520,12 @@ jobs:
           test -f _deploy/chat-research-specialist-v1.css
           test -f _deploy/chat-coding-canvas-v1.js
           test -f _deploy/coding-canvas-diff-v1.js
+          test -f _deploy/coding-canvas-source-editor-v1.js
+          test -f _deploy/includes/coding-canvas-source-v1.php
+          test -f _deploy/assets/vendor/acorn-8.19.0.js
+          test -f _deploy/assets/vendor/acorn-LICENSE.txt
+          test -f _deploy/assets/vendor/acorn-NOTICE.txt
+          test -f _deploy/docs/CANVAS-SOURCE-EDITOR-DEPLOY.txt
           test -f _deploy/chat-coding-canvas-v1.css
           test -f _deploy/coding-canvas-sidebar-v1.js
           test -f _deploy/coding-canvas-sidebar-v1.css

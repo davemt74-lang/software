@@ -14,6 +14,7 @@ require_once __DIR__ . '/includes/agent-email-preferences-schema-v1.php';
 require_once __DIR__ . '/includes/agent-gmail-documents-schema-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-activity-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-store-v1.php';
+require_once __DIR__ . '/includes/coding-canvas-source-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-command-grants-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-publishing-v1.php';
 require_once __DIR__ . '/includes/profile-canvases-v1.php';
@@ -334,6 +335,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_ai_service_usage_ready_v1($schemaConnection)
         && vp3_coding_canvas_ready_v1($schemaConnection)
         && vp3_coding_canvas_visibility_ready_v1($schemaConnection)
+        && vp3_coding_canvas_source_ready_v1($schemaConnection)
         && vp3_coding_canvas_command_grants_ready_v1($schemaConnection)
         && vp3_coding_canvas_source_grants_ready_v1($schemaConnection)
         && vp3_coding_canvas_publishing_ready_v1($schemaConnection)

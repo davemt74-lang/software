@@ -29,12 +29,16 @@ $partialSpeech=[
     'partial-profile-event-cutover'=>['profile_events','clock_legacy_token_v1'],
     'partial-promotion-native-context'=>['agent_promotion_clicks_v1','native_context_json_v1'],
     'partial-checkout-open-time'=>['agent_commerce_checkout_attempts_v800','opened_at_utc_ms'],
+    'partial-canvas-edit-base'=>['vp3_coding_canvas_versions_v1','edit_base_revision'],
+    'partial-canvas-edit-origin'=>['vp3_coding_canvas_versions_v1','edit_origin_revision'],
+    'partial-canvas-edit-request'=>['vp3_coding_canvas_versions_v1','edit_request_id'],
+    'partial-canvas-edit-hash'=>['vp3_coding_canvas_versions_v1','edit_request_hash'],
 ];
 $phoneContactModes=['phone-contacts-old-get','phone-contacts-old-post','phone-contacts-new-post','phone-contacts-ready-get'];
 $operatorPolicyModes=['operator-policy-old-get','operator-policy-old-post','operator-policy-ready-get'];
 $ownerPhoneModes=['owner-phone-old-get','owner-phone-old-post','owner-phone-ready-get','owner-phone-preserve-post'];
 if (!isset($argv[1])) {
-    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech),$phoneContactModes,$operatorPolicyModes,$ownerPhoneModes);
+    $modes=array_merge(['post', 'already-ready', 'missing-db', 'csrf', 'get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas','missing-canvas-source-index'],array_map(fn($table)=>'missing-'.$table,$newTables),array_keys($partialSpeech),$phoneContactModes,$operatorPolicyModes,$ownerPhoneModes);
     foreach ($modes as $mode) {
         $command = escapeshellarg(PHP_BINARY).(php_ini_loaded_file() ? ' -c '.escapeshellarg(php_ini_loaded_file()) : '').' '.escapeshellarg(__FILE__).' '.escapeshellarg($mode);
         passthru($command, $status);
@@ -90,7 +94,13 @@ require dirname(__DIR__).'/includes/tv-watching-v1.php';
 $canvasDdl=file_get_contents(dirname(__DIR__).'/includes/coding-canvas-store-v1.php');
 $canvasStart=strpos($canvasDdl,'function '.'vp3_coding_canvas_schema_v1(');
 $canvasEnd=strpos($canvasDdl,'function '.'vp3_coding_canvas_authority_v1(',$canvasStart);
-eval(substr($canvasDdl,$canvasStart,$canvasEnd-$canvasStart));
+// Keep the real schema/readiness functions, with their source-schema dependency
+// explicitly loaded rather than resolving a production __DIR__ inside eval.
+$canvasSourceDdl=file_get_contents(dirname(__DIR__).'/includes/coding-canvas-source-v1.php');
+$canvasSourceStart=strpos($canvasSourceDdl,'function '.'vp3_coding_canvas_source_schema_v1(');
+$canvasSourceEnd=strpos($canvasSourceDdl,'function '.'vp3_coding_canvas_edit_context_v1(',$canvasSourceStart);
+eval(substr($canvasSourceDdl,$canvasSourceStart,$canvasSourceEnd-$canvasSourceStart));
+eval(preg_replace('/^\s*require_once\s+[^;]+;\R/m',"\n",substr($canvasDdl,$canvasStart,$canvasEnd-$canvasStart)));
 $profileCanvasDdl=file_get_contents(dirname(__DIR__).'/includes/profile-canvases-v1.php');
 $profileCanvasStart=strpos($profileCanvasDdl,'function '.'vp3_profile_canvases_install_v1(');
 $profileCanvasEnd=strpos($profileCanvasDdl,'function '.'vp3_profile_canvas_version_v1(',$profileCanvasStart);
@@ -162,7 +172,7 @@ if($mode!=='post')vp3_profile_checkout_ensure_schema_pa5($fixture);
 
 $missingYouTube=str_starts_with($mode,'missing-vp3_youtube_')||$mode==='missing-vp3_initiative_youtube_playlist_v1';
 $missingTable=str_starts_with($mode,'missing-agent_')||str_starts_with($mode,'missing-profile_')||$missingYouTube||$mode==='missing-vp3_profile_canvases_v1';
-$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas'],true)||$missingTable||isset($partialSpeech[$mode])||$phoneContacts||$operatorPolicies||$ownerPhones;
+$modern=in_array($mode,['already-ready','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas','missing-canvas-source-index'],true)||$missingTable||isset($partialSpeech[$mode])||$phoneContacts||$operatorPolicies||$ownerPhones;
 $fixture->exec('CREATE TABLE ai_execution_ledger(id INTEGER PRIMARY KEY)');
 if($modern&&$mode!=='missing-ai-service-usage')$fixture->exec('ALTER TABLE ai_execution_ledger ADD COLUMN service_attempt_key TEXT');
 function vp3_ai_service_usage_ready_v1(PDO $pdo): bool
@@ -196,10 +206,14 @@ if($modern){
 }
 if($missingTable){$missing=substr($mode,8);if(!in_array($missing,$newTables,true))throw new RuntimeException('Invalid missing table fixture.');$fixture->exec('DROP TABLE '.$missing);}
 if(isset($partialSpeech[$mode])){[$table,$column]=$partialSpeech[$mode];$fixture->exec('ALTER TABLE '.$table.' RENAME COLUMN '.$column.' TO removed_'.$column);}
+if($mode==='missing-canvas-source-index')$fixture->exec('DROP INDEX vp3_canvas_edit_request_v1');
 if (in_array($mode,['already-ready','tv-only'],true)) tv_schema_v1($fixture);
 if ($mode === 'already-ready') reminder_schema_v1($fixture);
 if ($mode === 'state-only') $fixture->exec('CREATE TABLE tv_watching_state_v1 (owner_user_id BIGINT PRIMARY KEY)');
 if ($mode === 'records-only') $fixture->exec('CREATE TABLE tv_watching_records_v1 (owner_user_id BIGINT)');
+// Seeding and fault injection represent the previously installed database.
+// The upgrade request starts with a fresh positive metadata cache.
+$metadata=schema_metadata_state($fixture);$metadata->tables=[];$metadata->columns=[];
 $calls = []; $dbCalls = 0; $flashes = []; $redirects = [];
 function db(): ?PDO { $GLOBALS['dbCalls']++; return $GLOBALS['mode'] === 'missing-db' ? null : $GLOBALS['fixture']; }
 function setting(...$args): string { return '1'; }
@@ -239,7 +253,7 @@ foreach ($functions as $name => $typed) {
     else eval('function '.$name.'(...$args) { return migration_dependency(__FUNCTION__, $args); }');
 }
 
-$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas','phone-contacts-old-get','phone-contacts-ready-get','operator-policy-old-get','operator-policy-ready-get','owner-phone-old-get','owner-phone-ready-get'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
+$_SERVER['REQUEST_METHOD'] = (in_array($mode, ['get', 'state-only', 'records-only', 'tv-only','lists-only','participants-only','complete-get','missing-orb-shape','missing-ai-service-usage','missing-coding-canvas','missing-canvas-source-index','phone-contacts-old-get','phone-contacts-ready-get','operator-policy-old-get','operator-policy-ready-get','owner-phone-old-get','owner-phone-ready-get'], true)||$missingTable||isset($partialSpeech[$mode])) ? 'GET' : 'POST';
 // Reproduce the reported deployment: bootstrap does not supply a page-local PDO.
 $pdo = null;
 $phoneContactSchemaBefore=$phoneContacts?$fixture->query('SELECT type,name,sql FROM sqlite_master ORDER BY type,name')->fetchAll(PDO::FETCH_ASSOC):[];
@@ -320,7 +334,7 @@ if($ownerPhones){
 } elseif ($mode === 'csrf') {
     check($error === 'Session expired. Please try again.' && $dbCalls === 0 && $calls === [], 'CSRF rejection allowed upgrade work');
 } else {
-    $needsConnection = isset($partialSpeech[$mode]) || $missingYouTube || in_array($mode,['missing-ai-service-usage','missing-coding-canvas','missing-profile_event_clock_activation_v1','missing-vp3_profile_canvases_v1'],true);
+    $needsConnection = isset($partialSpeech[$mode]) || $missingYouTube || in_array($mode,['missing-ai-service-usage','missing-coding-canvas','missing-canvas-source-index','missing-profile_event_clock_activation_v1','missing-vp3_profile_canvases_v1'],true);
     check(!$complete && $dbCalls === ($needsConnection?1:0) && $calls === [], 'Missing required storage was marked ready or GET performed migrations');
     check(str_contains($html, 'Run Upgrade'), 'Missing required storage must expose the upgrade control');
 }

@@ -200,7 +200,7 @@ async function loadChat(conversationId) {
   for (const file of ['chat.css','chat-specialist-rail-v1.css','chat-coding-canvas-v1.css']) {
     await page.addStyleTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
   }
-  for (const file of ['chat-specialist-rail-v1.js','chat.js','coding-canvas-runtime-v1.js','coding-canvas-diff-v1.js']) {
+  for (const file of ['chat-specialist-rail-v1.js','chat.js','coding-canvas-runtime-v1.js','coding-canvas-diff-v1.js','assets/vendor/acorn-8.19.0.js','coding-canvas-source-editor-v1.js']) {
     await page.addScriptTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
   }
   const resumed = conversationId > 0 ? page.waitForResponse(response =>

@@ -77,6 +77,7 @@ try {
   });
   await page.addScriptTag({content:runtime});
   await page.addScriptTag({content:await fs.readFile(new URL('../coding-canvas-diff-v1.js',import.meta.url),'utf8')});
+  for(const file of ['assets/vendor/acorn-8.19.0.js','coding-canvas-source-editor-v1.js'])await page.addScriptTag({content:await fs.readFile(new URL('../'+file,import.meta.url),'utf8')});
   await page.addScriptTag({content:script});
   assert.equal(await page.evaluate(id => window.VP3CodingCanvasV1.open(id,1),canvas.id),true);
   const panel = page.locator('#chatCodingCanvasV1');

@@ -148,6 +148,13 @@
   const sourceDescription = node('p','','vp3-coding-canvas-description');
   const code = node('pre');
   source.append(sourceLanguage,sourceDescription,code);
+  const sourceEditor = window.VP3CanvasSourceEditorV1?.mount({root:source,code,language:sourceLanguage,
+    onChanged:sourceEdited,onSave:saveSourceDraft,onSaved:data=>{
+      renderCanvas(data);report('Source draft saved as version '+data.revision.id+'. Test the preview before using it.');
+    },onPreview:artifact=>{
+      if (!editing() || !matches() || locked || (activeJob(job)&&job.canvas_id===current?.canvas.id)) return;
+      setEditorTab('preview');startPreview(false,artifact);updateControls();
+    },onAsk:selectSourceContext,onOpenRevision:revision=>{if(matches()&&current?.revision)void openSaved(current.canvas.id,revision);}});
   sourceLanguage.addEventListener('change',() => { if (matches()) renderSource(); });
   const changes = node('section','','vp3-coding-canvas-changes');
   const compareVersion = node('select');
@@ -404,7 +411,12 @@
   editorControls.open = true;
   const requestSummary = node('summary','Instructions & checks');
   const editorControlBody = node('div','','vp3-coding-canvas-editor-body');
-  editorControlBody.append(promptLabel,commandLibrary,controls,progress,previewCheck);
+  const sourceContext = node('div','','vp3-coding-source-context');sourceContext.hidden=true;
+  const sourceContextLabel = node('p','','vp3-coding-canvas-description');
+  const sourceMakeChange = button('Make requested change',()=>void run('repair',prompt.value));
+  sourceContext.append(sourceContextLabel,sourceMakeChange,button('Clear code selection',()=>{clearSourceContext();updateControls();}));
+  editorControlBody.append(promptLabel,sourceContext,commandLibrary,controls,progress,previewCheck);
+  prompt.addEventListener('input',()=>updateControls());
   editorControls.append(requestSummary,editorControlBody);
   const editorEmpty = node('section','','vp3-coding-canvas-empty');
   editorEmpty.append(node('h3','Build your next Canvas'),node('p','Describe an app or workflow, then choose Build new. Your draft will appear here for testing and review.'));
@@ -451,6 +463,7 @@
   let commandCatalogRequest = 0;
   let footerTimer = 0;
   let current = null;
+  let selectedSourceContext = null;
   let editorTab = 'preview';
   let comparisonRead = null;
   let frame = null;
@@ -1172,7 +1185,7 @@
   function tested() {
     const revision = current?.revision;
     const snapshot = current?.state?.revision;
-    return Boolean(revision && snapshot && !previewFailed() && (revision.test_passed === true ||
+    return Boolean(revision && snapshot && !sourceEditor?.dirty() && !frame?.localSource && !previewFailed() && (revision.test_passed === true ||
       (browserTest?.canvas === current.canvas.id && browserTest?.revision === revision.id && browserTest?.snapshot === snapshot
         && browserTest.imageToken === libraryImageSettings()?.token)));
   }
@@ -1210,16 +1223,59 @@
   function renderSource() {
     const language = ['html','css','js'].includes(sourceLanguage.value) ? sourceLanguage.value : 'html';
     const text = current?.revision?.artifact?.[language];
-    code.textContent = typeof text === 'string' ? text : '';
+    if (sourceEditor) sourceEditor.show();
+    else code.textContent = typeof text === 'string' ? text : '';
     sourceDescription.textContent = current?.revision ?
       'Saved '+({html:'HTML',css:'CSS',js:'JavaScript'}[language])+' source · Version '+current.revision.id+'. Describe edits in the instructions.' : '';
+  }
+  function sourceEdited() {
+    if (sourceEditor?.dirty()) clearSourceContext();
+    if (frame?.localSource || frameHost.dataset.sourcePreview==='unsaved') {
+      closePreview();
+      if (!sourceEditor?.dirty() && current?.revision && shown() && matches()) startPreview();
+      else frameHost.replaceChildren(node('p','Source changed. Choose Preview edits to run the updated code.','vp3-coding-canvas-description'));
+    }
+    if (editorTab === 'changes' && current?.revision && editing()) void loadComparison();
+    updateControls();
+  }
+  function clearSourceContext() {
+    selectedSourceContext = null;
+    sourceContextLabel.textContent = '';
+    sourceContext.hidden = true;
+  }
+  function selectSourceContext(context,summary) {
+    if (!current?.revision || !editing() || !matches() || sourceEditor?.dirty()) return;
+    selectedSourceContext={canvas:current.canvas.id,revision:current.revision.id,context};
+    sourceContextLabel.textContent=summary;sourceContext.hidden=false;editorControls.open=true;
+    prompt.focus();report('Saved code selected. Describe the change, then choose Make requested change.');updateControls();
+  }
+  async function saveSourceDraft(pending) {
+    const selected=current,version=epoch,selection=load,conversation=scope();
+    if (!selected?.revision || !editing() || !matches() || locked || (activeJob(job)&&job.canvas_id===selected.canvas.id) || lastIntent?.pending
+      || pending.doc.canvasId!==selected.canvas.id || pending.doc.revision!==selected.revision.id
+      || pending.doc.scopeKey!==[owner,agent,conversation].join(':')) {
+      const error=new Error('Finish the current request and open the source editor before saving.');error.status=409;throw error;
+    }
+    locked=true;updateControls();
+    try {
+      const data=await api('save_source',{canvas_id:pending.doc.canvasId,revision:pending.doc.revision,source_hash:pending.doc.sourceHash,
+        expected_active_revision:pending.doc.expectedActive,expected_draft_revision:pending.doc.expectedDraft,request_id:pending.id,artifact:pending.artifact},conversation);
+      if(version!==epoch||selection!==load||selected!==current||conversation!==scope()||!editing()||!matches())throw new DOMException('Editor context changed.','AbortError');
+      if(data.canvas?.id!==selected.canvas.id||data.canvas.agent_id!==selected.canvas.agent_id||data.canvas.conversation_id!==selected.canvas.conversation_id
+        || !Number.isSafeInteger(data.revision?.id)||data.revision.id<1||!/^[a-f0-9]{64}$/.test(data.revision.source_hash||'')
+        || typeof data.source_saved!=='boolean'||!Array.isArray(data.revisions)||!data.state
+        || !['html','css','js'].every(name=>data.revision.artifact?.[name]===pending.artifact[name])
+        || JSON.stringify(data.revision.commands??[])!==JSON.stringify(selected.revision.commands??[]))throw new Error('The source save could not be verified. Save again to recover the same request.');
+      return data;
+    } finally {if(version===epoch){locked=false;updateControls();}}
   }
   function updatePreviewCheck() {
     previewCheck.hidden = !current?.revision;
     if (!current?.revision) { previewCheckText.textContent = ''; return; }
     const failed = previewFailed();
-    previewCheck.dataset.state = failed ? 'failed' : frame?.testing ? 'checking' : frame?.ready && tested() ? 'passed' : 'pending';
-    previewCheckText.textContent = failed ? 'Version '+current.revision.id+' · '+failedPreview.diagnostic :
+    previewCheck.dataset.state = sourceEditor?.dirty() || frame?.localSource ? 'pending' : failed ? 'failed' : frame?.testing ? 'checking' : frame?.ready && tested() ? 'passed' : 'pending';
+    previewCheckText.textContent = frame?.localSource ? 'Unsaved edits · '+(frame.ready?'Preview loaded with disposable app data. Save a draft before running the saved-version test.':'Loading an isolated preview with disposable app data…') :
+      sourceEditor?.dirty() ? 'Unsaved source edits. Save a draft before testing or using this code.' : failed ? 'Version '+current.revision.id+' · '+failedPreview.diagnostic :
       frame?.testing ? 'Checking version '+current.revision.id+'…' :
       frame?.ready && tested() ? 'Version '+current.revision.id+' · '+(current.email_source ? 'Startup and sample email checks passed.' : 'Startup check passed.')+' Try the app’s controls before using it.' :
       frame?.ready ? 'Version '+current.revision.id+' loaded. Run Test preview, then try the app’s controls.' :
@@ -1233,6 +1289,8 @@
     closeComparison();
     const selected = current,target = Number(compareVersion.value);
     if (!selected?.revision || !editing() || editorTab !== 'changes' || !matches()) return;
+    compareLabel.hidden=Boolean(sourceEditor?.dirty());
+    if (sourceEditor?.dirty()) {renderComparison(selected.revision.artifact,sourceEditor.artifact(),selected.revision.id,'Unsaved edits');return;}
     if (!Number.isSafeInteger(target) || target < 1 || target === selected.revision.id) {
       comparisonStatus.textContent = 'This is the first saved version. A comparison will be available after another version is saved.';
       return;
@@ -1324,12 +1382,14 @@
     remove.disabled = locked || working;
     hideApp.disabled = locked || !current?.revision;
     hideApp.textContent = current?.canvas.hidden === true ? 'Show app in shortcuts' : 'Hide app from shortcuts';
-    test.disabled = locked || working || current?.revision?.status !== 'draft';
-    apply.disabled = locked || working || !current?.revision || !frame?.ready || !validFrame(frame) ||
+    test.disabled = locked || working || Boolean(sourceEditor?.dirty()) || current?.revision?.status !== 'draft';
+    apply.disabled = locked || working || Boolean(sourceEditor?.dirty()) || frame?.localSource || !current?.revision || !frame?.ready || !validFrame(frame) ||
       (!current.revision.can_rollback && (current.revision.status !== 'draft' || !tested())) || current.revision.id === current.canvas.active_revision;
     apply.textContent = current?.revision?.can_rollback ? 'Restore this version' : 'Use this version';
     viewWorking.hidden = !current?.canvas.active_revision || current.canvas.active_revision === current.revision?.id;
     viewWorking.disabled = locked;
+    sourceEditor?.setBlocked(locked||(working&&job.canvas_id===current?.canvas.id)||uncertain);
+    sourceMakeChange.disabled=locked||working||uncertain||!selectedSourceContext||!prompt.value.trim();
     updateBuildProgress();
     updatePreviewCheck();
     updateLibraryImageControls();
@@ -1535,7 +1595,7 @@
   }
 
   function requestArtwork() {
-    if (!cfg.artworkEndpoint || document.hidden || suspended || !shown() || !matches() || !current?.canvas || !current?.revision) return;
+    if (!cfg.artworkEndpoint || sourceEditor?.dirty() || frame?.localSource || document.hidden || suspended || !shown() || !matches() || !current?.canvas || !current?.revision) return;
     const {canvas,revision} = current;
     const binding = String(window.STONEFELLOW_CHAT?.workingAttentionBinding || '');
     const context = {canvasId:canvas.id,revision:revision.id,conversationId:scope(),agentId:agent,ownerId:owner,binding};
@@ -1591,20 +1651,22 @@
     } catch (_) { /* The saved draft and test result are independent of artwork. */ }
   }
 
-  function startPreview(testing = false) {
+  function startPreview(testing = false,localArtifact = null) {
     closePreview();
     if (!shown() || !current?.revision || !current?.state || !matches()) return;
     const connected = current.email_source === true;
     const commands = declaredCommands();
     if ((connected || declaresGmail()) && document.hidden) return;
     if (!editing()) reportApp('Starting app…');
-    const snapshot = connected && !testing ? ensureSourceRefresh('email') : null;
+    const localSource=localArtifact!==null;
+    if(localSource)frameHost.dataset.sourcePreview='unsaved';else delete frameHost.dataset.sourcePreview;
+    const snapshot = connected && !testing && !localSource ? ensureSourceRefresh('email') : null;
     const email = snapshot ? {status:snapshot.generation > 0 ? 'ready' : 'unavailable',rows:snapshot.rows.map(({source_ref,...row}) => row)} :
       (connected ? emailFixture() : null);
     const element = node('iframe');
     const nonce = token();
-    const artifact = current.revision.artifact;
-    const isActive = !testing && current.revision.id === current.canvas.active_revision;
+    const artifact = localArtifact ?? current.revision.artifact;
+    const isActive = !testing && !localSource && current.revision.id === current.canvas.active_revision;
     const gmailConnected = isActive && declaresGmail() && commandSettings?.gmail.app_access === true;
     const gmail = declaresGmail() ? (isActive ? gmailConnected ? ensureSourceRefresh('gmail') : gmailUnavailable : gmailFixture()) : null;
     const {sources,links} = previewSources(commands,isActive);
@@ -1614,7 +1676,7 @@
     const candidate = {
       nonce,element,epoch,scope:scope(),canvasId:current.canvas.id,revision:current.revision.id,
       stateRevision:current.state.revision,imageToken:libraryImageSettings()?.token,isActive,testing,state,snapshot,links,canSaveState,
-      ready:false,saving:false,timer:0
+      ready:false,saving:false,timer:0,localSource
     };
     const payload = {channel,nonce,parentOrigin:location.origin,artifact,state,workerKey:token(),maxText,stateLimit,email,
       emailCheck:connected && testing ? emailFixtureSubjects : null,gmail,canSaveState,sources,
@@ -1634,6 +1696,10 @@
     if (!validFrame(candidate)) return;
     closePreview();
     const diagnostic = Object.hasOwn(previewErrors,reason) ? previewErrors[reason] : previewErrors.render;
+    if (candidate.localSource) {
+      frameHost.replaceChildren(node('p',diagnostic+' Return to Source to edit this preview.','vp3-coding-canvas-preview-error'));
+      sourceEditor?.reportPreviewFailure(diagnostic);report('Unsaved preview failed. '+diagnostic);updateControls();return;
+    }
     failedPreview = {canvas:candidate.canvasId,revision:candidate.revision,diagnostic};
     frameHost.replaceChildren(node('p',diagnostic+' Use Repair to prepare a change.','vp3-coding-canvas-preview-error'));
     const detail = reason === 'email_workflow' ?
@@ -1755,6 +1821,11 @@
     closePreview();
     resetLibraryImagePicker();
     current = data;
+    clearSourceContext();
+    sourceEditor?.bind(data?.revision?{scopeKey:[owner,agent,scope()].join(':'),canvasId:data.canvas.id,revision:data.revision.id,
+      sourceHash:data.revision.source_hash||'',expectedDraft:data.canvas.draft_revision,expectedActive:data.canvas.active_revision,
+      artifact:data.revision.artifact,ready:data.source_editor?.ready===true,
+      editable:data.source_editor?.ready===true&&data.source_editor?.can_edit===true&&/^[a-f0-9]{64}$/.test(data.revision.source_hash||'')}:null);
     publishing.open = keepPublishingOpen;
     permissions.open = false;
     permissionStatus.textContent = '';
@@ -1773,6 +1844,7 @@
       versions.replaceChildren();
       compareVersion.replaceChildren();
       frameHost.replaceChildren();
+      delete frameHost.dataset.sourcePreview;
       syncEditorViews();
       updateControls();
       return;
@@ -1944,7 +2016,7 @@
       (revision !== undefined && (!Number.isSafeInteger(revision) || revision < 1))) return false;
     if (!enterPanel('app')) return false;
     appTarget = {id,revision};
-    if (current?.canvas.id === id && current.revision?.id === revision && frame?.ready && !frame.testing && !openController) {
+    if (current?.canvas.id === id && current.revision?.id === revision && frame?.ready && !frame.testing && !frame.localSource && !openController) {
       reportApp('');
       return true;
     }
@@ -2030,7 +2102,7 @@
       if (next.state === 'ready') {
         try {
           scheduleFooterRefresh();
-          if (version === epoch && editing() && observedJob !== next.run_id && !openController) {
+          if (version === epoch && editing() && observedJob !== next.run_id && !openController && !sourceEditor?.dirty() && !sourceEditor?.pending() && !selectedSourceContext) {
             void refreshList(version).catch(() => {});
             await openSaved(next.canvas_id,next.revision,false);
           }
@@ -2065,6 +2137,7 @@
     if (attempt !== lastIntent || version !== epoch || conversation !== scope() || !matches()) return;
     verifyJob(next,conversation);
     lastIntent = null;
+    if(attempt.sourceContext&&attempt.sourceContext===selectedSourceContext)clearSourceContext();
     if (attempt.text && prompt.value.trim() === attempt.text) prompt.value = '';
     if (attempt.command && input?.value === attempt.command) {
       input.value = '';
@@ -2153,6 +2226,10 @@
           && !await openSaved(request.canvas_id,undefined,false)) return;
       if (version !== epoch || conversation !== scope() || !matches() || !editing() || prompt.value.trim()) return;
       prompt.value = request.prompt;
+      if (request.edit_context && current?.canvas.id===request.canvas_id && current?.revision.id===request.revision
+          && request.edit_context.source_hash===current.revision.source_hash) {
+        selectSourceContext(request.edit_context,({html:'HTML',css:'CSS',js:'JavaScript'}[request.edit_context.language]||'Source')+' selection · saved version '+request.revision);
+      }
       prompt.focus();
       report('Saved request loaded. Edit it, then choose '+(request.operation === 'repair' ? 'Repair for the selected version.' : 'Build new.'));
     } catch (error) {
@@ -2195,6 +2272,7 @@
     text = text.trim();
     if (/^\/commands$/i.test(text)) { openCommandLibrary();return; }
     if (!text && action === 'repair' && previewFailed()) text = 'Fix this app so it opens and works in Canvas.';
+    if (sourceEditor?.dirty()||sourceEditor?.pending()) {report('Save or discard the source edits before starting a Coding Agent request.');return;}
     if (!text || text.length > 8000 || locked || activeJob(job) || lastIntent?.pending || !matches() || !chat()?.isReady()) {
       if (shown() && !text) report('Describe what you want the Coding Agent to make or change.');
       return;
@@ -2208,6 +2286,7 @@
       if (!current?.revision) return;
       fields.canvas_id = current.canvas.id;
       fields.revision = current.revision.id;
+      if (selectedSourceContext?.canvas===current.canvas.id&&selectedSourceContext.revision===current.revision.id)fields.edit_context=selectedSourceContext.context;
       if (previewFailed()) fields.diagnostic = 'The isolated browser preview failed. ' + failedPreview.diagnostic;
     }
     locked = true;
@@ -2231,7 +2310,7 @@
       const intent = JSON.stringify([conversation,action,fields]);
       if (lastIntent?.intent !== intent) lastIntent = {intent,id:crypto.randomUUID()};
       attempt = lastIntent;
-      Object.assign(attempt,{pending:true,text,command});
+      Object.assign(attempt,{pending:true,text,command,sourceContext:fields.edit_context?selectedSourceContext:null});
       fields.request_id = lastIntent.id;
       const data = await api(action,fields,conversation);
       await acceptAdmission(attempt,data.job,version,conversation);
@@ -2463,6 +2542,7 @@
     }
   });
   function resetContext() {
+    sourceEditor?.clear(Number(window.STONEFELLOW_CHAT?.userId)!==owner||String(window.STONEFELLOW_CHAT?.workingAttentionBinding||'')!==pageBinding);
     closeComparison();
     closeArtworkFrame();
     artworkAttempts.clear();

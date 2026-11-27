@@ -200,6 +200,92 @@ recovery and email browser fixtures load the shipped comparison dependency. The
 Runtime Journey runs both new fixtures, and the deployment workflow requires the
 new production script. No schema change or new backend endpoint is introduced.
 
+## Section 3: editable source and targeted Agent requests
+
+The owner requested the next product build around an editable code editor and
+precise changes to an existing app. This section implements that workflow before
+the broader interaction-testing/automatic-repair work.
+
+Source provides an editable HTML/CSS/JavaScript surface with bounded syntax
+colors, line/column information and JavaScript syntax diagnostics. The bundled
+Acorn parser only inspects code. The existing opaque iframe/worker remains the
+execution boundary. Source markup becomes text nodes, and the Chat thread owns
+the source editor's scrolling. Phone text is at least 16px; source controls retain
+the existing touch-target sizing.
+
+Unsaved edits compare against their saved base in Changes. Preview edits uses a
+disposable data copy, sample connected-source rows and no live source targets.
+It cannot become a native saved-version test or enable Use. A failed scratch
+preview does not invalidate a previously tested saved revision.
+
+Save source draft uses the canonical version/Knowledge store and no model call.
+Four nullable columns in the version table retain exact manual base/origin and
+request identity. The explicit Database Upgrade adds those columns and their
+unique request index. Readiness reporting does not install schema during polling.
+Older installations retain app execution and source inspection.
+
+The native save locks the owner and exact Canvas, validates its immutable source
+proof and active/draft pointers, and inherits its command declarations. It creates
+a separate untested private code item without updating records, grants, active
+code or publication. The same request ID recovers its exact previously saved
+revision, including after another draft appeared; a changed payload is rejected.
+Unchanged code creates no empty revision. A worker changing the same Canvas fences
+manual saves; unrelated Canvases remain manually editable.
+
+The browser retains a stable pending save across uncertain headers/bodies and
+preserves typing while that save is being confirmed. Additional typing is carried
+onto the confirmed revision and remains unsaved. Its expected active pointer and
+draft fence remain tied to the accepted save, including when another writer
+advanced the server. Eight bounded in-memory buffers preserve unsaved work across
+Canvas/version and Chat navigation without displaying it in another scope.
+Identity changes discard those buffers. No private source is put in localStorage.
+Closing/reloading still requires an explicit save.
+
+Saved-code selection is optional. Native admission checks an 8,000-byte UTF-8
+range and source hash against the exact saved revision. The canonical private job
+goal retains that selection, including through explicit Retry and Edit saved
+request. Progress feeds omit it. The worker rechecks source/pointers before
+inference and supplies the verified selection to the existing code_repair provider
+path. The provider receives the excerpt from native source, not a client-supplied
+copy, and is instructed to make the smallest coordinated change. Its result is
+still a complete untested artifact for Changes/Test/Use review. Selection is
+context, not a guarantee that only those literal bytes can change.
+
+Manual source must preserve special connected-source ancestry. The native email
+resolver follows manual origin metadata alongside completed model-run receipts.
+Repeated manual edits flatten their origin while retaining the immediate base,
+so they do not silently lose email access or become writable generic apps.
+Malformed ancestry fails closed, and the original Chat and sample-email test
+requirements remain. Paired-phone viewers retain their native read-only editor
+boundary.
+
+### Section 3 acceptance and scoring
+
+Target: 10/10 against these concrete source-editor requirements:
+
+1. HTML/CSS/JavaScript remain editable, highlighted literal text with useful
+   source locations and bounded validation.
+2. Scratch previews use the existing isolation and cannot save records, publish,
+   activate or record a saved-version test.
+3. Manual edits create immutable untested drafts with the exact original commands
+   and separate current app records.
+4. Manual saves use no inference and require native owner/Agent/Chat/write access.
+5. Lost responses recover the exact original save without duplicate revisions.
+6. Stale source/pointers and competing same-Canvas work cannot replace newer work.
+7. Typing during saves and navigation survives without crossing private scopes.
+8. Selected-code requests retain their immutable hash and UTF-8 range through
+   admission, worker execution and explicit retry.
+9. Email-linked versions retain source, read-only behavior and original-Chat/test
+   restrictions through repeated manual edits.
+10. Existing Canvas/recovery/email/phone/Profile flows and desktop/390px/320px
+    layouts continue to pass with all production dependencies loaded.
+
+The source store, worker/context, real HTTP controller, parser and production
+browser fixtures cover these requirements. They run in Runtime Journey alongside
+the extended native email pipeline. The package gate requires the editor module,
+source helper, local parser, license/notice and deployment guide. Live installation
+and arbitrary generated-app functional correctness are outside this score.
+
 ## Following sections
 
 1. Improve interaction-level validation and bounded repair so a broken generated

@@ -39,7 +39,7 @@ jobs:
           development = r'^(?:(?:admin|api|includes|tests|workers)/agent-development[^/]*\.(?:php|mjs|py)|(?:tests/)?chat-agent-development[^/]*\.(?:mjs|js|css))$'
           ai_service = r'^(?:(?:includes|tests)/(?:ai-service-[^/]+|ai-usage-[^/]+|ai-direct-[^/]+|ai-legacy-[^/]+|ai-settings|subscription-quota)\.php|ai-usage(?:-export-v032)?\.php|ai-usage-v1\.css|tests/ai-usage-report-browser-v1\.mjs|tests/fixtures/ai-usage-page-v1\.php)$'
           research = r'^(?:chat-(?:research-specialist-v1|specialist-rail-v1|mobile-specialists-v1)\.(?:js|css)|api/initiative-research-status-v1\.php|tests/chat-research-(?:canvas|specialist)-browser\.mjs)$'
-          coding = r'^(?:chat-coding-canvas-v1\.(?:js|css)|coding-canvas-sidebar-v1\.(?:js|css)|coding-canvas-diff-v1\.js|(?:api|includes|tests)/(?:chat-)?coding-canvas[^/]*\.(?:php|mjs))$'
+          coding = r'^(?:chat-coding-canvas-v1\.(?:js|css)|coding-canvas-sidebar-v1\.(?:js|css)|coding-canvas-(?:diff|source-editor)-v1\.js|assets/vendor/acorn[^/]*\.(?:js|txt)|(?:api|includes|tests)/(?:chat-)?coding-canvas[^/]*\.(?:php|mjs))$'
           activity_hub = r'^(?:agent-activity-hub-v1\.(?:js|css)|(?:api|includes|tests)/agent-activity-(?:hub|media)[^/]*\.(?:php|mjs)|scheduling\.(?:php|css)|tests/planning-specialist-settings-http\.mjs)$'
           coordination = r'^(?:api|includes|tests)/agent-coordination-[^/]+\.(?:php|mjs)$'
           coding_controls = r'^(?:includes/main-sidebar\.php|(?:api|includes|tests)/initiative-canvas-[^/]*\.(?:php|mjs)|tests/coding-sidebar-[^/]*\.mjs)$'
@@ -313,6 +313,11 @@ jobs:
           node tests/chat-coding-canvas-email-browser.mjs
           node tests/coding-canvas-diff-v1.mjs
           node tests/coding-canvas-editor-workspace-browser.mjs
+          php tests/coding-canvas-source-v1.php
+          php tests/coding-canvas-source-context-v1.php
+          node tests/coding-canvas-source-editor-v1.mjs
+          node tests/coding-canvas-source-editor-browser.mjs
+          node tests/coding-canvas-source-http-v1.mjs
           node tests/coding-canvas-recovery-browser.mjs
           node tests/coding-canvas-recovery-http-v1.mjs
       - name: Shared Agent capability adapters and actual work results
@@ -547,6 +552,8 @@ jobs:
         run: |
           php tests/coding-canvas-store-v1.php
           php tests/coding-canvas-jobs-v1.php
+          php tests/coding-canvas-source-v1.php
+          php tests/coding-canvas-source-context-v1.php
           php tests/agent-initiative-canvas-v1.php
           php tests/agent-initiative-canvas-pipeline-v1.php
           php tests/agent-initiative-email-canvas-pipeline-v1.php

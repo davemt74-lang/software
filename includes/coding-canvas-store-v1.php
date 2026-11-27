@@ -50,6 +50,8 @@ function vp3_coding_canvas_schema_v1(PDO $pdo): void
             if (!vp3_coding_canvas_visibility_ready_v1($pdo)) throw $error;
         }
     }
+    require_once __DIR__.'/coding-canvas-source-v1.php';
+    vp3_coding_canvas_source_schema_v1($pdo);
 }
 
 function vp3_coding_canvas_visibility_ready_v1(PDO $pdo): bool
@@ -209,6 +211,7 @@ function vp3_coding_canvas_revision_public_v1(array $row, array $canvas, string 
     $everApplied = (bool)$row['ever_activated'];
     return [
         'id' => $id,
+        'source_hash' => (string)$row['artifact_hash'],
         'status' => $status,
         'test_passed' => $everApplied || ($status === 'draft' && $row['tested_state_revision'] === $stateRevision),
         'can_rollback' => $everApplied && $status !== 'active',

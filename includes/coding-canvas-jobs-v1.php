@@ -8,6 +8,7 @@ require_once __DIR__.'/agent-capability-chat-v1.php';
 require_once __DIR__.'/knowledge-retrieval-v162.php';
 require_once __DIR__.'/participant-updates-v1.php';
 require_once __DIR__.'/coding-canvas-store-v1.php';
+require_once __DIR__.'/coding-canvas-source-v1.php';
 require_once __DIR__.'/coding-canvas-provider-v1.php';
 require_once __DIR__.'/coding-canvas-chat-v1.php';
 
@@ -132,7 +133,7 @@ function vp3_coding_canvas_clear_abandoned_v1(PDO $pdo, array $user): void
 function vp3_coding_canvas_queue_v1(
     PDO $pdo, array $user, int $agentId, int $conversationId, string $requestId, string $prompt,
     ?string $canvasId = null, ?int $revision = null, ?string $diagnostic = null, ?array $initiativeOrigin = null,
-    ?array $commands = null, ?int $retryOf = null
+    ?array $commands = null, ?int $retryOf = null, ?array $editContext = null
 ): array {
     if (!agent_job_engine_schema_ready_v1900($pdo) || !agent_job_control_ready_v1900($pdo)
         || !vp3_ai_service_usage_ready_v1($pdo)) {
@@ -141,9 +142,12 @@ function vp3_coding_canvas_queue_v1(
     if ($conversationId < 1) throw new InvalidArgumentException('Choose a current Chat.');
     $owner = (int)$user['id'];
     $repair = $canvasId !== null;
+    $editContext = vp3_coding_canvas_edit_context_v1($editContext);
+    if ($editContext !== null && !$repair) throw new InvalidArgumentException('Select a saved app before asking for a source edit.',422);
     $capability = $repair ? 'coding.repair' : 'coding.build';
     $dedupe = hash('sha256', 'coding_canvas:'.$requestId);
     $requestFields = [$capability, $agentId, $conversationId, $prompt, $canvasId, $revision, $diagnostic];
+    if ($editContext !== null) $requestFields[] = ['edit_context'=>$editContext];
     if ($initiativeOrigin !== null) $requestFields[] = ['initiative_origin'=>$initiativeOrigin];
     if ($retryOf !== null) $requestFields[] = ['retry_of'=>$retryOf];
     if ($commands !== null) {
@@ -194,7 +198,8 @@ function vp3_coding_canvas_queue_v1(
                 || ($originalGoal['source_revision'] ?? null) !== $revision
                 || ($repair && $originalGoal['canvas_id'] !== $canvasId)
                 || ($originalGoal['diagnostic'] ?? null) !== $diagnostic
-                || ($originalGoal['commands'] ?? []) !== ($commands ?? [])) {
+                || ($originalGoal['commands'] ?? []) !== ($commands ?? [])
+                || ($originalGoal['edit_context'] ?? null) !== $editContext) {
                 throw new RuntimeException('Only the exact stopped or failed request in this Chat can be retried.', 409);
             }
             $user = vp3_coding_canvas_sources_current_v1($pdo, $user, $agentId, $originalGoal, $retryOf);
@@ -211,6 +216,7 @@ function vp3_coding_canvas_queue_v1(
         $model = vp3_coding_canvas_model_resolve_v1($pdo, $user);
         vp3_coding_canvas_model_authorized_v1($pdo, $user, $model, $repair ? 'code_repair' : 'code_build', $initiativeOrigin !== null);
         $source = $repair ? vp3_coding_canvas_read_v1($pdo, $user, $agentId, $canvasId, $revision) : null;
+        if ($editContext !== null) vp3_coding_canvas_edit_context_v1($editContext,$source['revision']);
         if ($source !== null && $originalGoal !== null
             && ($source['canvas']['draft_revision'] !== $originalGoal['expected_draft']
                 || $source['canvas']['active_revision'] !== $originalGoal['expected_active'])) {
@@ -236,6 +242,7 @@ function vp3_coding_canvas_queue_v1(
         ];
         if ($initiativeOrigin !== null) $goal['initiative_origin'] = $initiativeOrigin;
         if ($retryOf !== null) $goal['retry_of'] = $retryOf;
+        if ($editContext !== null) $goal['edit_context'] = $editContext;
         $goal['commands'] = $commands ?? $source['revision']['commands'] ?? [];
         $title = $repair ? 'Repair a private Canvas' : 'Build a private Canvas';
         $pdo->prepare("INSERT INTO agent_workflow_runs
@@ -292,6 +299,9 @@ function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?call
         }
         $commands = vp3_coding_canvas_command_list_v1($goal['commands'] ?? $source['revision']['commands'] ?? []);
         $attribution = ['agent_id'=>$agentId,'conversation_id'=>$cid];
+        if (isset($goal['edit_context'])) {
+            $attribution['edit_context'] = vp3_coding_canvas_edit_context_v1($goal['edit_context'],$source['revision']??null);
+        }
         if (isset($goal['initiative_origin'])) $attribution['background']=true;
         if ($commands) $attribution['commands']=$commands;
         $generate ??= 'vp3_coding_canvas_generate_v1';
@@ -401,7 +411,7 @@ function vp3_coding_canvas_retry_v1(PDO $pdo, array $user, int $agentId, int $ci
     $goal = json_decode((string)$row['goal'], true, 16, JSON_THROW_ON_ERROR);
     return vp3_coding_canvas_queue_v1($pdo, $user, $agentId, $cid, vp3_coding_canvas_id_v1($requestId), $goal['prompt'],
         $row['capability_key'] === 'coding.repair' ? $goal['canvas_id'] : null, $goal['source_revision'] ?? null,
-        $goal['diagnostic'] ?? null, commands:$goal['commands'] ?? [], retryOf:$runId);
+        $goal['diagnostic'] ?? null, commands:$goal['commands'] ?? [], retryOf:$runId,editContext:$goal['edit_context']??null);
 }
 
 /** Private editor detail is requested explicitly rather than copied into progress feeds. */
@@ -412,7 +422,7 @@ function vp3_coding_canvas_saved_request_v1(PDO $pdo, array $user, int $agentId,
     $goal = json_decode((string)$row['goal'], true, 16, JSON_THROW_ON_ERROR);
     vp3_coding_canvas_sources_current_v1($pdo, $user, $agentId, $goal, $runId);
     return ['prompt'=>$goal['prompt'], 'operation'=>$row['capability_key'] === 'coding.repair' ? 'repair' : 'build',
-        'canvas_id'=>$goal['canvas_id'], 'revision'=>$goal['source_revision'] ?? null];
+        'canvas_id'=>$goal['canvas_id'], 'revision'=>$goal['source_revision'] ?? null,'edit_context'=>$goal['edit_context']??null];
 }
 
 /** Retrying a private proposal retains its original source/owner-decision proof. */
@@ -437,7 +447,7 @@ function vp3_coding_canvas_sources_current_v1(PDO $pdo, array $user, int $agentI
             || (($goal['source_revision'] ?? null) !== null && ($original['canvas_id'] ?? null) !== ($goal['canvas_id'] ?? null))) {
             throw new RuntimeException('The saved Canvas retry source changed.', 409);
         }
-        foreach (['conversation_id','source_revision','prompt','diagnostic','expected_draft','expected_active'] as $field) {
+        foreach (['conversation_id','source_revision','prompt','diagnostic','expected_draft','expected_active','edit_context'] as $field) {
             if (($original[$field] ?? null) !== ($goal[$field] ?? null)) {
                 throw new RuntimeException('The saved Canvas retry instruction changed.', 409);
             }
