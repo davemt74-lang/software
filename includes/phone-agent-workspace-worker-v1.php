@@ -33,6 +33,26 @@ function vp3_phone_agent_workspace_worker_enrollment_v1(PDO $pdo,array $expected
     $context=vp3_phone_agent_workspace_worker_scope_v1($pdo,$expected,$now);
     $owner=(int)$context['user']['id'];$agent=(int)$context['enrollment']['selected_agent_id'];
     $discovery=vp3_phone_agent_sources_discover_v1($pdo,$context['user'],$agent,$now,40);
+    // Explicit wakes must not disappear behind the newest-source discovery cap.
+    // Rotate bounded pending receipts using internal metadata, without marking
+    // anything read/seen or altering the receipt's public concurrency revision.
+    $wakeHints=vp3_phone_transaction_v1($pdo,static function()use($pdo,$expected,$owner,$agent,$now):array{
+        $current=vp3_phone_agent_workspace_worker_scope_v1($pdo,$expected,$now,true);$e=$current['enrollment'];
+        $rows=vp3_phone_sql_v1($pdo,"SELECT r.item_ref,r.source_revision,r.wake_revision,i.source_kind,i.source_id
+            FROM vp3_phone_agent_receipts_v1 r JOIN vp3_phone_agent_items_v1 i ON i.owner_user_id=r.owner_user_id AND i.item_ref=r.item_ref AND i.source_revision=r.source_revision
+            LEFT JOIN vp3_phone_agent_alerts_v1 a ON a.owner_user_id=r.owner_user_id AND a.device_id=r.device_id AND a.grant_id=r.grant_id AND a.item_ref=r.item_ref AND a.item_revision=i.revision AND a.wake_revision=r.wake_revision
+            WHERE r.owner_user_id=? AND r.device_id=? AND r.grant_id=? AND i.agent_id=? AND r.wake_revision>0 AND r.wake_requested_epoch>?
+                AND r.read_epoch IS NULL AND r.acknowledged_epoch IS NULL AND (r.snoozed_until IS NULL OR r.snoozed_until<=?) AND a.item_ref IS NULL
+            ORDER BY r.updated_epoch,r.item_ref LIMIT 10",[$owner,$e['device_id'],$e['grant_id'],$agent,(int)$e['notifications_since_epoch'],$now])->fetchAll(PDO::FETCH_ASSOC);
+        foreach($rows as $row)vp3_phone_sql_v1($pdo,'UPDATE vp3_phone_agent_receipts_v1 SET updated_epoch=? WHERE owner_user_id=? AND device_id=? AND grant_id=? AND item_ref=? AND source_revision=? AND wake_revision=?',
+            [$now,$owner,$e['device_id'],$e['grant_id'],$row['item_ref'],$row['source_revision'],$row['wake_revision']]);
+        return $rows;
+    });
+    foreach($wakeHints as $hint){
+        try{$candidate=vp3_phone_agent_workspace_source_v1($pdo,$context['user'],$agent,$hint['source_kind'],$hint['source_id'],$now);}
+        catch(RuntimeException|DomainException|JsonException $error){if($error instanceof PDOException)throw $error;continue;}
+        if($candidate!==null&&hash_equals($hint['source_revision'],$candidate['source_revision']))$discovery['items'][]=$candidate;
+    }
     vp3_phone_agent_workspace_worker_scope_v1($pdo,$expected,$now);
     $stored=vp3_phone_agent_workspace_ingest_v1($pdo,$owner,$agent,$discovery['items'],$now);
     $candidates=[];
@@ -45,11 +65,15 @@ function vp3_phone_agent_workspace_worker_enrollment_v1(PDO $pdo,array $expected
                 [$owner,$agent,$reference['item_ref']])->fetch(PDO::FETCH_ASSOC);
             if(!$row||(int)$row['revision']!==$reference['revision'])continue;
             $candidate=$candidates[$row['source_kind'].':'.$row['source_id']]??null;
+            $receipt=vp3_phone_agent_workspace_receipt_v1($pdo,['enrollment'=>$current['enrollment']],$row);
+            $wake=(int)($receipt['wake_revision']??0);
             if($candidate===null||!hash_equals($candidate['source_revision'],$row['source_revision'])
                 ||($candidate['notification_eligible']??true)===false
-                ||$candidate['updated_epoch']<=$since||!in_array($candidate['state'],['ready','needs_review'],true))continue;
+                ||($candidate['updated_epoch']<=$since&&(!$wake||(int)($receipt['wake_requested_epoch']??0)<=$since))
+                ||!in_array($candidate['state'],['ready','needs_review'],true))continue;
             $event=vp3_phone_push_event_enqueue_v1($pdo,$current['device'],['type'=>'agent_item','id'=>$row['item_ref'],
-                'revision'=>(int)$row['revision'],'expires_epoch'=>min($now+3600,(int)$current['device']['expires_at'])],$now);
+                'revision'=>(int)$row['revision'],'expires_epoch'=>min($now+3600,(int)$current['device']['expires_at'])]
+                +($wake>0?['wake_revision'=>$wake]:[]),$now);
             if(is_array($event)&&in_array($event['state']??null,['queued','retry','sending','accepted'],true))$queued++;
         }
         return ['eligible_events'=>$queued];

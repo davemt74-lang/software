@@ -48,7 +48,7 @@ try{
   const staleVersion=await post(main.request,'/api/coding-canvas-v1.php',{action:'phone_targets',csrf_token:owner.csrf,agent_id:0,...browsed,revision:2});
   assert.equal(staleVersion.status,409);assert.match(staleVersion.error,/Reopen the Canvas/);
   const editor=await main.newPage();editor.setDefaultTimeout(12000);
-  await editor.goto('/chat.php?agent=system&conversation_id=9&canvas_id='+canvas.canvas_id);
+  await editor.goto('/chat.php?agent=system&conversation_id=9&canvas_id='+canvas.canvas_id,{waitUntil:'domcontentloaded'});
   try{await editor.locator('#chatCodingCanvasV1 .vp3-coding-canvas-edit-app').click();}catch(error){console.error('EDITOR',JSON.stringify(await editor.evaluate(()=>({url:location.href,title:document.title,text:document.body.innerText.slice(0,1800),cfg:typeof VP3_CODING_CANVAS_V1,chat:typeof STONEFELLOW_CHAT,thread:!!document.getElementById('chatThread')}))));throw error;}
   await editor.locator('#chatCodingCanvasV1').getByRole('button',{name:'Send Canvas to Connected Phone',exact:true}).click();
   const sendDialog=editor.getByRole('dialog',{name:'Send Canvas to Connected Phone',exact:true});

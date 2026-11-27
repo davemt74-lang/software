@@ -65,6 +65,7 @@ jobs:
             "phone_push_delivery_default": "off",
             "phone_agent_workspace": "paired-owner-approved-v2",
             "phone_canvas_delivery": "canonical-private-v1",
+            "notification_reliability": "semantic-wake-v1",
             "music_catalog_schema": "music-song-metadata-v1-20261126",
             "music_listening_protocol": "native_listening_v1",
             "music_provider_protocol": "vp3_music_provider_v1",
@@ -619,6 +620,7 @@ jobs:
                       includes/phone-agent-workspace-sources-v1.php includes/phone-agent-workspace-worker-v1.php \
                       includes/phone-agent-workspace-native-v1.php includes/phone-agent-workspace-view-v1.php \
                       includes/phone-agent-device-grants-v1.php includes/coding-canvas-phone-v1.php \
+                      includes/phone-agent-alerts-v1.php includes/notification-read-transactions-v1.php docs/NOTIFICATIONS-RELIABILITY-V1.txt \
                       phone-agent-workspace-v1.js phone-agent-workspace-v1.css phone-agent-workspace-media-v1.js \
                       phone-agent-item-v1.js phone-agent-item-v1.css docs/PHONE-AGENT-WORKSPACE-V1.txt; do
             test -s "_deploy/$path"

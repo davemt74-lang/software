@@ -26,7 +26,7 @@ export async function musicListeningFixture({install = true} = {}) {
       'includes/artist-music-v185.php', 'includes/artist-media-v182.php',
       'includes/music-workspace-resources-v330.php', 'includes/music-song-metadata-v1.php',
       'includes/music-listening-v1.php', 'includes/stem-mp3-metadata-v1.php',
-      'includes/player-v76.php', 'includes/notifications.php', 'includes/agent-chat-activity.php',
+      'includes/player-v76.php', 'includes/notifications.php', 'includes/notification-read-transactions-v1.php', 'includes/agent-chat-activity.php',
       'includes/recommendations.php', 'tests/music-song-metadata-v1.php',
       'tests/fixtures/music-listening-v1.php', 'tests/fixtures/stem-mp3-metadata-v1.json',
       'scripts/music-listening-v1.php',

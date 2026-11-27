@@ -317,6 +317,10 @@ try{
     pas_reject(401,fn()=>vp3_phone_agent_workspace_owner_v1($pdo,$owner),'a holder notification does not provide the private owner login');
     vp3_phone_agent_workspace_sweep_v1($pdo,$clock+21,1);
     pas_check((int)$pdo->query('SELECT COUNT(*) FROM vp3_phone_push_outbox_v1')->fetchColumn()===1,'repeated sweeps cannot duplicate a semantic item notification');
+    if(($argv[1]??'')==='notification-reliability'){
+        require __DIR__.'/fixtures/phone-notification-reliability-v1.php';
+        return;
+    }
     $queuedItem=$pdo->query("SELECT * FROM vp3_phone_agent_items_v1 WHERE item_ref='".$event['source_id']."'")->fetch();
     $index=json_encode($pdo->query('SELECT * FROM vp3_phone_agent_items_v1')->fetchAll());
     pas_check(!str_contains($index,'Private email')&&!str_contains($index,'BODY_SENTINEL')&&!str_contains($index,'review_token'),

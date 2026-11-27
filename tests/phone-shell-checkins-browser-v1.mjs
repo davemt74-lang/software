@@ -5,6 +5,7 @@ import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 const {chromium}=createRequire(import.meta.url)(process.env.VP3_PLAYWRIGHT_MODULE||'playwright');
 const root=new URL('../',import.meta.url),html=execFileSync(process.env.PHP_BINARY||'php',[fileURLToPath(new URL('phone-location.php',root))],{encoding:'utf8'});
+const statuses=JSON.parse(execFileSync(process.env.PHP_BINARY||'php',[fileURLToPath(new URL('tests/fixtures/phone-notification-status-v1.php',root))],{encoding:'utf8'}));
 const browser=await chromium.launch({headless:true,args:['--no-sandbox'],executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});
 try{
  for(const width of [320,390,1280]){
@@ -13,6 +14,7 @@ try{
   const now=()=>Math.floor(Date.now()/1000),id='d'.repeat(32),profile='a'.repeat(32);
   const device={id,name:'My phone',role:'owner',status:'approved',generation:2,allow_location:true,location_state:'live',fix_at:now(),accuracy:8,holder_can_save_places:true,holder_place_version:1,
     communication:{profile_id:profile,revision:1,request_permission_saved:true,information_pending:1},checkins:{ready:true,server_epoch:now(),active:null,recent:[],patterns:[]}};
+  device.push=structuredClone(statuses.find(item=>item.name==='stale_worker').device.push);device.push.delivery.last_test.device_id=id;
   await page.addInitScript(()=>Object.defineProperty(navigator,'geolocation',{configurable:true,value:{watchPosition:()=>1,clearWatch:()=>{},getCurrentPosition:ok=>ok({timestamp:Date.now(),coords:{latitude:33.45,longitude:-112.07,accuracy:8}})}}));
   await page.route('https://phone-shell.test/**',async route=>{
    const u=new URL(route.request().url());if(u.pathname==='/phone-location.php')return route.fulfill({contentType:'text/html',body:html});
@@ -38,6 +40,7 @@ try{
   await page.locator('#phone-user-menu summary').click();await page.getByRole('button',{name:'Phone settings',exact:true}).waitFor();await page.locator('#phone-user-menu summary').press('Escape');assert.equal(await page.locator('#phone-user-menu').evaluate(e=>e.open),false);
   await page.getByRole('tab',{name:/^Requests/}).click();await page.getByText('Can you review this?',{exact:true}).waitFor();assert.equal(await page.getByRole('button',{name:'Delete request',exact:true}).count(),0,'holder has no owner delete control');
   await page.getByRole('tab',{name:'Phone',exact:true}).click();
+  await assert.match(await page.locator('#phone-push-test-state').textContent(),/worker has not run recently.*Last test:.*was opened/,'current blocker and past success remain visible together');
   await page.getByLabel('Let the Location Specialist learn from this check-in').check();await page.getByRole('button',{name:'Check In Location',exact:true}).click();
   await page.getByText(/Checked in · 1h 1m/).waitFor();assert.equal(requests.filter(q=>q.action==='location_checkin').length,1);
   assert.equal(await page.getByRole('button',{name:'Check Out Location',exact:true}).isEnabled(),true);

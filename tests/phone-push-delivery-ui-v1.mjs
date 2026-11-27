@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import {spawnSync} from 'node:child_process';
 import {createECDH,createHash,webcrypto} from 'node:crypto';
 const source=fs.readFileSync(new URL('../phone-push-subscriptions-v1.js',import.meta.url),'utf8');
 const ecdh=createECDH('prime256v1');ecdh.generateKeys();const publicKey=ecdh.getPublicKey().toString('base64url'),keyId=createHash('sha256').update(publicKey).digest('hex');
@@ -48,6 +49,18 @@ function setup(options={}){
  return {window,document,elements,calls,resolved,unavailable,historyCalls,facts,location,registration,controller,bind,click,get device(){return device;},advanceClock:milliseconds=>{clockOffset+=milliseconds;},setHandler:fn=>handler=fn,setRegistrationError:value=>registrationError=value,setPermission:value=>permission=value,setOnline:value=>navigator.onLine=value,setInfoHidden:value=>{elements.get('phone-info').hidden=value;observers.forEach(fn=>fn());},wake:()=>window.emit('pageshow'),dispose:()=>window.emit('pagehide')};
 }
 let checks=0;async function test(name,fn){await fn();checks++;console.log('PASS '+name);}
+await test('actual PHP delivery projections preserve current blockers alongside historical tests',async()=>{
+ const result=spawnSync(process.env.PHP_BINARY||'php',[new URL('./fixtures/phone-notification-status-v1.php',import.meta.url).pathname],{encoding:'utf8'});
+ assert.equal(result.status,0,result.stderr||result.stdout);
+ const cases=JSON.parse(result.stdout),expected={missing_upgrade:/Database Upgrade/,ready:/Send a test/,credentials:/credentials are unavailable/,stale_worker:/worker has not run recently/,runtime:/PHP 8\.2 or newer/};
+ for(const item of cases){
+  assert.equal(item.device.push.delivery.state,item.state);
+  const b=setup({local:false});b.bind(item.device);await flush();
+  const label=b.elements.get('phone-push-test-state').textContent;assert.match(label,expected[item.name]);
+  if(['stale_worker','runtime'].includes(item.name))assert.match(label,/Last test:.*was opened/,'past success cannot replace current health');
+  await b.dispose();
+ }
+});
 async function ready(options={}){const b=setup(options);b.bind(options.device||fixture(),options.available!==false);await flush();return b;}
 await test('opening Info only inspects a subscription and never requests permission or sends a test',async()=>{
  const b=await ready();assert.equal(b.facts.subscriptions,0);assert.equal(b.facts.permissionPrompts,0);assert.equal(b.calls.length,0);assert.equal(b.elements.get('phone-push-test').disabled,false);assert.match(b.elements.get('phone-push-test-state').textContent,/saved subscription does not confirm delivery/);await b.dispose();

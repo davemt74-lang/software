@@ -1,0 +1,78 @@
+VP3 notification reliability — semantic-wake-v1
+
+Deploy the complete Cloud archive and run the authenticated Database Upgrade
+(upgrade.php). The explicit migration adds a content-free Agent alert ledger,
+snooze wake metadata, and exact approval/wake bindings on new outbox events.
+Existing paired phones, subscriptions, opt-ins and private review authority are
+preserved. Notification/workspace reads report upgrade required while the optional
+new schema is missing; they do not perform migrations during live polling.
+
+The migration backfills existing current Agent notification identities before
+provider log cleanup can remove their deduplication evidence. Legacy queued
+events remain valid under their existing source and permission checks. New
+events additionally capture the current Agent approval and snooze generation.
+
+WHAT CHANGED
+
+1. Phone notification setup reports its current server state: missing upgrade,
+   unavailable protected credentials, enrollment/delivery switches, absent/stale
+   worker, or runtime/transport failure. A historical successful test is shown
+   separately and cannot hide a current blocker. The current JS asset is v5.
+
+2. HomeServer continuity-restored notifications follow the real typed notifier
+   contract. Reconciliation UUIDs stay in native reconciliation metadata rather
+   than being passed into an integer notification source-ID field. A completed
+   reconciliation no longer fails because of that notification type error.
+
+3. Current per-device/per-approval Agent alert identities survive the seven-day
+   expiry cleanup of provider outbox metadata. Cleanup does not generate an
+   accidental reminder for unchanged unread work. A genuine new source revision
+   remains eligible through the existing cutover and opt-in rules.
+
+4. Explicit snooze and unsnooze operations have separate wake generations. A due
+   wake can create its own event even if an earlier queued generation was
+   cancelled while snoozed. Superseded or revoked events are never revived.
+   Read/acknowledge, expiry, changed native content, current approval, and current
+   notification preferences are checked again before enqueue, dispatch and open.
+   Due explicit wakes use a bounded rotating lookup independent of the ordinary
+   newest-item discovery cap, so older snoozed work can still return on time.
+   The existing phone UI has no new snooze controls in this release.
+
+5. Reading an owner-scoped browser notification mirror from VP3 updates the
+   Browser Companion inbox as well. Single read, mark-all, reverse read and
+   dismissal commit their canonical/browser changes atomically. Profile attention
+   read generations, private phone receipts and Gmail approval are independent.
+
+OPERATIONS
+
+Keep the existing Cloud Agent discovery worker and the separate once-per-minute
+phone-push-worker-v1.php CLI job scheduled. The push sender still requires PHP
+8.2+ with curl, json, mbstring and OpenSSL. Enrollment and delivery are separate
+administrator switches, and the phone's Agent-alert preference is separate from
+its OS permission and push subscription. This release does not enable them for
+any account or phone automatically.
+
+The current OS permission request still runs directly in a trusted tap. On an
+installed iOS/iPadOS 16.4+ Home Screen app, allow notifications, then use Finish
+enabling notifications to save the subscription. A stopped sender prevents
+delivery; it does not itself prevent the OS permission request.
+
+The sender retains its existing bounded three-candidate tick and provider
+retry/uncertain-send rules. This patch does not expand notification categories,
+automatically place calls, or promise continuous closed-app location tracking.
+
+VALIDATION
+
+The reconnect regression uses the real notification function. Read synchronization
+tests cover owner isolation, retries, mirror failures and outer transaction
+rollback. UI tests render real PHP diagnostic projections, including an old
+opened test with a stale worker. Native MySQL/MariaDB tests cover upgrade replay,
+legacy queue backfill, eight-day cleanup without replay, due/rescheduled/unsnoozed
+wakes, exact approval/generation fences, read suppression, source edits and
+revocation. Providers in repository tests are isolated substitutes.
+
+After deploying and upgrading, verify one explicit test on the physical locked
+phone and tap the notification into its current authorized item. Provider
+acceptance and a successful showNotification receipt remain separate from a
+person seeing the alert or confirming an email send. Paired private review
+continues without an owner login on the phone.
