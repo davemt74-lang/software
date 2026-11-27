@@ -35,6 +35,11 @@ try{
     $row['fix_at']=$now+55;$row['longitude']=-112.06;vp3_phone_checkin_fix_v1($db,$row,$now+55);check(vp3_phone_checkin_view_v1($db,$row,$now+55)['active']!==null,'returning inside clears the departure candidate');
     $row['fix_at']=$now+85;vp3_phone_checkin_fix_v1($db,$row,$now+85);$view=vp3_phone_checkin_view_v1($db,$row,$now+85);
     check($view['active']===null&&$view['recent'][0]['reason']==='left_area'&&$view['recent'][0]['ended_epoch']===$now+55,'two accurate outside readings confirm checkout at first departure observation');
+    $source=['type'=>'location_visit','id'=>$visit,'revision'=>2,'expires_epoch'=>$now+3600];
+    check(vp3_phone_push_source_target_v1($db,$row,$source,$now+85)===['tab'=>'phone'],'checkout alerts resolve only their current private Phone destination');
+    check(vp3_phone_push_source_target_v1($db,array_replace($row,['owner_user_id'=>2]),$source,$now+85)===null,'another owner cannot resolve a checkout alert');
+    check(vp3_phone_push_source_target_v1($db,array_replace($row,['generation'=>$row['generation']+1]),$source,$now+85)===null,'stale sharing generation cannot deliver an old checkout alert');
+    check(vp3_phone_push_source_target_v1($db,array_replace($row,['allow_location'=>0]),$source,$now+85)===null,'withdrawing location blocks queued checkout alerts');
     reject(409,fn()=>$op('location_checkin',$body),'replaying a completed check-in cannot reopen it');
     $visit=bin2hex(random_bytes(16));$d=$op('location_checkin',['visit_id'=>$visit,'confirmed'=>true,'learn'=>true]);
     $r=vp3_phone_sql_v1($db,'SELECT * FROM vp3_phone_checkins_v1 WHERE visit_id=?',[$visit])->fetch(PDO::FETCH_ASSOC);
@@ -51,7 +56,10 @@ try{
     reject(409,fn()=>$op('location_checkout',['visit_id'=>$visit,'version'=>1,'confirmed'=>true]),'stale checkout is rejected');
     $d=$op('location_checkout',['visit_id'=>$visit,'version'=>2,'confirmed'=>true]);check($d['checkins']['active']===null&&count(array_filter($d['checkins']['recent'],fn($x)=>$x['visit_id']===$visit&&$x['reason']==='manual'))===1,'manual checkout closes the timer');
     $op('checkin_forget',['confirmed'=>true]);check(vp3_location_specialist_checkin_context_v1($db,['id'=>1])===[],'forget removes all check-in learning and confirmed labels');
-    $last=bin2hex(random_bytes(16));$d=$op('location_checkin',['visit_id'=>$last,'confirmed'=>true,'learn'=>true]);$d=$op('stop');check($d['checkins']['active']===null&&count(array_filter($d['checkins']['recent'],fn($x)=>$x['visit_id']===$last&&$x['reason']==='sharing_stopped'))===1,'stopping sharing ends the active timer without inventing departure');
+    vp3_phone_owner_v1($db,1,'set_holder_place_access',['request_id'=>bin2hex(random_bytes(16)),'device_id'=>$id,'generation'=>$d['generation'],'holder_can_save_places'=>true,'holder_place_version'=>$d['holder_place_version']]);
+    $d=$op('set_place_permission',['allow_saved_places'=>true,'place_permission_version'=>$d['place_permission_version']]);
+    $saved=$op('holder_save_place',['request_id'=>bin2hex(random_bytes(16)),'holder_place_version'=>$d['holder_place_version'],'name'=>'Studio','latitude'=>33.45,'longitude'=>-112.07,'accuracy'=>10,'fix_at'=>time()]);
+    $last=bin2hex(random_bytes(16));$d=$op('location_checkin',['visit_id'=>$last,'confirmed'=>true,'learn'=>true]);check($d['checkins']['active']['label']==='Studio','an explicitly enabled saved place names a matching check-in');$d=$op('stop');check($d['checkins']['active']===null&&count(array_filter($d['checkins']['recent'],fn($x)=>$x['visit_id']===$last&&$x['reason']==='sharing_stopped'))===1,'stopping sharing ends the active timer without inventing departure');
     vp3_phone_owner_v1($db,1,'revoke',['request_id'=>bin2hex(random_bytes(16)),'device_id'=>$id,'generation'=>$d['generation']]);
     check((int)vp3_phone_sql_v1($db,'SELECT COUNT(*) FROM vp3_phone_checkins_v1',[])->fetchColumn()===0,'revocation erases visit locations and learning');
     echo 'PHONE_LOCATION_CHECKINS_V1=PASS ('.($dsn?'MySQL':'SQLite').")\n";
