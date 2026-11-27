@@ -142,7 +142,7 @@ assert.match(upgrade, /vp3_social_ensure_schema_v320\(\)/);
 assert.match(upgrade, /vp3_human_messaging_v370_ready\(\)/);
 assert.match(upgrade, /vp3_human_messaging_v370_migrate_legacy\(\$pdo\)/);
 assert.match(upgrade, /music_workspace_release_schema_v330_ensure\(\$pdo\)/);
-assert.match(upgrade, /music_workspace_resources_v330_ensure_schema\(\$pdo\)/);
+assert.match(upgrade, /if\(!music_workspace_resources_v330_schema_ready\(\$pdo\)\)music_workspace_resources_v330_ensure_schema\(\$pdo,false\)/, 'the explicit upgrader checks readiness and leaves canonical music backfill to its versioned migration');
 assert.match(upgrade, /existing user content/);
 assert.match(upgrade, /Existing accounts, package assignments, team memberships, token balances, music content/);
 

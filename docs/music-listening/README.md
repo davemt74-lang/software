@@ -2,7 +2,7 @@
 
 Canonical planning entry point for the VP3 music revival, `/music-workspace.php`, song metadata and rights, hosted streaming, and the standalone Stoneward integration.
 
-**Status:** ML0 planning, ML1 catalog/metadata and ML2A native listening are merged in PRs #925, #930 and #936. ML2B adds the versioned VP3 provider API and Sites & streaming management; [implementation PR #939](https://github.com/davemt74-lang/software/pull/939) owns exact candidate checks, merge and package evidence. See [ML1 implementation and rollout](ML1-IMPLEMENTATION.md), [ML2A implementation](ML2A-IMPLEMENTATION.md), [ML2B provider implementation](ML2B-IMPLEMENTATION.md) and [development status](DEVELOPMENT-STATUS.md) for scope and release limits. Stoneward import, joint live acceptance, listening dashboards, earnings and payments remain separate phases.
+**Status:** ML0 planning, ML1 catalog/metadata, ML2A native listening, ML2B provider and ML2C Stoneward import are merged. Stoneward [PR #390](https://github.com/davemt74-lang/stoneward/pull/390) delivered v1.3.332 at `d4844b48cb36bcbbbd3f6c6061c80891d3e28930`, paired with VP3 `41603520b24c3ac6146dca5cb7310d04a8a3de9e`. ML3 adds artist reporting and the public-page attribution follow-up; its current implementation/release evidence is tracked in the implementation PRs. See [ML3 reporting contract](ML3-IMPLEMENTATION.md) and [development status](DEVELOPMENT-STATUS.md). Joint live acceptance, funded earnings, payments and managed hosting retain their separate gates.
 
 ## Product direction
 
@@ -27,6 +27,7 @@ These user requirements are distinct from engineering recommendations and unreso
 | [ML1 implementation](ML1-IMPLEMENTATION.md) | Implemented metadata/API contract, migration, recovery and acceptance evidence |
 | [ML2A implementation](ML2A-IMPLEMENTATION.md) | Native receipt protocol, timing/identity/source boundaries, migration and acceptance scope |
 | [ML2B implementation](ML2B-IMPLEMENTATION.md) | Site verification, selected public catalog grants, visitor sessions, pinned streaming, provider API and rollout |
+| [ML3 implementation](ML3-IMPLEMENTATION.md) | Workspace-scoped listening reports, cohort/timezone definitions, coverage, public page attribution and acceptance |
 | [Development status](DEVELOPMENT-STATUS.md) | Current completion state, test evidence, pending verification and next action |
 
 ## First complete integration milestone

@@ -1,0 +1,115 @@
+name: Artist Music Analytics
+
+on:
+  pull_request:
+    paths:
+      - 'music-workspace.php'
+      - 'includes/music-*.php'
+      - 'api/music-*.php'
+      - 'includes/music-workspace-*.php'
+      - 'includes/artist-music-v185.php'
+      - 'includes/bootstrap.php'
+      - 'includes/permissions.php'
+      - 'admin/listening.php'
+      - 'assets/css/music-*.css'
+      - 'assets/js/music-*.js'
+      - 'tests/music-*'
+      - 'tests/fixtures/music-*'
+      - '.github/workflows/music-analytics-v1.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'music-workspace.php'
+      - 'includes/music-*.php'
+      - 'api/music-*.php'
+      - 'includes/music-workspace-*.php'
+      - 'includes/artist-music-v185.php'
+      - 'includes/bootstrap.php'
+      - 'includes/permissions.php'
+      - 'admin/listening.php'
+      - 'assets/css/music-*.css'
+      - 'assets/js/music-*.js'
+      - 'tests/music-*'
+      - 'tests/fixtures/music-*'
+      - '.github/workflows/music-analytics-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  analytics-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: music-test-only
+          MYSQL_DATABASE: vp3_music_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -pmusic-test-only"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_mysql, pdo_sqlite, fileinfo, curl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Authorized aggregates, periods, coverage and read-only behavior
+        run: php tests/music-analytics-v1.php
+      - name: Actual analytics HTTP authority and error contract
+        run: node tests/music-analytics-api-v1.mjs
+      - name: Native MySQL reporting and snapshot semantics
+        env:
+          MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
+          MUSIC_TEST_MYSQL_USER: root
+          MUSIC_TEST_MYSQL_PASSWORD: music-test-only
+        run: php tests/music-analytics-mysql-v1.php
+
+  analytics-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    env:
+      MUSIC_ANALYTICS_BROWSER: ${{ matrix.browser }}
+      MUSIC_ANALYTICS_ARTIFACT_DIR: artifacts/music-analytics-v1/${{ matrix.browser }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, fileinfo, curl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install actual browser runtime
+        run: |
+          npm install --no-save --ignore-scripts --package-lock=false playwright@1.62.1
+          npx playwright install --with-deps "$MUSIC_ANALYTICS_BROWSER"
+      - name: Actual desktop and phone workspace reporting
+        run: node tests/music-analytics-browser-v1.mjs
+      - name: Publish screenshots and assertion evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-analytics-${{ matrix.browser }}
+          path: artifacts/music-analytics-v1/${{ matrix.browser }}/
+          if-no-files-found: warn
+          retention-days: 14
