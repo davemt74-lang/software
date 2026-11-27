@@ -241,8 +241,10 @@ try {
   await oldReadReached;
   const freshResponse = await fixture.historyRequest('query', {source_message_id:newest.music_history_v1.source_message_id,
     revision:newest.music_history_v1.revision,source:'vp3',query:'Moonlight',timezone:'UTC',limit:5,
-    from_at:new Date((fixture.seeded.clock-61)*1000).toISOString(),until_at:new Date((fixture.seeded.clock+1)*1000).toISOString()});
-  const fresh = await fixture.json(freshResponse); equal(freshResponse.status, 200, 'Newer bound query commits while old read is delayed');
+    from_at:new Date((fixture.seeded.clock-61)*1000).toISOString().replace('.000',''),
+    until_at:new Date((fixture.seeded.clock+1)*1000).toISOString().replace('.000','')});
+  const fresh = await fixture.json(freshResponse); equal(freshResponse.status, 200,
+    'Newer bound query commits while old read is delayed: ' + JSON.stringify(fresh.error || 'ok'));
   await page.evaluate(payload => window.VP3_MUSIC_HISTORY_V1.attach(document.querySelector(`[data-chat-message-id="${payload.source_message_id}"]`),payload,{live:true}), fresh.music_history_v1);
   releaseOldRead(); await page.evaluate(() => window.__oldHistoryRead); await page.unroute('**/api/music-history-v1.php', oldReadRoute);
   card = await readyHistory(page, fresh);

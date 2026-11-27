@@ -7,8 +7,8 @@ at ab313e01beae3433fcc9e27dd1f239df33801335. MC2 starts from refreshed main
 8f39d8e2c31620567b8fe68c0a0a97157c92eb60, including the cross-page Phone,
 connected-phone Inbox, Canvas editor, and MC1 fixture follow-ups.
 
-This is an implementation contract. Its implementation PR owns the exact
-candidate, final score, workflow results, merged source, and official Cloud ZIP.
+This is an implementation contract. [Implementation PR #962](https://github.com/davemt74-lang/software/pull/962)
+owns the exact candidate, final score, workflow results, merged source, and official Cloud ZIP.
 Code written or local fixtures passing alone do not complete the release.
 
 There are exactly two sources: VP3 native media and YouTube playback observed
@@ -55,8 +55,10 @@ The shared reader accepts a source restriction, text query, date range,
 validated IANA timezone, page size and opaque continuation cursor. Date filters
 are inclusive local calendar dates converted to explicit UTC query boundaries.
 Exact time windows used by natural-language queries are validated separately
-and cannot conflict with date-only filters. The displayed range and timezone
-must match the actual query.
+and cannot conflict with date-only filters. Their `from_at` and `until_at`
+bounds use whole-second RFC3339 timestamps with an explicit offset; the start
+is inclusive and the end is exclusive. The displayed range and timezone must
+match the actual query.
 
 Default last-night interpretation is the previous local day's 18:00 through
 the current local day's 06:00, limited by the query's observed snapshot when the

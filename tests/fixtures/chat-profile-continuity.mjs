@@ -23,7 +23,7 @@ export const profileChatHelpers='let initializingConversationPa3=null;\n'+[
 const emailInstructionState=source.match(/^  let emailInstructionTurn = null;$/m);
 assert.ok(emailInstructionState,'Production Chat email instruction state exists');
 export const continuityExportHelpers=emailInstructionState[0]+'\n'+['stageSpecialistPrompt','parkCurrentProactiveReplyV1','showChatTurnNotice',
-  'chatCanvasStatus','proactiveVoiceStatus','refreshGmailUpdatesV1','mediaCommandContext'].map(chatFunction).join('');
+  'chatCanvasStatus','proactiveVoiceStatus','refreshGmailUpdatesV1','mediaCommandContext','renderMusicHistoryResponse'].map(chatFunction).join('');
 
 const exportStart=source.indexOf('  const canonicalChatContinuity = {');
 const exportEnd=source.indexOf('  function speakIntroV101(',exportStart);
