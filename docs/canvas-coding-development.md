@@ -132,11 +132,77 @@ Local acceptance evidence:
 These checks are added to the existing Runtime Journey CI. Final release requires
 green checks at the published PR head and a source-verified deployment archive.
 
+## Section 2: a reviewable editor workspace
+
+The editor has Preview, Changes and Source tabs. Instructions, the saved build
+stage, recovery actions and a bounded preview-check result share one panel. A
+desktop places that panel beside the selected app; narrow screens stack the
+workspace and collapse instructions when opening a saved app. Unfinished personal
+instructions keep the form expanded. The owner can collapse it at any width.
+The Chat thread owns source/comparison scrolling; source has no nested scroller.
+Returning to Chat restores its composer through the existing view lifecycle.
+
+Each selected version identifies the working version separately from the version
+being reviewed. Changes defaults to the working version when available, and can
+compare with another saved version. It reads the existing native `open` operation;
+comparison does not start generation, record a test, activate code, adopt returned
+app state or change grants. Use and Restore retain the native activation checks.
+View working version only navigates to that saved revision.
+
+The comparison displays literal HTML, CSS and JavaScript as added/removed text,
+with line numbers and context. It never inserts saved source as DOM markup.
+Source shows the complete selected language and directs edits through the existing
+Coding Agent instructions. Direct manual source editing is a later contract, not
+an unsaved textarea that might accidentally replace a tested revision.
+
+The pure comparison algorithm strips common ends and caps its LCS table at
+400,000 cells. A larger rewrite groups removed and added blocks in linear time.
+The browser renders at most 800 source rows, explicitly identifies omitted rows,
+and retains the complete selected source in Source. Inputs retain the existing
+60,000-character per-language artifact limit.
+
+Comparison captures the selected Canvas, revision object, owner/Agent/Chat epoch,
+open request counter and active/draft pointers. Leaving Changes, closing the view,
+selecting a different version or changing identity discards late results. Native
+responses must identify the requested Canvas, Agent, original Chat, revision and
+unchanged active/draft pointers. Stale/unavailable reads clear the result and offer
+Reload selected version instead of silently comparing a different saved state.
+
+Tab switches retain the same isolated iframe and its temporary draft interaction
+state. Starting Test deliberately returns to Preview and runs the existing check.
+The result distinguishes loading, a startup check, sample-email checks and an
+actual runtime failure; it asks the owner to try the controls. It does not claim
+functional correctness for arbitrary generated apps. Runtime failures leave a
+useful message in the preview area and continue to disable Use.
+
+### Section 2 acceptance and scoring
+
+Target: 10/10 against these workspace requirements, with release dependent on
+the published PR's checks. Live generated-app quality is outside this score.
+
+1. Preview, Changes and Source are reachable with labeled keyboard-accessible tabs.
+2. Switching tabs preserves the preview element and temporary draft interactions.
+3. Comparison is read-only, defaults to the working version and supports history.
+4. Added/removed source is exact literal text, with separate language inspection.
+5. Large rewrites have bounded calculation/rendering with explicit truncation.
+6. Stale pointers and failed reads produce a recoverable, empty comparison result.
+7. Late results cannot cross a version, Canvas, tab, owner/Agent/Chat or participant.
+8. Instructions/checks are together, collapsible and preserve unfinished text.
+9. Desktop, 390px and 320px layouts fit without horizontal or nested source scrolling.
+10. Test/Use/Restore stay explicit; app records, runtime, email, Profile and phone
+    integrations remain intact.
+
+The dedicated diff fixture verifies exact reconstruction, repeated/empty/Unicode
+lines and large rewrites. The workspace browser uses the production modules and
+CSS to exercise these requirements, including rejected identity/pointers, delayed
+JSON bodies, first-version history and retained preview state. Existing Canvas,
+recovery and email browser fixtures load the shipped comparison dependency. The
+Runtime Journey runs both new fixtures, and the deployment workflow requires the
+new production script. No schema change or new backend endpoint is introduced.
+
 ## Following sections
 
-1. Consolidate the editor workspace around preview, requested changes, version
-   comparison and source inspection, preserving app data and the current app view.
-2. Improve interaction-level validation and bounded repair so a broken generated
+1. Improve interaction-level validation and bounded repair so a broken generated
    control can be diagnosed and repaired without losing the working version.
-3. Extend the native editor command registry only where an existing surface can
+2. Extend the native editor command registry only where an existing surface can
    verify its changes; preserve the generated app runtime's isolation.
