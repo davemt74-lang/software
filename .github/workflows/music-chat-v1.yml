@@ -1,0 +1,163 @@
+name: Music Chat and Playlists
+
+on:
+  pull_request:
+    paths:
+      - 'includes/music-chat-*.php'
+      - 'api/music-chat-*.php'
+      - 'assets/js/music-chat-*.js'
+      - 'assets/css/music-chat-*.css'
+      - 'includes/agent-chat-runtime-v2160.php'
+      - 'includes/recommendations.php'
+      - 'includes/agent-tool-receipts-v1.php'
+      - 'includes/agent-media-playback-v1.php'
+      - 'includes/agent-connection-youtube*.php'
+      - 'api/chat-stream-v121.php'
+      - 'chat.php'
+      - 'chat.js'
+      - 'chat-youtube-v1.js'
+      - 'chat-voice.js'
+      - 'setup.php'
+      - 'upgrade.php'
+      - 'tests/music-chat-*'
+      - 'tests/chat-fast-voice-v144.mjs'
+      - 'tests/fixtures/music-chat-*'
+      - '.github/workflows/music-chat-v1.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'includes/music-chat-*.php'
+      - 'api/music-chat-*.php'
+      - 'assets/js/music-chat-*.js'
+      - 'assets/css/music-chat-*.css'
+      - 'includes/agent-chat-runtime-v2160.php'
+      - 'includes/recommendations.php'
+      - 'includes/agent-tool-receipts-v1.php'
+      - 'includes/agent-media-playback-v1.php'
+      - 'includes/agent-connection-youtube*.php'
+      - 'api/chat-stream-v121.php'
+      - 'chat.php'
+      - 'chat.js'
+      - 'chat-youtube-v1.js'
+      - 'chat-voice.js'
+      - 'setup.php'
+      - 'upgrade.php'
+      - 'tests/music-chat-*'
+      - 'tests/chat-fast-voice-v144.mjs'
+      - 'tests/fixtures/music-chat-*'
+      - '.github/workflows/music-chat-v1.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  music-chat-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 18
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: music-test-only
+          MYSQL_DATABASE: vp3_music_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping -pmusic-test-only"
+          --health-interval=5s
+          --health-timeout=5s
+          --health-retries=20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_mysql, pdo_sqlite, fileinfo, curl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Explicit two-source intent and actual catalog/provider resolution
+        run: php tests/music-chat-intent-v1.php
+      - name: Private saved playlists, current authority and idempotent storage
+        run: php tests/music-chat-library-v1.php
+      - name: Actual HTTP request, playlist and playback authority
+        run: |
+          node tests/music-chat-api-v1.mjs
+          node tests/music-chat-runtime-v1.mjs
+      - name: Shared source controller and canonical voice transport
+        run: |
+          node tests/music-chat-controller-v1.mjs
+          node tests/chat-fast-voice-v144.mjs
+      - name: Native MySQL playlist transactions and request races
+        env:
+          MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
+          MUSIC_TEST_MYSQL_USER: root
+          MUSIC_TEST_MYSQL_PASSWORD: music-test-only
+        run: php tests/music-chat-library-mysql-v1.php
+      - name: Existing YouTube request and saved-playlist regressions
+        run: |
+          php tests/agent-connection-youtube-chat-v1.php
+          php tests/agent-connection-youtube-playlists-v1.php
+          php tests/agent-tool-receipts-v1.php
+      - name: Production JavaScript syntax
+        run: |
+          node --check assets/js/music-chat-v1.js
+          node --check chat.js
+          node --check chat-youtube-v1.js
+          node --check chat-voice.js
+
+  music-chat-php81:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          extensions: mbstring, pdo_sqlite, fileinfo, curl
+          coverage: none
+      - name: Supported PHP runtime compatibility
+        run: |
+          php tests/music-chat-intent-v1.php
+          php tests/music-chat-library-v1.php
+
+  music-chat-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, webkit]
+    env:
+      MUSIC_CHAT_BROWSER: ${{ matrix.browser }}
+      MUSIC_CHAT_ARTIFACT_DIR: artifacts/music-chat-v1/${{ matrix.browser }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          extensions: mbstring, pdo_sqlite, fileinfo, curl
+          coverage: none
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Install actual browser runtime
+        run: |
+          npm install --no-save --ignore-scripts --package-lock=false playwright@1.62.1
+          npx playwright install --with-deps "$MUSIC_CHAT_BROWSER"
+      - name: Actual PHP and browser music requests, saved lists and source switching
+        run: node tests/music-chat-browser-v1.mjs
+      - name: Publish screenshots and assertion evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-chat-${{ matrix.browser }}
+          path: artifacts/music-chat-v1/${{ matrix.browser }}/
+          if-no-files-found: warn
+          retention-days: 14

@@ -78,6 +78,10 @@ jobs:
             "music_listening_totals_protocol": "vp3_music_listening_totals_v1",
             "music_listening_totals_basis": "all_retained_measured_history_v1",
             "music_listening_totals_upgrade_note": "docs/MUSIC-LISTENING-TOTALS-DEPLOY.txt",
+            "music_chat_protocol": "vp3_music_chat_v1",
+            "music_chat_sources": ["vp3", "youtube"],
+            "music_chat_playlists": "owner-private-source-tagged-v1",
+            "music_chat_upgrade_note": "docs/MUSIC-CHAT-DEPLOY.txt",
             "music_upgrade_note": "docs/MUSIC-CATALOG-LISTENING-DEPLOY.txt",
             "phone_agent_email_calls": "owner-consented-v1",
             "phone_agent_email_call_delivery_default": "off",
@@ -145,6 +149,12 @@ jobs:
           test -f _deploy/assets/css/music-listening-totals-v1.css
           test -f _deploy/admin/listening.php
           test -f _deploy/docs/MUSIC-LISTENING-TOTALS-DEPLOY.txt
+          test -f _deploy/includes/music-chat-v1.php
+          test -f _deploy/includes/music-chat-library-v1.php
+          test -f _deploy/api/music-chat-v1.php
+          test -f _deploy/assets/js/music-chat-v1.js
+          test -f _deploy/assets/css/music-chat-v1.css
+          test -f _deploy/docs/MUSIC-CHAT-DEPLOY.txt
           test -s _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/assets/twilio-voice-LICENSE.txt
           test -f _deploy/includes/phone-workspace-v1.php

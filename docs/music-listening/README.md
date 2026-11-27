@@ -2,7 +2,7 @@
 
 Canonical planning entry point for the VP3 music revival, `/music-workspace.php`, song metadata and rights, hosted streaming, and the standalone Stoneward integration.
 
-**Status:** ML0 through ML3 are merged. VP3 [PR #948](https://github.com/davemt74-lang/software/pull/948) delivered Music Workspace reporting as `aae15539187a8226463b41f9a02e0da67b99cc59`; Stoneward [PR #391](https://github.com/davemt74-lang/stoneward/pull/391) delivered the paired public-page attribution in v1.3.333 as `a15a0505627a18e0ead2310c9ac3915b044711d6`. Their complete release archives were verified. The current follow-up is [ML3A all-time listening totals](ML3A-LIFETIME-TOTALS.md), with exact candidate/release evidence owned by its implementation PR. See [development status](DEVELOPMENT-STATUS.md). Joint live acceptance, funded earnings, payments and managed hosting retain their separate gates.
+**Status:** ML0 through ML3A are merged. VP3 [PR #951](https://github.com/davemt74-lang/software/pull/951) delivered all-time listening totals as `98cccd1e8a56a182a19e8007601915757840889a`, following the Music Workspace reporting in [PR #948](https://github.com/davemt74-lang/software/pull/948). Stoneward [PR #391](https://github.com/davemt74-lang/stoneward/pull/391), v1.3.333 at `a15a0505627a18e0ead2310c9ac3915b044711d6`, remains the paired public-page attribution client. Their complete release archives were verified. The active build is [MC1 music Chat and private playlists](MC1-MUSIC-CHAT.md), with exact candidate/release evidence owned by its implementation PR. See [development status](DEVELOPMENT-STATUS.md). Joint live acceptance, funded earnings, payments and managed hosting retain their separate gates.
 
 ## Product direction
 
@@ -12,6 +12,7 @@ Canonical planning entry point for the VP3 music revival, `/music-workspace.php`
 - Each listen retains its originating site and safe playback-page context, with explicit limits on what is independently verified.
 - Main Add Track and Music Workspace use a shared song metadata/rights workflow.
 - Workspace analytics, music earnings and payments have separate, clearly defined sources and authority.
+- The Media/Entertainment specialist has two audio sources: the VP3 main catalog and YouTube. Stoneward distributes the VP3 catalog; it is not a third specialist source. Explicit song count, saved private playlists and actual playback use the same shared Chat contract.
 
 These user requirements are distinct from engineering recommendations and unresolved policy choices. The documents mark those distinctions; an unset financial policy never becomes a production rate.
 
@@ -29,6 +30,7 @@ These user requirements are distinct from engineering recommendations and unreso
 | [ML2B implementation](ML2B-IMPLEMENTATION.md) | Site verification, selected public catalog grants, visitor sessions, pinned streaming, provider API and rollout |
 | [ML3 implementation](ML3-IMPLEMENTATION.md) | Workspace-scoped listening reports, cohort/timezone definitions, coverage, public page attribution and acceptance |
 | [ML3A lifetime totals](ML3A-LIFETIME-TOTALS.md) | All retained measured history per song/workspace and authorized platform, SQL aggregation, retention limits and acceptance |
+| [MC1 music Chat](MC1-MUSIC-CHAT.md) | Exact requests across VP3 and YouTube, durable private playlists, coordinated playback, source authority and scored release criteria |
 | [Development status](DEVELOPMENT-STATUS.md) | Current completion state, test evidence, pending verification and next action |
 
 ## First complete integration milestone

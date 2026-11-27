@@ -1737,14 +1737,15 @@
         ? 'foodmonster' : null,
       tool_receipt:raw.tool_receipt,
       sources:Array.isArray(raw.sources) ? raw.sources : [],
-      media:Array.isArray(raw.media) ? raw.media : [],
+      media:raw.music_chat_v1 ? [] : Array.isArray(raw.media) ? raw.media : [],
       stem_media:Array.isArray(raw.stem_media) ? raw.stem_media : [],
       actions:Array.isArray(raw.actions) ? raw.actions : [],
       cards:Array.isArray(raw.cards) ? raw.cards : (Array.isArray(raw.cognitive_cards) ? raw.cognitive_cards : []),
       system_app_action_card:raw.system_app_action_card && typeof raw.system_app_action_card === 'object' ? raw.system_app_action_card : null,
       knowledge_actions_r9:raw.knowledge_actions_r9 || null,
       canvas_media:raw.canvas_media && typeof raw.canvas_media==='object' ? raw.canvas_media : null,
-      youtube_results:raw.youtube_results && typeof raw.youtube_results==='object' ? raw.youtube_results : null,
+      youtube_results:!raw.music_chat_v1 && raw.youtube_results && typeof raw.youtube_results==='object' ? raw.youtube_results : null,
+      music_chat_v1:raw.music_chat_v1 && typeof raw.music_chat_v1==='object' ? raw.music_chat_v1 : null,
       profile_handoff:raw.profile_handoff && typeof raw.profile_handoff==='object' ? raw.profile_handoff : null,
       profile_call:raw.profile_call && typeof raw.profile_call==='object' ? raw.profile_call : null,
       phone_v1:raw.phone_v1 && typeof raw.phone_v1==='object' ? raw.phone_v1 : null,
@@ -4712,6 +4713,7 @@
         bindGmailReviewProjectionV1(renderedMessage,context);
       }
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
+      if(message.role==='assistant'&&context.music_chat_v1)void window.VP3_MUSIC_CHAT_V1?.attach(renderedMessage,context.music_chat_v1,{live:false});
       if (message.role==='user') bindPairedPhoneMessage(renderedMessage,context);
       if(message.role==='assistant')bindScreenInsightsV1(renderedMessage,context.screen_insights_v1);
       bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
@@ -4876,6 +4878,7 @@
         bindGmailReviewProjectionV1(renderedMessage,context);
       }
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
+      if(message.role==='assistant'&&context.music_chat_v1)void window.VP3_MUSIC_CHAT_V1?.attach(renderedMessage,context.music_chat_v1,{live:false});
       if (message.role==='user') bindPairedPhoneMessage(renderedMessage,context);
       if(message.role==='assistant')bindScreenInsightsV1(renderedMessage,context.screen_insights_v1);
       bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
@@ -4975,8 +4978,7 @@
     input.disabled = false;
   }
 
-  async function runYoutubeLocalTurn(message, action) {
-    const youtube = window.VP3_CHAT_YOUTUBE_V1;
+  async function runYoutubeLocalTurn(message, action, youtube = window.VP3_CHAT_YOUTUBE_V1) {
     if (!youtube || !action || busy || !contextReady || initialRestorePending || restoringConversation
         || initiativeReplyTarget || window.VP3ParticipantContinuity?.selectedContext()) return null;
     const turn = {};
@@ -5147,6 +5149,17 @@
       const opened=await window.VP3PhoneWorkspaceV1.openOwnerSetup();
       if(opened){input.value='';autoSize();keepDraft('',conversationId);return;}
     }
+    const musicAction = !imageReference && !initiativeReplyTarget && !historyParticipant
+      && !window.VP3ParticipantContinuity?.selectedContext?.() ? window.VP3_MUSIC_CHAT_V1?.command(message) : null;
+    if (musicAction) {
+      if (inputMode === 'voice') stopVoiceRecognition();
+      const answer = await runYoutubeLocalTurn(message, musicAction, window.VP3_MUSIC_CHAT_V1);
+      if (answer && inputMode === 'voice' && voiceMode) {
+        await speakAgentResponse(answer);
+        if (!voiceSpeaking) window.setTimeout(startVoiceRecognition, 220);
+      }
+      return;
+    }
     const youtubeAction = window.VP3_CHAT_YOUTUBE_V1?.command(message);
     if (youtubeAction && !initiativeReplyTarget && !window.VP3ParticipantContinuity?.selectedContext()) {
       if (inputMode === 'voice') stopVoiceRecognition();
@@ -5238,6 +5251,7 @@
         action:'send',
         reminder_request_id:globalThis.crypto?.randomUUID?.()||('reminder:'+Date.now().toString(36)+Math.random().toString(36).slice(2)),
         reminder_timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,
+        music_request_id:window.VP3_MUSIC_CHAT_V1?.requestId(message,conversationId),
         conversation_id:conversationId,
         message:message.trim(),
         input_mode:inputMode === 'voice' ? 'voice' : 'text'
@@ -5322,6 +5336,7 @@
         const invalidReply=new Error('The Agent reply could not be matched to this Chat. Your message is kept.');invalidReply.status=422;throw invalidReply;
       }
       if (!Number(data.conversation_id) || typeof data.answer !== 'string') throw new Error('Invalid chat response.');
+      window.VP3_MUSIC_CHAT_V1?.completeRequest(payload.music_request_id);
       if(voiceReplyId)window.VP3VoiceDiagnostics?.record('reply',detachedImageReply?'closed':returnedFollowthrough?'received':'failed',
         detachedImageReply?'reply_cancelled':returnedFollowthrough?'reply_received':'reply_send_failed',voiceReplyId);
       if(initiativeReply)clearInitiativeReplyV1();
@@ -5362,7 +5377,7 @@
         'assistant',
         data.answer,
         data.sources || [],
-        data.media || [],
+        data.music_chat_v1 ? [] : data.media || [],
         data.playlist_title || '',
         data.stem_media || [],
         data.actions || [],
@@ -5370,9 +5385,10 @@
         data.system_app_action_card || null,
         data.knowledge_actions_r9 || null,
         data.canvas_media || null,
-        data.youtube_results || null
+        data.music_chat_v1 ? null : data.youtube_results || null
       );
       if(!existingReply)bindStoredMessagePa3(reply,data.assistant_message_id);
+      if(!existingReply&&data.music_chat_v1)void window.VP3_MUSIC_CHAT_V1?.attach(reply,data.music_chat_v1,{live:data.replayed!==true});
       if(!existingReply || data.connected_site_provider_v1==='foodmonster')bindFoodMonsterResultIcon(reply,data.connected_site_provider_v1);
       if(!existingReply&&data.replayed!==true&&data.connected_site_provider_v1==='stoneward'){
         bindConnectedSitePlayback(reply,data.connected_site_playback_v1,data.connected_site_queue_v1);
@@ -5405,7 +5421,7 @@
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}
       const autoMediaAction=(data.actions||[]).find(action=>action && action.auto && action.type==='media_capture');
       if(autoMediaAction){window.setTimeout(()=>{window.StonefellowMediaStudio?.open(autoMediaAction.mode||'camera',Number(autoMediaAction.camera_index||0));},260);}
-      if (!existingReply && data.media_playback) {
+      if (!existingReply && !data.music_chat_v1 && data.media_playback) {
         void window.STONEFELLOW_CHAT_CONTINUITY?.applyMediaPlayback?.(data.media_playback,reply);
       }
 
@@ -5796,6 +5812,7 @@
 
   const canonicalChatContinuity = {
     runYoutubeLocalTurn: (message, action) => runYoutubeLocalTurn(message, action),
+    runMusicLocalTurn: (message, action) => runYoutubeLocalTurn(message, action, window.VP3_MUSIC_CHAT_V1),
     requestYoutubePicks:() => requestTopOfMindTurn('/youtube picks'),
     requestArtistResearch:(artist, delegate = false) => {
       if (typeof artist !== 'string' || !artist.trim() || artist.length > 120 || /[\r\n]/.test(artist)) return false;
@@ -6725,10 +6742,11 @@
       audio,cover:safe(row.cover),detail:safe(row.detail)}:null;
   }
 
-  async function applyMediaPlayback(action,reply){
+  async function applyMediaPlayback(action,reply,options={}){
     const validScope=()=>activityPlayerAllowed()&&document.visibilityState==='visible'
       &&Number(window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.())===action.conversation_id
-      &&activityPlayerOwner===action.owner_user_id&&activityPlayerAgent===action.agent_id;
+      &&activityPlayerOwner===action.owner_user_id&&activityPlayerAgent===action.agent_id
+      &&(options.musicChat!==true||typeof options.current==='function'&&options.current());
     if(action?.type!=='media_playback'||!validScope()||!Number.isSafeInteger(action.expires_at)
       ||action.expires_at*1000<Date.now()||!/^[a-f0-9]{64}$/.test(action.proof||'')||!cfg.libraryEndpoint)return false;
     const generation=++mediaActionRevision;
@@ -6765,6 +6783,9 @@
         renderListeningContinuation(host,{...track,last_position_seconds:position},fromOffer);
         const audio=host?.querySelector('audio');
         if(!audio)return false;
+        if(options.musicChat===true&&typeof options.onReady==='function')options.onReady(audio,{
+          stop:()=>audioState.get(audio)?.listening?.stop()
+        });
         if(fromOffer)window.dispatchEvent(new CustomEvent('vp3:media-offer-audio-ready',{detail:{audio,action}}));
         audio.dataset.mediaSinglePlay='';
         const selected={audio,track:{...track,last_position_seconds:position},conversationId:action.conversation_id};
@@ -6775,7 +6796,11 @@
         if(position===0&&audio.readyState>=1){
           try{audio.currentTime=0;}catch{}
         }
-        if(!await playTrack(track.id,position,false,audio))fallback('Use the Play control to start this track.');
+        const started=await playTrack(track.id,position,false,audio);
+        if(!started){
+          if(options.musicChat===true)options.onState?.('blocked');
+          else fallback('Use the Play control to start this track.');
+        }else if(options.musicChat===true&&!audio.paused&&audio.readyState>=3)options.onState?.('playing');
         return true;
       }
       if(!['dj_start','playlist'].includes(result.operation)||!Array.isArray(action.queue)

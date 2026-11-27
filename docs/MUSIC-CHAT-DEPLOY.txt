@@ -1,0 +1,94 @@
+VP3 MUSIC CHAT AND SAVED PLAYLISTS — MC1
+
+This release adds consistent music requests across exactly two sources:
+VP3 media/audio and YouTube.
+
+WHAT CHANGES
+
+One song request returns one result total. Source restrictions are respected.
+Explicit play requests use the selected source's existing player. Playlist
+creation saves a named owner-private playlist; creation alone stays quiet.
+Saved items retain their source, and the active playback controller coordinates
+native audio with the existing visible YouTube player.
+
+"Add this to my driving playlist" updates the existing private list using the
+exact displayed song. It does not start audio or create a second list. An
+already-present song stays in place. If a displayed choice is ambiguous, the
+Agent asks which song and preserves those results for a numbered answer.
+
+Add to queue and Play next use a temporary queue. They preserve the active song;
+an idle queue waits for Play. Stopping music or leaving that Chat clears the
+temporary queue. A saved playlist remains available independently.
+
+Existing native and YouTube playlists remain available through their current
+features. New private mixed playlists do not change old sharing visibility.
+Native/provider artist totals and personal YouTube history remain distinct.
+
+INSTALL
+
+1. Back up the matching application code, database, config.php, private/ and
+   uploads/. Preserve the provider installation identity and signing keys.
+2. Verify the full Cloud ZIP checksum and VP3_RELEASE.json commit against the
+   release handoff. Apply the package through the normal application-root
+   deployment process, preserving runtime configuration, private files and media.
+3. Run the normal authorized upgrade.php flow. MC1 adds owner-private music Chat
+   result/playlist/receipt tables after the existing YouTube prerequisites.
+   The explicit upgrade also adds missing prerelease creation-hash and playlist
+   change-receipt fields. Existing public/members playlists and listening
+   records keep their identities and visibility.
+   Normal reads and Chat requests do not install schema.
+4. Keep the existing YouTube connection, consent and quota configuration. An
+   unavailable YouTube connection is reported; it is not bypassed by the Agent.
+5. Open private Agent Chat with the intended account and Agent.
+
+VERIFY ON THE HOST
+
+- Ask for one song by name and one mood-based recommendation. Each response
+  should contain one result total, with the selected source clearly shown.
+- Ask for VP3-only and YouTube-only selections and confirm source fidelity.
+- Create a short playlist. Refresh Chat and reopen the saved list; its identity,
+  order and items should remain. Creation alone should not start audio.
+- Show one song, then ask to add it to an existing playlist. Confirm the same
+  list is updated once and a repeated addition does not duplicate the song.
+  Check rename, reorder and removal in Saved playlists. If two saved names
+  could match the spoken title, choose the intended list explicitly.
+- Show several songs and ask to play "that one." After the Agent asks which
+  song, answer with its number. Playback should use that displayed selection.
+- Play a known VP3 track, then a known YouTube selection. The prior source
+  should pause. Verify pause, resume, next, previous and stop against the active
+  source.
+- During playback, add another selection to the queue and choose one to play
+  next. Confirm the active song continues and the selected order is followed.
+  With no active song, queueing should stay quiet until Play is tapped.
+- For a mixed playlist, verify VP3 to YouTube to VP3 in order, without duplicate
+  advancement or overlapping music.
+- Repeat the single-song and saved-list requests through voice Chat. Reloading
+  or retrying a completed voice response must not replay audio, insert another
+  queue entry or save another playlist. Current source access still applies.
+- If the browser blocks playback, use the visible Play control. A ready card
+  alone is not evidence that audio started.
+- Confirm an actual native listen still uses the existing native tracker, and
+  YouTube uses its own Played in VP3 history. Searching and creating lists must
+  not create qualified listens.
+
+BOUNDARIES
+
+The exact tested candidate, final acceptance score, merged source, workflow
+results and complete artifact checksum belong to the implementation PR and
+release handoff. Automated Google/iframe fixtures do not certify a live account
+or physical iPhone/Android playback.
+
+The recovery review corrected creation-retry conflicts and saved-list/source
+changes during provider refresh. Local SQLite and MariaDB/HTTP evidence is
+recorded in docs/music-listening/MC1-MUSIC-CHAT.md. It does not establish final
+MySQL 8.0 CI, browser, package or live-installation acceptance on its own.
+
+This release does not extend personal listening retention. YouTube metadata and
+history keep the existing expiry and refresh rules. Private playlist identity
+does not make stale metadata or unavailable media permanently playable.
+
+Stoneward requires no update for this Chat release. Earnings and Payments remain
+Not configured. No royalty, balance, statement or payout is activated.
+
+Rollback uses the matching code/configuration/database/private/uploads backup.
+The release build does not deploy the live host or run its database upgrade.
