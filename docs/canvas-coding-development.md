@@ -64,6 +64,13 @@ original draft/active pointers. A newer draft or activation requires a new chang
 request from the current version. No automatic model retry, activation, publication
 or change to app data is added.
 
+Retries of specialist-proposed Canvases retain the original canonical Initiative
+parent and source/owner-decision proof. The worker checks that proof at admission,
+before inference, after inference and under the save lock, including a chain of
+explicit replacement runs. Revoked sources or policy stop the work. Loading the
+saved source-derived brief also rechecks this authority. The pipeline regression
+reproduced source-proof loss through Retry before this additional check was added.
+
 **Edit saved request** restores the private original brief only on explicit
 request. Progress feeds do not contain it. Existing unsent text wins, including text
 typed while admission is being confirmed. Build, Test and Use stages summarize
@@ -108,7 +115,7 @@ Local acceptance evidence:
   recovery, completed and failed reloads, explicit retry/replay, source changes,
   paused work, deleted results and account/Agent/Chat separation.
 - Native Canvas storage passes on MySQL; the existing full Canvas pipeline passes
-  107 assertions and the email Canvas pipeline passes 37 additional assertions
+  121 assertions and the email Canvas pipeline passes 37 additional assertions
   on MySQL.
 - The shipped HTTP controller passes recovery, explicit saved-brief access,
   idempotent retries, input/CSRF checks and owner/Agent/Chat boundaries.
@@ -116,6 +123,9 @@ Local acceptance evidence:
   uncertain retry recovery, unaccepted-request resubmission with the same ID,
   private brief recovery, preserved typing, terminal reloads, stopped session
   polling and late-response fencing. Desktop and 390px phone layouts are inspected.
+- The specialist pipeline covers a nested explicit replacement, source revocation
+  before retry admission and during retry inference, and private-brief access
+  after withdrawal. The full provider/usage preservation suite passes 158 checks.
 - Existing Canvas browser/runtime and email-source browser gates, model selection
   and Activity Hub (232 assertions) pass.
 

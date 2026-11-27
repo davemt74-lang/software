@@ -329,6 +329,19 @@ canvas_pipeline_check((int)$observer->query("SELECT COUNT(*) FROM agent_workflow
     'another connection can observe the coding request after the canonical parent receipt commits');
 canvas_pipeline_check(vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($autoCode))['ok'], 'an opted-in proactive request uses the same coding executor and private store');
 
+$retryParent=canvas_pipeline_prepare(2501);$retryParentResult=canvas_pipeline_result($retryParent);
+$retryRoot=(int)$retryParentResult['initiative_tool_result']['output']['coding_run_id'];
+vp3_coding_canvas_job_v1($pdo,$owner,7,11,$retryRoot,'stop');
+$firstRetry=vp3_coding_canvas_retry_v1($pdo,$owner,7,11,$retryRoot,agent_event_uuid_v1920());
+vp3_coding_canvas_job_v1($pdo,$owner,7,11,$firstRetry['run_id'],'stop');
+$nestedRetry=vp3_coding_canvas_retry_v1($pdo,$owner,7,11,$firstRetry['run_id'],agent_event_uuid_v1920());
+$nestedGoal=json_decode(vp3_coding_canvas_job_row_v1($pdo,$owner,$nestedRetry['run_id'])['goal'],true);
+$retryCalls=count($GLOBALS['pipelineCodingCalls']);
+canvas_pipeline_check($nestedGoal['retry_of']===$firstRetry['run_id']
+    && vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($nestedRetry['run_id']))['ok']
+    && count($GLOBALS['pipelineCodingCalls'])===$retryCalls+1,
+    'a nested explicit retry of an OB1 proposal retains its original proof and generates only its admitted replacement');
+
 $rollbackRun=canvas_pipeline_prepare(3001,false);$beforeCoding=canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'");
 $beforeMessages=canvas_pipeline_count('chat_messages');
 $pdo->beforeReceipt=static function(array $params) use ($rollbackRun,$beforeCoding,$observer,$pdo): void {
@@ -344,12 +357,34 @@ canvas_pipeline_check(!vp3_initiative_execute_v1($pdo,$owner,canvas_pipeline_cla
     && canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'")===$beforeCoding
     && canvas_pipeline_count('chat_messages')===$beforeMessages, 'failure before the parent receipt rolls back the queued coding request and Chat report together');
 
+$lateRetryParent=canvas_pipeline_prepare(3501);$lateRetryParentResult=canvas_pipeline_result($lateRetryParent);
+$lateRetryRoot=(int)$lateRetryParentResult['initiative_tool_result']['output']['coding_run_id'];
+vp3_coding_canvas_job_v1($pdo,$owner,7,11,$lateRetryRoot,'stop');
+$lateRetry=vp3_coding_canvas_retry_v1($pdo,$owner,7,11,$lateRetryRoot,agent_event_uuid_v1920());
+$beforeLateRetryDrafts=canvas_pipeline_count('vp3_coding_canvases_v1');
+$GLOBALS['pipelineGenerationHook']=static fn()=>db()->exec('UPDATE agent_memory_items SET is_active=0 WHERE id=3501');
+canvas_pipeline_check(!vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($lateRetry['run_id']))['ok']
+    && canvas_pipeline_count('vp3_coding_canvases_v1')===$beforeLateRetryDrafts,
+    'source revocation during an owner-requested retry still fences its saved effect');
+unset($GLOBALS['pipelineGenerationHook']);
+$privateBriefDenied=false;
+try { vp3_coding_canvas_saved_request_v1($pdo,$owner,7,11,$lateRetry['run_id']); }
+catch (RuntimeException $error) { $privateBriefDenied=in_array((int)$error->getCode(),[403,409],true); }
+canvas_pipeline_check($privateBriefDenied,'restoring a source-derived brief cannot bypass revoked specialist source access');
+
 $revokedRun=canvas_pipeline_prepare(4001);$revokedResult=canvas_pipeline_result($revokedRun);
 $revokedCode=(int)$revokedResult['initiative_tool_result']['output']['coding_run_id'];$beforeDrafts=canvas_pipeline_count('vp3_coding_canvases_v1');
 $GLOBALS['pipelineGenerationHook']=static fn()=>db()->exec('UPDATE agent_memory_items SET is_active=0 WHERE id=4001');
 canvas_pipeline_check(!vp3_coding_canvas_execute_v1($pdo,$owner,canvas_pipeline_claim($revokedCode))['ok']
     && canvas_pipeline_count('vp3_coding_canvases_v1')===$beforeDrafts, 'source revocation after a metered provider response prevents saving a new private app');
 unset($GLOBALS['pipelineGenerationHook']);
+
+$retryDenied=false;$beforeRetryCalls=count($GLOBALS['pipelineCodingCalls']);$beforeRetryRuns=canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'");
+try { vp3_coding_canvas_retry_v1($pdo,$owner,7,11,$revokedCode,agent_event_uuid_v1920()); }
+catch (RuntimeException $error) { $retryDenied=in_array((int)$error->getCode(),[403,409],true); }
+canvas_pipeline_check($retryDenied && count($GLOBALS['pipelineCodingCalls'])===$beforeRetryCalls
+    && canvas_pipeline_count('agent_workflow_runs',"source_kind='coding_canvas'")===$beforeRetryRuns,
+    'an explicit retry cannot drop the revoked source proof of an OB1-created Canvas');
 
 $optOutRun=canvas_pipeline_prepare(5001);$optOutResult=canvas_pipeline_result($optOutRun);
 $optOutCode=(int)$optOutResult['initiative_tool_result']['output']['coding_run_id'];
