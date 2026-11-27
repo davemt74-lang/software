@@ -49,6 +49,7 @@ function vp3_coding_canvas_job_view_v1(PDO $pdo, array $row): array
     $state = match ($row['status']) {
         'approved', 'queued' => 'queued',
         'executing' => 'running',
+        'paused' => 'paused',
         'completed' => 'ready',
         'cancelled' => 'stopped',
         default => 'failed',
@@ -64,10 +65,28 @@ function vp3_coding_canvas_job_view_v1(PDO $pdo, array $row): array
             $state = 'failed';
         }
     }
-    $reason = $state !== 'failed' ? '' : match ($row['last_error_class']) {
+    $failure = $state === 'failed' ? (string)($row['last_error_class'] ?? '') : '';
+    if ($state === 'ready') {
+        $saved = $pdo->prepare('SELECT 1 FROM vp3_coding_canvas_versions_v1 v
+            JOIN vp3_coding_canvases_v1 c ON c.id=v.canvas_id
+            JOIN artist_transcript_folders_v177 f ON f.id=c.folder_id AND f.created_by_user_id=c.owner_user_id
+            WHERE c.owner_user_id=? AND c.agent_id=? AND c.id=? AND v.run_id=? AND v.revision=?');
+        $saved->execute([(int)$row['owner_user_id'], (int)$row['agent_id'], $goal['canvas_id'], (int)$row['id'], $revision]);
+        if (!$saved->fetchColumn()) { $state = 'failed'; $revision = null; $failure = 'coding_result_unavailable'; }
+    }
+    if ($state === 'failed' && $row['status'] === 'completed') $failure = 'coding_result_unavailable';
+    $reason = $state !== 'failed' ? '' : match ($failure) {
         'coding_quota' => 'Your Coding Agent token budget is exhausted.',
         'coding_access_changed' => 'The Canvas, model, or account access changed. Start a new request.',
         'lease_expired' => 'The Coding Agent run expired. You can start a new request.',
+        'coding_output_incomplete' => 'The model stopped before finishing the app. Edit the request into a smaller change or retry the saved request.',
+        'coding_invalid_source' => 'The model returned code that Canvas could not use. Edit the request or retry the saved request.',
+        'coding_provider_unconfirmed' => 'The provider attempt could not be confirmed. Check AI usage before starting another run.',
+        'coding_provider_unavailable' => 'The model provider could not complete the request. Check the selected model and retry when available.',
+        'coding_provider_rate_limited' => 'The model provider rate-limited this request. Wait briefly before retrying the saved request.',
+        'coding_provider_credits' => 'The selected provider reported insufficient API credits. Add credits or choose another model before retrying.',
+        'coding_usage_unconfirmed' => 'The provider did not confirm usage, so this draft could not be saved. Check AI usage before retrying.',
+        'coding_result_unavailable' => 'This run finished, but its saved draft is no longer available. Open Saved canvases to choose a current version.',
         default => 'The Coding Agent could not save a draft. You can start a new request.',
     };
     return [
@@ -77,6 +96,8 @@ function vp3_coding_canvas_job_view_v1(PDO $pdo, array $row): array
         'state' => $state,
         'revision' => $revision,
         'reason' => $reason,
+        'operation' => $row['capability_key'] === 'coding.repair' ? 'repair' : 'build',
+        'can_retry' => in_array($row['status'], ['failed', 'cancelled'], true),
         'model' => $goal['model'],
     ];
 }
@@ -86,7 +107,7 @@ function vp3_coding_canvas_clear_abandoned_v1(PDO $pdo, array $user): void
 {
     $owner = (int)$user['id'];
     $stmt = $pdo->prepare("SELECT id, agent_id, goal, status, lease_expires_at FROM agent_workflow_runs
-        WHERE owner_user_id=? AND source_kind='coding_canvas' AND status IN ('queued','approved','executing') LIMIT 1");
+        WHERE owner_user_id=? AND source_kind='coding_canvas' AND status IN ('queued','approved','executing','paused') LIMIT 1");
     $stmt->execute([$owner]);
     $run = $stmt->fetch(PDO::FETCH_ASSOC);
     $stmt->closeCursor();
@@ -111,7 +132,7 @@ function vp3_coding_canvas_clear_abandoned_v1(PDO $pdo, array $user): void
 function vp3_coding_canvas_queue_v1(
     PDO $pdo, array $user, int $agentId, int $conversationId, string $requestId, string $prompt,
     ?string $canvasId = null, ?int $revision = null, ?string $diagnostic = null, ?array $initiativeOrigin = null,
-    ?array $commands = null
+    ?array $commands = null, ?int $retryOf = null
 ): array {
     if (!agent_job_engine_schema_ready_v1900($pdo) || !agent_job_control_ready_v1900($pdo)
         || !vp3_ai_service_usage_ready_v1($pdo)) {
@@ -124,6 +145,7 @@ function vp3_coding_canvas_queue_v1(
     $dedupe = hash('sha256', 'coding_canvas:'.$requestId);
     $requestFields = [$capability, $agentId, $conversationId, $prompt, $canvasId, $revision, $diagnostic];
     if ($initiativeOrigin !== null) $requestFields[] = ['initiative_origin'=>$initiativeOrigin];
+    if ($retryOf !== null) $requestFields[] = ['retry_of'=>$retryOf];
     if ($commands !== null) {
         $commands = vp3_coding_canvas_command_list_v1($commands);
         $requestFields[] = ['commands'=>$commands];
@@ -162,6 +184,21 @@ function vp3_coding_canvas_queue_v1(
             if ($ownsTransaction) $pdo->commit();
             return $view;
         }
+        $originalGoal = null;
+        if ($retryOf !== null) {
+            $original = vp3_coding_canvas_job_row_v1($pdo, $user, $retryOf);
+            $originalGoal = json_decode((string)$original['goal'], true, 16, JSON_THROW_ON_ERROR);
+            if ($initiativeOrigin !== null || !in_array($original['status'], ['failed', 'cancelled'], true)
+                || (int)$original['agent_id'] !== $agentId || (int)$originalGoal['conversation_id'] !== $conversationId
+                || $original['capability_key'] !== $capability || $originalGoal['prompt'] !== $prompt
+                || ($originalGoal['source_revision'] ?? null) !== $revision
+                || ($repair && $originalGoal['canvas_id'] !== $canvasId)
+                || ($originalGoal['diagnostic'] ?? null) !== $diagnostic
+                || ($originalGoal['commands'] ?? []) !== ($commands ?? [])) {
+                throw new RuntimeException('Only the exact stopped or failed request in this Chat can be retried.', 409);
+            }
+            $user = vp3_coding_canvas_sources_current_v1($pdo, $user, $agentId, $originalGoal, $retryOf);
+        }
         $stmt = $pdo->prepare("SELECT id FROM agent_workflow_runs
             WHERE owner_user_id=? AND source_kind='coding_canvas' AND status IN ('queued','approved','executing','paused') LIMIT 1");
         $stmt->execute([$owner]);
@@ -174,6 +211,11 @@ function vp3_coding_canvas_queue_v1(
         $model = vp3_coding_canvas_model_resolve_v1($pdo, $user);
         vp3_coding_canvas_model_authorized_v1($pdo, $user, $model, $repair ? 'code_repair' : 'code_build', $initiativeOrigin !== null);
         $source = $repair ? vp3_coding_canvas_read_v1($pdo, $user, $agentId, $canvasId, $revision) : null;
+        if ($source !== null && $originalGoal !== null
+            && ($source['canvas']['draft_revision'] !== $originalGoal['expected_draft']
+                || $source['canvas']['active_revision'] !== $originalGoal['expected_active'])) {
+            throw new RuntimeException('This Canvas changed since that request. Open its current version and describe the next change.', 409);
+        }
         if ($repair && $source['canvas']['conversation_id'] !== $conversationId) {
             require_once __DIR__.'/coding-canvas-email-v1.php';
             if (vp3_coding_canvas_email_binding_v1($pdo,$user,$agentId,$canvasId,$source['revision']['id']) !== null) {
@@ -193,6 +235,7 @@ function vp3_coding_canvas_queue_v1(
             'model' => $model,
         ];
         if ($initiativeOrigin !== null) $goal['initiative_origin'] = $initiativeOrigin;
+        if ($retryOf !== null) $goal['retry_of'] = $retryOf;
         $goal['commands'] = $commands ?? $source['revision']['commands'] ?? [];
         $title = $repair ? 'Repair a private Canvas' : 'Build a private Canvas';
         $pdo->prepare("INSERT INTO agent_workflow_runs
@@ -231,10 +274,7 @@ function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?call
         $cid = (int)$goal['conversation_id'];
         $user = vp3_coding_canvas_scope_v1($pdo, $user, $agentId, $cid);
         vp3_coding_canvas_authority_v1($pdo, $user, $agentId, true);
-        if (isset($goal['initiative_origin'])) {
-            require_once __DIR__.'/agent-initiative-canvas-v1.php';
-            $user = vp3_initiative_canvas_origin_current_v1($pdo, $user, $goal['initiative_origin'], $runId);
-        }
+        $user = vp3_coding_canvas_sources_current_v1($pdo, $user, $agentId, $goal, $runId);
         if (!subscription_has_entitlement($user, 'main_ai.access')) {
             throw new RuntimeException('The Coding Agent is unavailable on this account.', 403);
         }
@@ -259,11 +299,8 @@ function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?call
             $goal['prompt'], $source['revision']['artifact'] ?? null, $goal['diagnostic'],
             $attribution);
 
-        if (isset($goal['initiative_origin'])) {
-            // Refresh any remote privacy proof before opening the save lock;
-            // repeat the exact authorization under that lock before writing.
-            $user = vp3_initiative_canvas_origin_current_v1($pdo, $user, $goal['initiative_origin'], $runId);
-        }
+        // Refresh source proofs before the save lock and repeat under the lock.
+        $user = vp3_coding_canvas_sources_current_v1($pdo, $user, $agentId, $goal, $runId);
         $pdo->beginTransaction();
         vp3_ai_service_usage_lock_owner_v1($pdo, (int)$user['id']);
         if (!agent_worker_cloud_active_row_v1910($pdo, $user, $claim, true)) {
@@ -271,9 +308,7 @@ function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?call
             return ['ok' => false, 'reason' => 'coding_lease_unavailable'];
         }
         $user = vp3_coding_canvas_scope_v1($pdo, $user, $agentId, $cid);
-        if (isset($goal['initiative_origin'])) {
-            $user = vp3_initiative_canvas_origin_current_v1($pdo, $user, $goal['initiative_origin'], $runId);
-        }
+        $user = vp3_coding_canvas_sources_current_v1($pdo, $user, $agentId, $goal, $runId);
         $saved = vp3_coding_canvas_save_draft_v1(
             $pdo, $user, $agentId, $source['canvas']['conversation_id'] ?? $cid, $canvasId,
             $source['canvas']['title'] ?? $draft['title'], $draft['artifact'], [], $runId,
@@ -291,7 +326,7 @@ function vp3_coding_canvas_execute_v1(PDO $pdo, array $user, array $claim, ?call
         return ['ok' => true, 'reason' => 'completed', 'receipt' => $receipt];
     } catch (Throwable $error) {
         if ($pdo->inTransaction()) $pdo->rollBack();
-        $reason = match ((int)$error->getCode()) {
+        $reason = $error instanceof Vp3CodingCanvasFailureV1 ? $error->failureClass : match ((int)$error->getCode()) {
             402 => 'coding_quota',
             403, 404, 409 => 'coding_access_changed',
             default => 'coding_failed',
@@ -323,12 +358,12 @@ function vp3_coding_canvas_job_v1(PDO $pdo, array $user, int $agentId, int $cid,
         $claim = agent_job_claim_run_v1900($pdo, $user, $runId, 'cloud',
             agent_worker_cloud_worker_id_v1910((int)$user['id']), 180);
         if ($claim) vp3_coding_canvas_execute_v1($pdo, $user, $claim);
-    } elseif ($action === 'stop' && in_array($view['state'], ['queued', 'running'], true)) {
+    } elseif ($action === 'stop' && in_array($view['state'], ['queued', 'running', 'paused'], true)) {
         try {
             agent_job_cancel_v1900($pdo, $user, $runId);
         } catch (Throwable $error) {
             $current = vp3_coding_canvas_job_view_v1($pdo, vp3_coding_canvas_job_row_v1($pdo, $user, $runId));
-            if (in_array($current['state'], ['queued', 'running'], true)) throw $error;
+            if (in_array($current['state'], ['queued', 'running', 'paused'], true)) throw $error;
         }
     } else {
         return $view;
@@ -341,10 +376,74 @@ function vp3_coding_canvas_resume_v1(PDO $pdo, array $user, int $agentId, int $c
     $agentScope = $agentId > 0 ? 'agent_id=?' : 'agent_id IS NULL';
     $stmt = $pdo->prepare("SELECT * FROM agent_workflow_runs
         WHERE owner_user_id=? AND $agentScope AND source_kind='coding_canvas'
-        AND status IN ('queued','approved','executing','paused') ORDER BY id DESC LIMIT 1");
-    $stmt->execute($agentId > 0 ? [(int)$user['id'], $agentId] : [(int)$user['id']]);
+        AND CAST(JSON_EXTRACT(goal,'$.conversation_id') AS CHAR)=?
+        ORDER BY CASE WHEN status IN ('queued','approved','executing','paused') THEN 0 ELSE 1 END,id DESC LIMIT 1");
+    $stmt->execute($agentId > 0 ? [(int)$user['id'], $agentId, $cid] : [(int)$user['id'], $cid]);
     $run = $stmt->fetch(PDO::FETCH_ASSOC);
     if (!$run) return null;
-    $view = vp3_coding_canvas_job_view_v1($pdo, $run);
-    return $view['conversation_id'] === $cid ? $view : null;
+    return vp3_coding_canvas_job_v1($pdo, $user, $agentId, $cid, (int)$run['id'], 'job');
+}
+
+/** Recover an uncertain admission by its original id, without starting or replaying it. */
+function vp3_coding_canvas_recover_request_v1(PDO $pdo, array $user, int $agentId, int $cid, string $requestId): ?array
+{
+    $stmt = $pdo->prepare("SELECT id FROM agent_workflow_runs WHERE owner_user_id=? AND source_kind='coding_canvas' AND dedupe_key=?");
+    $stmt->execute([(int)$user['id'], hash('sha256', 'coding_canvas:'.vp3_coding_canvas_id_v1($requestId))]);
+    $id = $stmt->fetchColumn();
+    return $id === false ? null : vp3_coding_canvas_job_v1($pdo, $user, $agentId, $cid, (int)$id, 'job');
+}
+
+/** The owner explicitly starts a new metered run from the saved immutable instruction. */
+function vp3_coding_canvas_retry_v1(PDO $pdo, array $user, int $agentId, int $cid, int $runId, string $requestId): array
+{
+    vp3_coding_canvas_job_v1($pdo, $user, $agentId, $cid, $runId, 'job');
+    $row = vp3_coding_canvas_job_row_v1($pdo, $user, $runId);
+    $goal = json_decode((string)$row['goal'], true, 16, JSON_THROW_ON_ERROR);
+    return vp3_coding_canvas_queue_v1($pdo, $user, $agentId, $cid, vp3_coding_canvas_id_v1($requestId), $goal['prompt'],
+        $row['capability_key'] === 'coding.repair' ? $goal['canvas_id'] : null, $goal['source_revision'] ?? null,
+        $goal['diagnostic'] ?? null, commands:$goal['commands'] ?? [], retryOf:$runId);
+}
+
+/** Private editor detail is requested explicitly rather than copied into progress feeds. */
+function vp3_coding_canvas_saved_request_v1(PDO $pdo, array $user, int $agentId, int $cid, int $runId): array
+{
+    vp3_coding_canvas_job_v1($pdo, $user, $agentId, $cid, $runId, 'job');
+    $row = vp3_coding_canvas_job_row_v1($pdo, $user, $runId);
+    $goal = json_decode((string)$row['goal'], true, 16, JSON_THROW_ON_ERROR);
+    vp3_coding_canvas_sources_current_v1($pdo, $user, $agentId, $goal, $runId);
+    return ['prompt'=>$goal['prompt'], 'operation'=>$row['capability_key'] === 'coding.repair' ? 'repair' : 'build',
+        'canvas_id'=>$goal['canvas_id'], 'revision'=>$goal['source_revision'] ?? null];
+}
+
+/** Retrying a private proposal retains its original source/owner-decision proof. */
+function vp3_coding_canvas_sources_current_v1(PDO $pdo, array $user, int $agentId, array $goal, int $runId): array
+{
+    $seen = [$runId=>true];
+    for ($depth = 0; $depth < 32; $depth++) {
+        if (isset($goal['initiative_origin'])) {
+            require_once __DIR__.'/agent-initiative-canvas-v1.php';
+            return vp3_initiative_canvas_origin_current_v1($pdo, $user, $goal['initiative_origin'], $runId);
+        }
+        if (!isset($goal['retry_of'])) return $user;
+        $parentId = $goal['retry_of'];
+        if (!is_int($parentId) || $parentId < 1 || isset($seen[$parentId])) {
+            throw new RuntimeException('The saved Canvas retry source changed.', 409);
+        }
+        $seen[$parentId] = true;
+        $parent = vp3_coding_canvas_job_row_v1($pdo, $user, $parentId);
+        $original = json_decode((string)$parent['goal'], true, 16, JSON_THROW_ON_ERROR);
+        if ((int)$parent['agent_id'] !== $agentId || !in_array($parent['status'], ['failed','cancelled'], true)
+            || ($original['commands'] ?? []) !== ($goal['commands'] ?? [])
+            || (($goal['source_revision'] ?? null) !== null && ($original['canvas_id'] ?? null) !== ($goal['canvas_id'] ?? null))) {
+            throw new RuntimeException('The saved Canvas retry source changed.', 409);
+        }
+        foreach (['conversation_id','source_revision','prompt','diagnostic','expected_draft','expected_active'] as $field) {
+            if (($original[$field] ?? null) !== ($goal[$field] ?? null)) {
+                throw new RuntimeException('The saved Canvas retry instruction changed.', 409);
+            }
+        }
+        $goal = $original;
+        $runId = $parentId;
+    }
+    throw new RuntimeException('Open the current Canvas and start a new change request.', 409);
 }
