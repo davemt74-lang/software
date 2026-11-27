@@ -55,17 +55,25 @@ const summary=()=>panel().locator(':scope > details').first();
 async function mount({phone=false}={}){
   await page.evaluate(({ref,phone})=>{
     window.dispatchEvent(new Event('stonefellow:chat-context-changing'));document.getElementById('host').replaceChildren();
+    window.STONEFELLOW_CHAT_CONTINUITY_V87.showChatView();document.getElementById('chatThread').scrollTop=0;
     window.VP3_CHAT_EMAIL_V1.endpoint=phone?'/api/phone-location-v1.php?workspace_email=1&device_id=fixture&item_ref=exact-item&scope_revision=scope&source_revision=source':'/api/chat-email-v1.php';
     window.VP3GmailDocumentsV1.mount(document.getElementById('host'),{source_ref:ref});
   },{ref,phone});
   await summary().waitFor();
 }
 async function expand(){await summary().locator(':scope > summary').click();await summary().getByRole('button',{name:'Analyze attachment',exact:true}).waitFor();}
-async function screenshot(name){if(process.env.VP3_GMAIL_DOCUMENTS_SCREENSHOT_DIR){mkdirSync(process.env.VP3_GMAIL_DOCUMENTS_SCREENSHOT_DIR,{recursive:true});await page.screenshot({path:path.join(process.env.VP3_GMAIL_DOCUMENTS_SCREENSHOT_DIR,name),fullPage:true});}}
+async function screenshot(name){if(process.env.VP3_GMAIL_DOCUMENTS_SCREENSHOT_DIR){
+  mkdirSync(process.env.VP3_GMAIL_DOCUMENTS_SCREENSHOT_DIR,{recursive:true});
+  await page.evaluate(()=>document.getElementById('chatThread').scrollTop=0);
+  await page.screenshot({path:path.join(process.env.VP3_GMAIL_DOCUMENTS_SCREENSHOT_DIR,name)});
+  await page.evaluate(()=>{const thread=document.getElementById('chatThread');thread.scrollTop=thread.scrollHeight;});
+  await page.screenshot({path:path.join(process.env.VP3_GMAIL_DOCUMENTS_SCREENSHOT_DIR,name.replace('.png','-details.png'))});
+}}
 async function bounds(){assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'Document review fits viewport.');
   assert.ok(await panel().evaluate(el=>[...el.querySelectorAll('textarea')].every(x=>x.scrollHeight<=x.clientHeight+2)),'Textareas use the parent page scroll.');}
 try{
   await page.goto('https://documents.test/');await page.evaluate(()=>{
+    const create=URL.createObjectURL.bind(URL);URL.createObjectURL=blob=>{const url=create(blob);window.attachmentObjectURL=url;return url;};
     window.currentChat=42;window.STONEFELLOW_CHAT={userId:1,agentId:7,workingAttentionBinding:'binding'};
     const view=name=>{document.getElementById('chatThread').dataset.view=name;window.dispatchEvent(new Event('vp3:chat-canvas-view-changed'));};
     window.STONEFELLOW_CHAT_CONTINUITY_V87={agentId:()=>7,conversationId:()=>window.currentChat,isReady:()=>true,isRestoring:()=>false,ensureConversation:async()=>42,showEmailCanvasView:()=>view('email'),showChatView:()=>view('chat')};
@@ -79,9 +87,15 @@ try{
   await summary().getByRole('button',{name:'Analyze attachment',exact:true}).click();await summary().getByText(result.summary,{exact:true}).waitFor();assert.equal(count('analyze'),1);
   await summary().getByText('Suggested reply',{exact:true}).click();await bounds();await screenshot('attachment-review-desktop.png');
   const popupEvent=page.waitForEvent('popup');await summary().getByRole('button',{name:'Page 2',exact:true}).click();const original=await popupEvent;
-  await original.waitForURL(/blob:.*#page=2/);assert.equal(count('open'),1);await original.close();
+  // Headless Chromium may download PDFs rather than commit a PDF-viewer page.
+  // Verify the real browser Blob independently of that viewer capability.
+  await page.waitForFunction(()=>window.attachmentObjectURL);
+  const originalBytes=await page.evaluate(async()=>Array.from(new Uint8Array(await(await fetch(window.attachmentObjectURL)).arrayBuffer())));
+  assert.deepEqual(Buffer.from(originalBytes),pdf);assert.equal(count('open'),1);await original.close();
   await mount();await expand();await summary().getByText(result.summary,{exact:true}).waitFor();assert.equal(count('analyze'),1,'Reopening uses stored analysis.');
-  for(const width of [390,320]){await page.setViewportSize({width,height:844});await summary().getByText('Suggested reply',{exact:true}).click();await bounds();await screenshot('attachment-review-phone-'+width+'.png');}
+  for(const width of [390,320]){await page.setViewportSize({width,height:844});await summary().getByText('Suggested reply',{exact:true}).click();
+    const question=summary().getByLabel('Question or reply direction (optional)');await question.fill('What details are missing? '.repeat(20));await bounds();await question.fill('');
+    await bounds();await screenshot('attachment-review-phone-'+width+'.png');}
   await page.setViewportSize({width:1280,height:900});
   // Actual composer: the explicit reply goes through normal review, then using
   // wording must respect unsaved edits and cannot silently save or send.

@@ -38,10 +38,10 @@ function agent_gmail_document_parts_v1(array $raw): array
 /** Only called by existing exact private message readers, never by background scans. */
 function agent_gmail_document_source_v1(PDO $pdo,array $user,int $connection,string $grant,array $raw): array
 {
-    $record=agent_connections_require_grant_v1($pdo,(int)$user['id'],$connection,'read',$grant);
     try {$parts=agent_gmail_document_parts_v1($raw);}
     catch (DomainException $error) {return ['documents'=>['unavailable'=>$error->getMessage()]];}
     if (!$parts) return [];
+    $record=agent_connections_require_grant_v1($pdo,(int)$user['id'],$connection,'read',$grant);
     $id=agent_connection_gmail_id_v1($raw['id']??'');$thread=agent_connection_gmail_id_v1($raw['threadId']??'');
     if ($id===''||$thread===''||array_intersect(['SPAM','TRASH','DRAFT'],(array)($raw['labelIds']??[]))) return [];
     $source=['contract'=>'gmail-document-source-v1','owner'=>(int)$user['id'],'connection'=>$connection,'grant'=>$grant,

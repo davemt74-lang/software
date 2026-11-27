@@ -112,6 +112,10 @@ $reply=gd_action('reply',['review_id'=>$review['id']])['draft'];
 $native=agent_connection_email_chat_payload_v1(agent_connection_email_chat_draft_v1($pdo,1,7,11,$reply['id']));
 gd_check($reply['is_reply']&&$reply['to']==='sender@example.test'&&$native['reply']['message_id']==='doc_one'
     &&$reply['body']===$review['result']['reply_body'],'explicit reply creation uses the real sender and canonical source thread');
+$packet=agent_email_review_queue_source_v1($pdo,pec_user_v1(),$GLOBALS['gdPrincipal'],11,
+    ['draft_id'=>$reply['id'],'edit_revision'=>$reply['edit_revision']],'document-private-review-key','gd_http');
+gd_check(agent_gmail_document_source_open_v1(pec_user_v1(),$packet['message']['documents']['source_ref'])['message']==='doc_one',
+    'the actual composer Original Email reader returns a sealed attachment source inside its exact message');
 gd_check(gd_action('reply',['review_id'=>$review['id']])['draft']['id']===$reply['id'],'creating the same reviewed reply is idempotent');
 $collision=gd_analyze()['review'];
 agent_email_composer_create_v1($pdo,pec_user_v1(),$GLOBALS['gdPrincipal'],11,['request_id'=>$collision['id'],

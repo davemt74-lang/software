@@ -38,11 +38,11 @@
   function mount(host,source,options={}){
     if(!host||!scope()||!(text(source?.unavailable,300)||(typeof source?.source_ref==='string'&&source.source_ref&&source.source_ref.length<=6000)))return null;
     const captured=scope(),signature=key(captured),url=endpoint(),life=new AbortController(),objects=new Set();
-    let disposed=false;const timers=new Set();
+    let disposed=false;const timers=new Set(),fitObservers=new Set();
     const root=node('section','','vp3-gmail-documents');root.setAttribute('aria-label','Email attachments');
     root.append(node('h3','Attachments'));const message=node('p','Loading attachment details…');message.setAttribute('role','status');root.append(message);host.append(root);
     const current=()=>!disposed&&root.isConnected&&key(scope())===signature&&(options.isCurrent?.()??true);
-    const dispose=()=>{if(disposed)return;disposed=true;life.abort();for(const t of timers)clearTimeout(t);for(const u of objects)URL.revokeObjectURL(u);observer.disconnect();root.remove();views.delete(dispose);};
+    const dispose=()=>{if(disposed)return;disposed=true;life.abort();for(const t of timers)clearTimeout(t);for(const u of objects)URL.revokeObjectURL(u);for(const o of fitObservers)o.disconnect();observer.disconnect();root.remove();views.delete(dispose);};
     const observer=new MutationObserver(()=>{if(!root.isConnected||key(scope())!==signature)dispose();});observer.observe(document.documentElement,{childList:true,subtree:true});views.add(dispose);
     async function request(action,fields={}){
       if(!current())throw new DOMException('Private view changed.','AbortError');
@@ -70,7 +70,12 @@
       if(!part.supported)return;
       const label=node('label'),input=node('textarea');input.rows=2;input.maxLength=600;input.placeholder='For example: What does this quote include, and is a delivery date stated?';
       label.append(node('span','Question or reply direction (optional)'),input);box.append(label);
-      input.addEventListener('input',()=>{input.style.height='auto';input.style.height=Math.max(82,input.scrollHeight)+'px';});
+      const fit=()=>{if(!current()||!input.clientWidth)return;input.style.height='auto';input.style.height=Math.max(82,input.scrollHeight+2)+'px';};
+      input.addEventListener('input',fit);
+      if(typeof ResizeObserver==='function'){
+        let width=0;const fitObserver=new ResizeObserver(()=>{if(input.clientWidth!==width){width=input.clientWidth;fit();}});
+        fitObserver.observe(input);fitObservers.add(fitObserver);
+      }
       const actions=node('div','','vp3-gmail-document-actions'),output=node('div','','vp3-gmail-document-result');
       let review=null,busy=false,loaded=false,poll=null,generation=0;
       const setBusy=value=>{busy=value;analyze.disabled=value||!installed;input.disabled=value;box.setAttribute('aria-busy',String(value));};
