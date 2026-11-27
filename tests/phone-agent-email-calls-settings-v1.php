@@ -87,5 +87,22 @@ pec_check_v1(!(bool)$revoked['urgent_enabled']&&!(bool)$revoked['drafts_enabled'
 pec_session_v1(2);$other=vp3_phone_agent_email_calls_request_v1($pdo,pec_user_v1(2),['action'=>'state','owner_key'=>'2','agent_id'=>9,'conversation_id'=>21,'csrf_token'=>csrf_token()],null,$now);
 pec_check_v1($other['policy']['revision']===0&&!$other['policy']['urgent_enabled']&&!$other['policy']['drafts_enabled']
     &&$other['devices']===[]&&$other['active_call']===null,'another owner starts with both categories off and no private device leakage');
+
+pec_session_v1(1);$e=vp3_phone_agent_workspace_enrollment_v1($pdo,1,$device);$d=vp3_phone_row_v1($pdo,1,$device);
+vp3_phone_transaction_v1($pdo,fn()=>vp3_phone_agent_device_grant_v1($pdo,pec_user_v1(1),$d,[
+    'device_id'=>$device,'generation'=>(int)$d['generation'],'expected_revision'=>(int)$e['revision'],'enabled'=>true,
+    'confirmed'=>true,'agent_id'=>7,'notifications_enabled'=>false],$now));
+$_SESSION=['csrf_token'=>'paired-email-call-csrf'];
+$pairedScope=vp3_phone_agent_workspace_scope_v1($pdo,null,$f['token'],$device,false,$now);
+$pairedBase=['device_id'=>$device,'enrollment_revision'=>(int)$pairedScope['enrollment']['revision'],'scope_revision'=>$pairedScope['scope_revision'],
+    'agent_id'=>7,'conversation_id'=>(int)$pairedScope['enrollment']['conversation_id'],'csrf_token'=>$_SESSION['csrf_token']];
+$pairedCalls=static fn(array $body):array=>vp3_phone_agent_email_calls_request_v1($pdo,null,$body+$pairedBase,$f['token'],$now);
+pec_check_v1($pairedCalls(['action'=>'state'])['scope']===vp3_phone_agent_email_calls_phone_envelope_v1($pairedScope)
+    &&!isset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']),'approved no-login phone reads its exact email-call review scope without authenticating the main app');
+pec_check_v1($pairedCalls(['action'=>'statuses','item_refs'=>[]])['items']===[],'no-login phone keeps exact-item call status polling available');
+pec_reject_v1(fn()=>$pairedCalls(['action'=>'save','expected_revision'=>(int)$revoked['revision'],'urgent_enabled'=>true,'drafts_enabled'=>true,
+    'grace_seconds'=>300,'selected_device_id'=>$device,'number_id'=>1,'confirmed'=>true]),
+    'delegated phone access cannot enable autonomous calling or change main-account call policy','owner_access_changed');
+
 pec_check_v1($GLOBALS['pecHttpCalls']===0,'settings and revocation tests never contact Gmail or a carrier');
 echo 'Email-call settings acceptance: '.$GLOBALS['pecChecks']." assertions passed.\n";

@@ -24,7 +24,7 @@ try {
     if ($input['action']==='reply') $allowed[]='review_id';
     if (array_diff(array_keys($input),$allowed)||(!in_array($input['action'],['list','reopen'],true)&&!is_string($input['part']??null))
         ||($input['action']==='reopen'&&!is_string($input['review_id']??null))) throw new DomainException('Choose a valid attachment action.',422);
-    $user=current_user();
+    $user=defined('VP3_PHONE_AGENT_NATIVE_V1')&&function_exists('vp3_phone_agent_native_user_v1')?vp3_phone_agent_native_user_v1():current_user();
     if (!$user||!has_permission('chat.access',$user)) throw new DomainException('Sign in to review private attachments.',401);
     if (($input['owner_key']??null)!==(string)$user['id']) throw new DomainException('The Chat account changed.',409);
     if (!is_string($input['csrf_token']??null)||!hash_equals(csrf_token(),$input['csrf_token'])) throw new DomainException('Refresh Chat before reviewing attachments.',419);

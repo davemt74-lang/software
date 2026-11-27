@@ -191,3 +191,5 @@ body.phone-tracking-page.vp3-orb-has-bar {
 .phone-information-file{display:grid;gap:8px;min-width:0}.phone-information-file input[type=file]{max-width:100%;font:inherit}.phone-information-file .phone-information-confirm{display:flex;gap:8px;align-items:center}.phone-information-confirm input[type=checkbox]{width:20px;height:20px;min-height:20px;flex:none;margin:0}.phone-information-file small{font-size:.8rem;line-height:1.4;color:#4e635b}
 
 #phone-install-code-box{margin-top:12px;border-top:1px solid var(--line);padding-top:12px}#phone-install-code-box summary{cursor:pointer;font-weight:650}#phone-install-code{width:100%;min-width:0;font:inherit;font-family:ui-monospace,monospace;padding:8px;margin:4px 0 8px;border:1px solid var(--line);border-radius:8px}#phone-copy-install-status{overflow-wrap:anywhere}
+
+.phone-profile-form select{min-height:44px;min-width:0;width:100%;font:inherit;padding:8px;border:1px solid var(--line);border-radius:8px;background:#fff;color:var(--ink)}

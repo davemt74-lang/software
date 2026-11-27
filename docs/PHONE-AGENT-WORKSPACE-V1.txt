@@ -2,27 +2,42 @@ CONNECTED PHONE — AGENT WORKSPACE V1
 
 What this release adds
 
-The connected owner's phone has an AGENT tab for private Agent results,
+Every approved connected phone shows an AGENT tab for private Agent results,
 important incoming Gmail, email drafts awaiting review, generated images and
-saved private canvases. The tab is the default landing view after the owner
-explicitly enables it. Existing Chat, Connection and Info tabs remain available.
+saved private canvases. Before private access is approved it shows an approval
+screen. Home, Chat, Requests, Phone and Help remain available.
 
-Phone setup
+Phone setup: no phone user login
 
 1. Pair and approve the phone through the existing Connected Phone flow.
-2. Open VP3 Phone in the same browser/application context in which the owner
-   signs in. A paired-device label saying "owner" is not a sign-in.
-3. In Connection, sign in to the owning account if necessary and enable the
-   private Agent workspace. Main Agent is selected initially; another private
-   Agent can be selected explicitly.
-4. Enable Agent notifications if wanted. Complete the existing phone push
-   subscription/permission setup separately. Notifications contain a generic
-   invitation to open VP3 Phone, never an email subject, recipient or body.
+2. In the signed-in main app, open Phone Tracking, select that phone, then
+   Permissions. Enable "Allow AGENT on this phone without signing in", select
+   its Agent, and save. A role label or ordinary pairing alone is insufficient.
+3. On the phone, open AGENT and Check for approval. This uses its existing
+   paired-device cookie and an anonymous CSRF session; no owner login or
+   password fingerprint is written to the phone session.
+4. Enable Agent notifications if wanted, and complete the separate phone push
+   subscription/permission setup. Notifications contain a generic invitation
+   to open VP3 Phone, never an email subject, recipient or body.
 
-The owner must have a current authenticated web session to open private items
-or approve an email. Pairing alone never opens the owner's mailbox or canvases.
-Logging out, password changes, device expiry/revocation, credential rotation,
-enrollment changes and Agent changes invalidate the current private scope.
+Only the main app can grant or change the phone's selected Agent. The phone can
+turn its Agent alerts off or remove access. Revocation, device expiry, credential
+rotation, password changes and current account/Agent/Chat permission changes
+invalidate the private scope, including an already-open review. The approval
+never authenticates the main app or unlocks its direct private API routes.
+Older session-based enrollments remain compatible while signed in; they are not
+silently migrated to no-login grants. The main owner must explicitly approve.
+
+Send a Canvas
+
+The Canvas build/editor has "Send Canvas to Connected Phone". Choose an approved
+phone and confirm its private Agent access. This can approve the phone for the
+Canvas's Agent without signing in there. The exact saved Canvas is delivered as
+a canonical private reference; no copy or public publication is created. A
+recent unread delivery appears first in AGENT even if the Canvas was created
+before other results. Retry receipts prevent duplicate deliveries. Changed
+Canvas/device/approval versions require a fresh selection. Alerts respect the
+phone's separate notification choices; availability does not prove display.
 
 Using the tab
 
@@ -57,10 +72,11 @@ checks; saved previews do not overwrite the active app's data. Generated code
 cannot access the parent owner session or unrestricted network.
 
 Results, drafts, images and canvases keep their original Agent/Chat provenance.
-Open original Chat returns to that private conversation. The mailbox-wide
+Open original Chat is an optional link into the main app and uses its normal
+account access; native phone review does not require opening that link. The mailbox-wide
 important-email action instead says Discuss with your Agent. A conversation
-is created only when the owner explicitly enrolls/selects an Agent and none
-exists; background reads never create conversations.
+is created only when the main owner explicitly approves/selects an Agent and
+none exists; background reads never create conversations.
 
 Deployment
 
@@ -84,8 +100,9 @@ timestamps, rather than indexing or polling time, determine the notification
 cutover, and historical important-email records remain quiet.
 
 The device cookie retains its existing exact API path. Private viewer and
-native action routes are dispatched through that path and also require the
-real owner session. No new durable owner bearer token is issued to the phone.
+native action routes are dispatched through that path and require the exact
+paired credential plus a current explicit main-owner device grant. The
+anonymous session supplies CSRF and review nonces, never a main-app login.
 
 Scope of phone calls
 
@@ -93,12 +110,12 @@ The subsequent Gmail owner-call integration is documented in
 GMAIL-OWNER-PHONE-CALLS-V1.txt. It adds a separately enabled email-call channel
 through the existing Operator engine, linked to this same private item.
 Optional voice confirmation requires the exact email to remain open in the
-authenticated owner review. Answering a call or a generic "yes" is not an email
+authorized exact phone review. Answering a call or a generic "yes" is not an email
 send approval, and an app-closed carrier callback cannot send Gmail.
 
 Acceptance gates
 
-1. Explicit owner enrollment; paired guests and role labels cannot enter.
+1. Explicit main-owner approval; pairing and role labels alone cannot enter.
 2. Exact account/device/credential/Agent/Chat checks on every private request.
 3. Source-backed feed with deterministic IDs and bounded, scoped pagination.
 4. Distinct read/acknowledge/snooze receipts with stale-version rejection.
@@ -106,7 +123,7 @@ Acceptance gates
 6. Formatted important email with current mailbox classification and grant.
 7. Native images and isolated private canvases, with canonical app state.
 8. Opted-in background pushes, opaque payloads and exact-item routing.
-9. Existing holder Chat/Connection/Info preserved and one visible scroll area.
+9. Home/Chat/Requests/Phone, visible AGENT gate and one visible scroll area.
 10. Native database, browser, package and exact-commit deployment verification.
 
 Tests use isolated database/browser fixtures and deterministic provider

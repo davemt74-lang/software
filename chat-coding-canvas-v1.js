@@ -263,7 +263,58 @@
   const apply = button('Use this version',() => void applyVersion());
   const hideApp = button('Hide app from shortcuts',() => void setAppHidden());
   const remove = button('Delete canvas…',() => showDelete(true));
-  actions.append(openInApp,test,apply,hideApp,remove);
+  const sendPhone=button('Send Canvas to Connected Phone',event=>{if(event.isTrusted)void openPhoneDelivery();});
+  const phoneNotice=node('p','','vp3-coding-canvas-phone-status');phoneNotice.setAttribute('role','status');
+  const phoneDialog=node('dialog','','vp3-coding-canvas-phone-dialog');phoneDialog.setAttribute('aria-label','Send Canvas to Connected Phone');
+  const phoneDescription=node('p'),phoneStatus=node('p');phoneStatus.setAttribute('role','status');
+  const phoneSelect=node('select');phoneSelect.setAttribute('aria-label','Connected phone');
+  const phoneAgreement=node('input');phoneAgreement.type='checkbox';
+  const phoneAgreementLabel=node('label');phoneAgreementLabel.append(phoneAgreement,node('span','Allow this phone’s AGENT tab to receive private email reviews, canvases and results from this Agent without logging in.'));
+  const sendPhoneConfirm=button('Send Canvas',event=>{if(event.isTrusted)void deliverPhoneCanvas();});
+  const phoneCancel=button('Cancel',()=>closePhoneDelivery());
+  phoneDialog.append(node('h2','Send Canvas to Connected Phone'),phoneDescription,phoneSelect,phoneAgreementLabel,
+    node('p','The saved Canvas appears in AGENT. Alerts follow this phone’s notification settings.'),phoneStatus,sendPhoneConfirm,phoneCancel);
+  document.body.append(phoneDialog);
+  let phoneCapture=null,phoneController=null,phoneTargets=[],phoneWriting=false,phoneIntent=null;
+  function phoneCurrent(capture){return capture&&capture.epoch===epoch&&matches()&&scope()===capture.conversation&&current?.canvas.id===capture.canvas&&current?.revision?.id===capture.revision;}
+  function closePhoneDelivery(){phoneController?.abort();phoneController=null;phoneCapture=null;phoneTargets=[];phoneWriting=false;phoneIntent=null;if(phoneDialog.open)phoneDialog.close();}
+  phoneDialog.addEventListener('cancel',()=>closePhoneDelivery());
+  phoneSelect.addEventListener('change',()=>{phoneIntent=null;const p=phoneTargets.find(p=>p.id===phoneSelect.value);phoneAgreement.checked=p?.agent_access?.enabled===true&&p.agent_access.agent_id===agent;phoneControls();});
+  phoneAgreement.addEventListener('change',()=>{phoneControls();});
+  function phoneControls(){sendPhoneConfirm.disabled=phoneWriting||!phoneCurrent(phoneCapture)||!phoneAgreement.checked||!phoneTargets.some(p=>p.id===phoneSelect.value);phoneSelect.disabled=phoneAgreement.disabled=phoneWriting;}
+  async function openPhoneDelivery(){
+    if(locked||!current?.revision||!matches())return;
+    closePhoneDelivery();const capture={epoch,canvas:current.canvas.id,revision:current.revision.id,conversation:scope()};phoneCapture=capture;
+    phoneDescription.textContent='Saved Canvas version '+capture.revision;phoneStatus.textContent='Loading connected phones…';phoneSelect.replaceChildren();phoneAgreement.checked=false;phoneControls();phoneDialog.showModal();
+    const controller=new AbortController();phoneController=controller;
+    try{
+      const result=await api('phone_targets',{canvas_id:capture.canvas,revision:capture.revision},capture.conversation,controller.signal);
+      if(phoneController!==controller||!phoneCurrent(capture)||!phoneDialog.open)return;
+      if(!Array.isArray(result.phones)||result.phones.length>32||result.canvas_id!==capture.canvas||result.revision!==capture.revision)throw Error('Connected phones could not be verified.');
+      phoneTargets=result.phones.filter(p=>typeof p.id==='string'&&/^[a-f0-9]{32}$/.test(p.id)&&typeof p.name==='string'&&Number.isSafeInteger(p.generation)&&Number.isSafeInteger(p.agent_access?.revision));
+      for(const p of phoneTargets){const option=node('option',p.name);option.value=p.id;phoneSelect.append(option);}
+      const selectedPhone=phoneTargets[0];phoneAgreement.checked=selectedPhone?.agent_access?.enabled===true&&selectedPhone.agent_access.agent_id===agent;
+      phoneStatus.textContent=phoneTargets.length?'Choose the phone that should receive this Canvas.':'No approved phones are connected. Connect and approve a phone in Phone Tracking first.';
+      phoneDescription.textContent='Saved Canvas version '+capture.revision+' · '+(result.agent?.name||'this Agent');
+    }catch(error){if(phoneController===controller&&phoneDialog.open&&error.name!=='AbortError')phoneStatus.textContent=error.message||'Could not load connected phones.';}
+    finally{if(phoneController===controller){phoneController=null;phoneControls();}}
+  }
+  async function deliverPhoneCanvas(){
+    const capture=phoneCapture,target=phoneTargets.find(p=>p.id===phoneSelect.value);
+    if(!phoneCurrent(capture)||!target||!phoneAgreement.checked||phoneWriting)return;
+    phoneWriting=true;phoneControls();phoneStatus.textContent='Sending saved Canvas…';phoneIntent=phoneIntent||crypto.randomUUID();
+    const controller=new AbortController();phoneController=controller;
+    try{
+      const result=await api('phone_send',{canvas_id:capture.canvas,revision:capture.revision,device_id:target.id,generation:target.generation,expected_revision:target.agent_access.revision,request_id:phoneIntent,confirmed:true},capture.conversation,controller.signal);
+      if(phoneController!==controller||!phoneCurrent(capture)||!phoneDialog.open)return;
+      const receipt=result.phone_delivery;
+      if(receipt?.device_id!==target.id||receipt.revision!==capture.revision||typeof receipt.item_ref!=='string'||!/^[a-f0-9]{32}$/.test(receipt.item_ref))throw Error('The phone delivery could not be verified.');
+      phoneNotice.textContent='Canvas version '+capture.revision+' is available in AGENT on '+target.name+'.';closePhoneDelivery();
+    }catch(error){if(phoneController===controller&&phoneDialog.open&&error.name!=='AbortError')phoneStatus.textContent=error.message||'Delivery could not be confirmed. Retry to check the same delivery.';}
+    finally{if(phoneController===controller){phoneController=null;phoneWriting=false;phoneControls();}}
+  }
+  actions.append(openInApp,test,apply,sendPhone,hideApp,remove);
+
   const deletion = node('div','','vp3-coding-canvas-controls');
   const deleteFolder = node('input');
   deleteFolder.type = 'checkbox';
@@ -273,7 +324,7 @@
   deletion.append(node('p','Deleting this Canvas takes any public link offline.','vp3-coding-canvas-delete-public-note'),
     deleteLabel,deleteConfirm,button('Cancel',() => showDelete(false)));
   deletion.hidden = true;
-  workspace.append(workspaceTitle,previewDescription,actions,deletion,libraryImagePanel,permissions,publishing,frameHost,source);
+  workspace.append(workspaceTitle,previewDescription,actions,phoneNotice,deletion,libraryImagePanel,permissions,publishing,frameHost,source);
   workspace.hidden = true;
   const editorControls = node('div','','vp3-coding-canvas-editor-controls');
   editorControls.append(promptLabel,commandLibrary,controls,notice,savedControls,editorAppIcons);
@@ -998,6 +1049,7 @@
     return true;
   }
   function closePanel() {
+    closePhoneDelivery();
     const position = chatPosition;
     chatPosition = null;
     chat()?.showChatView();
@@ -1045,6 +1097,7 @@
     emailStart.disabled = locked || working;
     repair.disabled = locked || working || !current?.revision;
     openInApp.disabled = locked || !current?.revision;
+    sendPhone.disabled=locked||!current?.revision||current.canvas.hidden===true;
     stop.hidden = !working;
     stop.disabled = false;
     picker.disabled = locked;
@@ -1400,6 +1453,7 @@
   }
 
   function renderCanvas(data) {
+    closePhoneDelivery();phoneNotice.textContent='';
     const keepPublishingOpen = publishing.open && Boolean(data) && current?.canvas.id === data?.canvas?.id;
     publicationRequest?.abort();
     publicationRequest = null;

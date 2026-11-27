@@ -208,6 +208,8 @@ try {
     reply:'Previous agent message.',owner_reply:'A personal follow-up.'});
   await connection.click();
   await page.getByRole('tab',{name:'Home',exact:true}).focus();await page.getByRole('tab',{name:'Home',exact:true}).press('ArrowRight');
+  assert.equal(await page.locator('#phone-tab-agent').getAttribute('aria-selected'),'true','keyboard navigation includes the visible AGENT approval tab');
+  await page.locator('#phone-tab-agent').press('ArrowRight');
   await page.getByText('A personal follow-up.').waitFor();
   const historic = page.locator('[data-request="old-auto-turn"]');
   assert.deepEqual(await historic.locator('small').allTextContents(),['You','Agent','Owner']);

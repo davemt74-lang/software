@@ -22,6 +22,7 @@
   const stateLabels = {off:'Location off', requested:'Sharing requested', waiting:'Waiting for location', live:'Sharing live', stale:'Last known location', denied:'Location denied'};
   const roleLabels = {owner:'Owner', guest:'Guest', device:'Device'};
   let devices = [];
+  let workspaceAgents=[{id:0,name:'Main Agent'}];
   let selectedId = '';
   let followId = '';
   let linkedDevice = new URLSearchParams(location.search).get('device_id');
@@ -320,13 +321,13 @@
     if(profileTab==='information'&&exchange&&host.contains(exchange.root)&&host.dataset.exchangeDevice===d.id)return;
     const p=d.communication;
     const extra=profileTab==='activity'?[connection(d),d.last_seen_at,effectiveState(d),d.history_state,d.history_retention_days,Boolean(camera.liveCamera(d)),Boolean(d.agent_chat?.conversation_id)]:profileTab==='permissions'?[d.allow_location,d.holder_can_save_places,Boolean(camera.liveCamera(d)),writing]:[d.agent_chat,typeof window.VP3PhoneWorkspaceV1?.openConnectedPhone==='function'];
-    const sig=JSON.stringify([d.id,d.generation,p,profileTab,extra,d.push]);
+    const sig=JSON.stringify([d.id,d.generation,p,profileTab,extra,d.push,d.agent_access]);
     if(sig===profileSignature)return;
     // Do not overwrite an in-progress permission form on an unrelated GPS poll.
     const focused=host.contains(document.activeElement)&&document.activeElement.closest('form');
-    const oldRev=host.dataset.profileRevision;
-    if(focused&&oldRev===String(p?.revision??'')&&profileTab==='permissions'&&!writing)return;
-    profileSignature=sig;host.dataset.profileRevision=String(p?.revision??'');host.replaceChildren();
+    const oldRev=host.dataset.profileRevision,oldAgentRev=host.dataset.agentAccessRevision;
+    if(focused&&oldRev===String(p?.revision??'')&&oldAgentRev===String(d.agent_access?.revision??'')&&profileTab==='permissions'&&!writing)return;
+    profileSignature=sig;host.dataset.profileRevision=String(p?.revision??'');host.dataset.agentAccessRevision=String(d.agent_access?.revision??'');host.replaceChildren();
     host.append(element('h3','Connected user'));
     const tabs=element('div',undefined,'phone-profile-tabs');tabs.setAttribute('aria-label','Connected user sections');
     for(const [key,title] of [['communication','Communication'],['permissions','Permissions'],['information','Information'],['activity','Activity']]){
@@ -349,6 +350,19 @@
       host.append(element('p',ready?'Place a user-requested call with your assigned line. The Phone drawer will ask for confirmation.':!p.call_permission_saved?'Both calling permissions are required.':!d.agent_chat?.conversation_id?'Open the paired phone chat to establish its linked conversation.':'The assigned browser calling service is unavailable.','phone-detail-meta'));
       host.append(element('p','Autonomous Agent calls remain disabled. Use Information to share updates or send requests.','phone-detail-meta'));
     }else if(profileTab==='permissions'){
+      const access=d.agent_access,agentForm=element('form',undefined,'phone-profile-form');
+      const allow=element('input');allow.type='checkbox';allow.checked=access?.enabled===true;allow.disabled=writing||access?.ready!==true;
+      const allowLabel=element('label',undefined,'phone-profile-check');allowLabel.append(allow,element('span','Allow AGENT on this phone without signing in'));
+      const agentChoice=element('select');agentChoice.setAttribute('aria-label','Agent for this phone');
+      for(const a of workspaceAgents){const option=element('option',a.name);option.value=String(a.id);agentChoice.append(option);}agentChoice.value=String(access?.agent_id??0);agentChoice.disabled=writing;
+      const notify=element('input');notify.type='checkbox';notify.checked=access?.notifications_enabled===true;notify.disabled=writing;
+      const notifyLabel=element('label',undefined,'phone-profile-check');notifyLabel.append(notify,element('span','Notify this phone about new AGENT items'));
+      const grant=element('button','Save AGENT access','phone-primary');grant.type='submit';grant.disabled=writing||access?.ready!==true;
+      agentForm.append(element('h4','AGENT access'),allowLabel,element('p','This allows private email review and confirmed sends, canvases, images and Agent results for the selected Agent. You can revoke this phone here.'),agentChoice,notifyLabel,grant);
+      if(access?.ready!==true)agentForm.append(element('p','Run Database Upgrade to enable approval from the main app.'));
+      agentForm.addEventListener('submit',event=>{event.preventDefault();if(event.isTrusted&&selected()?.id===d.id&&!writing&&access?.ready)void mutate('agent_access',d,{expected_revision:access.revision,enabled:allow.checked,confirmed:allow.checked,agent_id:Number(agentChoice.value),notifications_enabled:notify.checked});});
+      host.append(agentForm);
+
       if(!p){host.append(element('p','Communication preferences require the latest Cloud upgrade.','phone-detail-meta'));return;}
       const form=element('form',undefined,'phone-profile-form');
       const checks={};
@@ -362,7 +376,7 @@
       field('Holder call consent',p.holder_calls?'Saved':'Off');field('Holder information consent',p.holder_requests?'Saved':'Off');
       field('Future relationship memory',p.holder_memory?'Requested':'Off');field('Location permission',d.allow_location?'Allowed':'Off');
       field('Saved places',d.holder_can_save_places?'Owner allows':'Off');field('Camera',camera.liveCamera(d)?'Currently shared':'Not currently shared');host.append(facts);
-      host.append(element('p','The phone holder chooses their own number and preferences. These new settings do not grant access to location, camera or private files.','phone-detail-meta'));
+      host.append(element('p','The phone holder chooses their own number and preferences. Telephone and information permissions do not enable location or camera access. Private Agent reviews use the separate AGENT approval above.','phone-detail-meta'));
     }else if(profileTab==='information'){
       host.dataset.exchangeDevice=d.id;
       if(exchange)host.append(exchange.root);else host.append(element('p','Information exchange is unavailable.','phone-detail-meta'));
@@ -653,6 +667,7 @@
       available = true;
       if (status.dataset.failure) { status.textContent = ''; delete status.dataset.failure; }
       devices = value.devices;
+      if(Array.isArray(value.agent_choices))workspaceAgents=value.agent_choices.filter(a=>Number.isSafeInteger(a.id)&&a.id>=0&&typeof a.name==='string');
       if (resumeSelection) {
         const device = devices.find(d => d.status === 'approved' && d.id === resumeSelection.id);
         if (device) {

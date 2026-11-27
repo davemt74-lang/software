@@ -40,7 +40,7 @@ try {
         'connectionsUrl'=>url('/connections.php'),'basePath'=>rtrim(url('/'),'/')];
 } catch(Throwable $error) {
     $code=(int)$error->getCode();http_response_code(in_array($code,[401,403,404,405,409,422,503],true)?$code:503);
-    if($code===401)$message='Sign in again to view your private Agent workspace.';
+    if($code===401)$message='Agent access changed. Approve this phone again from the main app.';
 }
 if(session_status()===PHP_SESSION_ACTIVE)session_write_close();
 $clientPayload=$payload??(isset($channel)?['channel'=>$channel,'error'=>$message]:null);

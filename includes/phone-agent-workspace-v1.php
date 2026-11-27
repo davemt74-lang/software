@@ -87,10 +87,11 @@ function vp3_phone_agent_workspace_binding_v1(array $enrollment,string $key): st
         (int)$enrollment['revision'],(int)$enrollment['selected_agent_id'],(int)$enrollment['conversation_id']],JSON_THROW_ON_ERROR),$key);
 }
 
-/** Shared with the native private viewer/Gmail host; never callable as a holder-only grant. */
-function vp3_phone_agent_workspace_scope_v1(PDO $pdo,array $user,string $token,string $deviceId,bool $lock=false,?int $now=null): array
+/** Shared native viewer/Gmail scope; pairing alone never grants private access. */
+function vp3_phone_agent_workspace_scope_v1(PDO $pdo,?array $user,string $token,string $deviceId,bool $lock=false,?int $now=null): array
 {
     $now??=time();$deviceId=vp3_phone_agent_workspace_id_v1($deviceId);
+    $paired=vp3_phone_agent_device_scope_v1($pdo,$token,$deviceId,$lock,$now);if($paired!==null)return $paired;
     vp3_phone_agent_workspace_need_v1(vp3_phone_agent_workspace_ready_v1($pdo),503);
     $live=vp3_phone_agent_workspace_owner_v1($pdo,$user,$lock);$owner=(int)$live['id'];
     $device=vp3_phone_agent_workspace_device_v1($pdo,$owner,$token,$deviceId,$now,$lock);
@@ -108,14 +109,16 @@ function vp3_phone_agent_workspace_scope_v1(PDO $pdo,array $user,string $token,s
 function vp3_phone_agent_workspace_scope_current_v1(PDO $pdo,array $scope,bool $lock=false): void
 {
     $now=max((int)$scope['now'],time());
-    $live=vp3_phone_agent_workspace_owner_v1($pdo,$scope['user'],$lock);$owner=(int)$live['id'];
+    $paired=!empty($scope['paired_access']);
+    $live=$paired?vp3_phone_agent_workspace_user_v1($pdo,(int)$scope['user']['id'],$lock):vp3_phone_agent_workspace_owner_v1($pdo,$scope['user'],$lock);$owner=(int)$live['id'];
     $d=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_devices_v1 WHERE owner_user_id=? AND id=?'
         .($lock?vp3_phone_lock_v1($pdo):''),[$owner,$scope['device']['id']])->fetch(PDO::FETCH_ASSOC);
     $e=vp3_phone_agent_workspace_enrollment_v1($pdo,$owner,$scope['device']['id'],$lock);
     vp3_phone_agent_workspace_need_v1($d!==false&&$d['device_status']==='approved'&&(int)$d['expires_at']>$now
         &&hash_equals($scope['device']['token_hash'],$d['token_hash'])&&$e!==null&&(int)$e['enabled']===1
         &&hash_equals($e['credential_hash'],$d['token_hash'])
-        &&hash_equals($e['owner_fingerprint'],(string)$_SESSION['auth_password_fingerprint']),403);
+        &&hash_equals($e['owner_fingerprint'],$paired?hash('sha256',$owner.':'.(string)($live['password_hash']??'')):(string)($_SESSION['auth_password_fingerprint']??''))
+        &&(!$paired||vp3_phone_agent_device_marker_v1($pdo,$e)),403);
     vp3_phone_agent_workspace_need_v1(hash_equals($scope['scope_revision'],vp3_phone_agent_workspace_binding_v1($e,vp3_phone_agent_workspace_key_v1())),409);
     vp3_phone_agent_workspace_chat_v1($pdo,$owner,(int)$e['selected_agent_id'],(int)$e['conversation_id']);
 }
@@ -264,6 +267,8 @@ function vp3_phone_agent_workspace_status_v1(PDO $pdo,?array $user,string $token
 {
     if (!vp3_phone_transaction_active_v1($pdo)) return vp3_phone_transaction_v1($pdo,
         static fn():array=>vp3_phone_agent_workspace_status_v1($pdo,$user,$token,$id,$now));
+    try{$paired=vp3_phone_agent_device_scope_v1($pdo,$token,$id,true,$now);if($paired!==null)return vp3_phone_agent_device_status_v1($pdo,$paired);}
+    catch(RuntimeException $error){if($error instanceof PDOException)throw $error;}
     $base=['state'=>'sign_in_required','enrolled'=>false,'owner_eligible'=>false,'enrollable'=>false,'revision'=>0,
         'enrollment_revision'=>0,'scope_revision'=>null,'device_id'=>$id,'agent'=>null,'conversation_id'=>null,
         'preferences'=>['notifications_enabled'=>false],'counts'=>null,'agents'=>[]];
@@ -273,6 +278,10 @@ function vp3_phone_agent_workspace_status_v1(PDO $pdo,?array $user,string $token
         vp3_phone_agent_workspace_device_v1($pdo,(int)$live['id'],$token,$id,$now,true);
     } catch (RuntimeException $error) {
         if ($error instanceof PDOException||!in_array($error->getCode(),[401,403],true)) throw $error;
+        if(vp3_phone_secret_valid_v1($token)){
+            $d=vp3_phone_sql_v1($pdo,"SELECT id FROM vp3_phone_devices_v1 WHERE id=? AND token_hash=? AND device_status='approved' AND expires_at>?",[$id,vp3_extension_hash_v2000($token),$now])->fetchColumn();
+            if($d)$base['state']='approval_required';
+        }
         return $base;
     }
     if (!vp3_phone_agent_workspace_ready_v1($pdo)) return array_replace($base,['state'=>'unavailable']);
@@ -350,14 +359,34 @@ function vp3_phone_agent_workspace_feed_v1(PDO $pdo,array $scope,array $input): 
     $rows=vp3_phone_sql_v1($pdo,'SELECT item_ref,sequence_id FROM vp3_phone_agent_items_v1 WHERE owner_user_id=? AND agent_id=?'
         .($after!==null?' AND sequence_id<?':'').' ORDER BY sequence_id DESC LIMIT 101',
         $after!==null?[(int)$scope['user']['id'],$scope['agent']['id'],$after]:[(int)$scope['user']['id'],$scope['agent']['id']])->fetchAll(PDO::FETCH_ASSOC);
-    $items=[];$next=null;$lastScanned=null;
+    // Explicit Canvas deliveries stay visible even when their canonical item is
+    // older than the first feed page. Keep the ordinary sequence cursor intact.
+    $pinned=[];$pinRefs=[];
+    if($filter!=='history'&&vp3_phone_agent_device_grants_ready_v1($pdo)){
+        $sent=vp3_phone_sql_v1($pdo,'SELECT item_ref,MAX(created_epoch) AS sent_epoch FROM vp3_phone_canvas_deliveries_v1
+            WHERE owner_user_id=? AND device_id=? AND grant_id=? AND created_epoch>?
+            GROUP BY item_ref ORDER BY sent_epoch DESC,item_ref LIMIT 5',
+            [(int)$scope['user']['id'],$scope['device']['id'],$scope['enrollment']['grant_id'],$now-86400])->fetchAll(PDO::FETCH_ASSOC);
+        foreach($sent as $delivery){
+            try{$item=vp3_phone_agent_workspace_item_v1($pdo,$scope,$delivery['item_ref'])['item'];}
+            catch(RuntimeException $error){if(!$error instanceof PDOException&&in_array($error->getCode(),[403,404],true))continue;throw $error;}
+            if($item['receipt']['read_at']!==null||$item['receipt']['acknowledged_at']!==null
+                ||($item['receipt']['snoozed_until']!==null&&strtotime($item['receipt']['snoozed_until'])>$now)
+                ||!vp3_phone_agent_workspace_matches_v1($item,$filter,$now))continue;
+            if(count($pinned)>=$limit)break;
+            $pinned[]=['sequence'=>0,'item'=>$item];$pinRefs[$item['item_ref']]=true;
+        }
+    }
+    $items=$after===null?$pinned:[];$next=null;$lastScanned=null;$lastAccepted=null;
     foreach(array_slice($rows,0,100) as $row) {
         $lastScanned=(int)$row['sequence_id'];
+        if(isset($pinRefs[$row['item_ref']]))continue;
         try { $resolved=vp3_phone_agent_workspace_item_v1($pdo,$scope,$row['item_ref']); }
         catch(RuntimeException $e){if (!$e instanceof PDOException&&in_array($e->getCode(),[403,404],true))continue;throw $e;}
         if (!vp3_phone_agent_workspace_matches_v1($resolved['item'],$filter,$now)) continue;
-        if (count($items)===$limit) { $next=(int)$items[array_key_last($items)]['sequence'];break; }
+        if (count($items)===$limit) { $next=$lastAccepted??((int)$row['sequence_id']+1);break; }
         $items[]=['sequence'=>(int)$row['sequence_id'],'item'=>$resolved['item']];
+        $lastAccepted=(int)$row['sequence_id'];
     }
     if ($next===null&&count($rows)>100) $next=$lastScanned;
     $counts=['unread'=>0,'needs_action'=>0,'complete'=>true];
@@ -403,7 +432,7 @@ function vp3_phone_agent_workspace_mutate_v1(PDO $pdo,array $scope,array $input)
     return ['item'=>vp3_phone_agent_workspace_item_v1($pdo,$scope,$row['item_ref'])['item']];
 }
 
-/** Strict owner endpoint contract. Every non-status action also binds the real session's CSRF token. */
+/** Strict private endpoint. Every action binds approved pairing and the current session CSRF. */
 function vp3_phone_agent_workspace_request_v1(PDO $pdo,?array $user,string $token,array $input,?int $now=null): array
 {
     $now??=time();$action=$input['action']??null;$id=vp3_phone_agent_workspace_id_v1($input['device_id']??null);
@@ -414,12 +443,15 @@ function vp3_phone_agent_workspace_request_v1(PDO $pdo,?array $user,string $toke
         'mutate'=>['item_ref','expected_revision','operation','snooze_until']];
     vp3_phone_agent_workspace_need_v1(is_string($action)&&isset($fields[$action])&&!array_diff(array_keys($input),[...$common,...$fields[$action]]));
     if ($action==='status') return vp3_phone_agent_workspace_status_v1($pdo,$user,$token,$id,$now);
-    vp3_phone_agent_workspace_owner_v1($pdo,$user);
+    if($action==='enroll')vp3_phone_agent_workspace_owner_v1($pdo,$user);
+    else vp3_phone_agent_workspace_scope_v1($pdo,$user,$token,$id,false,$now);
     vp3_phone_agent_workspace_need_v1(is_string($input['csrf_token']??null)&&is_string($_SESSION['csrf_token']??null)
         &&$_SESSION['csrf_token']!==''&&hash_equals($_SESSION['csrf_token'],$input['csrf_token']),419);
     vp3_phone_agent_workspace_need_v1(vp3_phone_agent_workspace_ready_v1($pdo),503);
     return vp3_phone_transaction_v1($pdo,static function()use($pdo,$user,$token,$input,$action,$id,$now):array {
-        $live=vp3_phone_agent_workspace_owner_v1($pdo,$user,true);$owner=(int)$live['id'];
+        $paired=$action==='enroll'?null:vp3_phone_agent_device_scope_v1($pdo,$token,$id,true,$now);
+        $live=$paired['user']??vp3_phone_agent_workspace_owner_v1($pdo,$user,true);$owner=(int)$live['id'];
+        if($paired!==null)vp3_phone_agent_workspace_need_v1($action!=='select_agent',403);
         $device=vp3_phone_agent_workspace_device_v1($pdo,$owner,$token,$id,$now,true);
         $e=vp3_phone_agent_workspace_enrollment_v1($pdo,$owner,$id,true);
         if ($action==='enroll') {
@@ -497,3 +529,5 @@ function vp3_phone_agent_workspace_push_current_v1(PDO $pdo,array $device,array 
         return false;
     }
 }
+
+require_once __DIR__.'/phone-agent-device-grants-v1.php';

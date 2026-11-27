@@ -14,7 +14,7 @@ try {
         header('Allow: POST');
         throw new RuntimeException('Use POST.', 405);
     }
-    $user = current_user();
+    $user = defined('VP3_PHONE_AGENT_NATIVE_V1')&&function_exists('vp3_phone_agent_native_user_v1')?vp3_phone_agent_native_user_v1():current_user();
     if (!$user) throw new RuntimeException('Sign in to use private Canvases.', 401);
     $raw = file_get_contents('php://input', false, null, 0, 98305);
     if ($raw === false || strlen($raw) > 98304) throw new RuntimeException('This Canvas request is too large.', 413);
@@ -39,12 +39,16 @@ try {
     $canvasId = $input->canvas_id ?? null;
     $revision = $input->revision ?? null;
     if (in_array($action, ['open', 'repair', 'test', 'apply', 'save_state', 'delete', 'email_data',
-        'command_grants','save_command_grants','command_data','publication_status','publish','unpublish','set_hidden','save_library_image'], true)
+        'phone_targets','phone_send','command_grants','save_command_grants','command_data','publication_status','publish','unpublish','set_hidden','save_library_image'], true)
         && !is_string($canvasId)) throw new InvalidArgumentException('Choose a saved Canvas.');
     if (($revision !== null || in_array($action, ['repair', 'test', 'apply', 'save_state', 'email_data','command_data','publish','save_library_image'], true))
         && (!is_int($revision) || $revision < 1)) throw new InvalidArgumentException('Choose an exact Canvas revision.');
 
-    if ($action === 'start_email') {
+    if(in_array($action,['phone_targets','phone_send'],true)){
+        if(!is_string($canvasId)||!is_int($revision)||$revision<1)throw new InvalidArgumentException('Choose a saved Canvas version.');
+        require_once dirname(__DIR__).'/includes/coding-canvas-phone-v1.php';
+        $result=vp3_coding_canvas_phone_v1($pdo,$user,$aid,$cid,$canvasId,$revision,$action,(array)$input);
+    } elseif ($action === 'start_email') {
         $request = $input->request_id ?? null;
         if (!is_string($request)) throw new InvalidArgumentException('Choose an exact email Canvas request.');
         require_once dirname(__DIR__).'/includes/agent-initiative-email-canvas-start-v1.php';

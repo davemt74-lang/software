@@ -21,7 +21,7 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="manifest" href="phone-app.webmanifest">
   <link rel="apple-touch-icon" sizes="180x180" href="assets/phone-pwa/icon-180.png">
   <script src="phone-pwa-v1.js?v=3" defer></script>
-  <link rel="stylesheet" href="phone-location-v1.css?v=15">
+  <link rel="stylesheet" href="phone-location-v1.css?v=16">
   <link rel="stylesheet" href="phone-agent-workspace-v1.css?v=2">
   <link rel="stylesheet" href="agent-email-call-settings-v1.css?v=1">
   <link rel="stylesheet" href="phone-remote-dialer-v1.css?v=1">
@@ -31,10 +31,10 @@ header("Content-Security-Policy: default-src 'none'; script-src 'self'; style-sr
   <link rel="stylesheet" href="phone-recording-holder-v1.css?v=1">
   <script src="phone-recording-holder-v1.js?v=1" defer></script>
   <script src="phone-camera-holder-v1.js?v=6" defer></script>
-  <script src="phone-agent-chat-v1.js?v=9" defer></script>
+  <script src="phone-agent-chat-v1.js?v=10" defer></script>
   <script src="phone-agent-workspace-media-v1.js?v=1" defer></script>
   <script src="agent-email-call-settings-v1.js?v=1" defer></script>
-  <script src="phone-agent-workspace-v1.js?v=2" defer></script>
+  <script src="phone-agent-workspace-v1.js?v=3" defer></script>
   <script src="phone-save-place-v1.js?v=2" defer></script>
   <script src="phone-information-ui-v1.js?v=5" defer></script>
   <script src="phone-remote-dialer-v1.js?v=1" defer></script>

@@ -18,7 +18,7 @@ try {
     if (($_SERVER['REQUEST_METHOD'] ?? '') !== 'POST') {
         throw new DomainException('Use POST for image requests.', 405);
     }
-    $user = current_user();
+    $user = defined('VP3_PHONE_AGENT_NATIVE_V1')&&function_exists('vp3_phone_agent_native_user_v1')?vp3_phone_agent_native_user_v1():current_user();
     if (!$user) {
         throw new DomainException('Sign in to use the private Media Library.', 401);
     }

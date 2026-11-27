@@ -22,8 +22,8 @@ try {
     $status=(int)$error->getCode();
     if (!($error instanceof RuntimeException)||$error instanceof PDOException||!in_array($status,[401,403,404,405,409,413,415,419,422,429,503],true)) $status=503;
     http_response_code($status);
-    $codes=[401=>'owner_sign_in_required',403=>'workspace_access_changed',404=>'item_unavailable',409=>'workspace_changed',419=>'session_changed',503=>'workspace_unavailable'];
-    $messages=[401=>'Sign in as this phone\'s owner to open the private Agent workspace.',403=>'Workspace access changed. Sign in and check this phone\'s enrollment.',
+    $codes=[401=>'phone_approval_required',403=>'workspace_access_changed',404=>'item_unavailable',409=>'workspace_changed',419=>'session_changed',503=>'workspace_unavailable'];
+    $messages=[401=>'Approve this phone’s AGENT access from the main app.',403=>'Workspace access changed. Check this phone’s AGENT approval in the main app.',
         404=>'This item is no longer available.',409=>'This workspace or item changed. Refresh before continuing.',419=>'Your session changed. Refresh before continuing.',
         503=>'The Agent workspace is temporarily unavailable.'];
     echo json_encode(['ok'=>false,'error'=>$codes[$status]??'invalid_workspace_request','message'=>$messages[$status]??'Check the workspace request and try again.']);

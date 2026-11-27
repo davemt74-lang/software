@@ -4,10 +4,9 @@ declare(strict_types=1);
 require_once __DIR__.'/phone-agent-workspace-v1.php';
 require_once __DIR__.'/phone-tracking-http-v1.php';
 
-/** Real owner session plus the exact paired device; query IDs are not grants. */
+/** Explicit main-owner device approval (or legacy owner session); query IDs are not grants. */
 function vp3_phone_agent_native_context_v1(PDO $pdo,?array $user,array $query,?int $now=null): array
 {
-    vp3_phone_agent_workspace_need_v1($user!==null,401);
     $device=vp3_phone_agent_workspace_id_v1($query['device_id']??null);
     $ref=vp3_phone_agent_workspace_id_v1($query['item_ref']??null);
     $revision=$query['scope_revision']??null;
@@ -21,6 +20,15 @@ function vp3_phone_agent_native_context_v1(PDO $pdo,?array $user,array $query,?i
             &&hash_equals($resolved['item']['source_revision'],$semantic),409);
     }
     return ['scope'=>$scope,'resolved'=>$resolved];
+}
+
+/** Request-local delegated identity; it never authenticates the main app or writes login fields. */
+function vp3_phone_agent_native_user_v1():array
+{
+    $saved=$GLOBALS['VP3_PHONE_AGENT_NATIVE_EXECUTION_CONTEXT_V1']??null;
+    vp3_phone_agent_workspace_need_v1(defined('VP3_PHONE_AGENT_NATIVE_V1')&&is_array($saved)&&is_array($saved['context']??null),403);
+    $scope=$saved['context']['scope'];vp3_phone_agent_workspace_scope_current_v1(db(),$scope);
+    return $scope['user'];
 }
 
 function vp3_phone_agent_native_origin_v1(): void
@@ -257,7 +265,7 @@ function vp3_phone_agent_native_error_v1(Throwable $error): string
     header('Content-Type: application/json; charset=UTF-8');
     header('Cache-Control: private, no-store, max-age=0');
     header('X-Content-Type-Options: nosniff');
-    return json_encode(['ok'=>false,'error'=>$status===401?'Sign in again to open your private Agent workspace.'
+    return json_encode(['ok'=>false,'error'=>$status===401?'Agent access changed. Ask the main app to approve this phone again.'
         :'This Phone Agent item or its access changed. Return to Agent and reopen it.'],JSON_THROW_ON_ERROR);
 }
 

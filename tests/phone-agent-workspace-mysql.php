@@ -91,10 +91,10 @@ vp3_phone_agent_workspace_install_v1($pdo);vp3_phone_agent_workspace_install_v1(
 workspace_assert(vp3_phone_agent_workspace_ready_v1($pdo),'idempotent native schema installation');
 $pdo->beginTransaction();workspace_reject(0,fn()=>vp3_phone_agent_workspace_install_v1($pdo),'schema refuses caller transaction');$pdo->rollBack();
 $_SESSION=[];$anonymous=$request(['action'=>'status']);
-workspace_assert($anonymous['state']==='sign_in_required'&&!isset($anonymous['csrf_token'])&&$anonymous['agents']===[]&&$anonymous['agent']===null,'owner role label alone reveals no private enrollment or Agent names');
+workspace_assert($anonymous['state']==='approval_required'&&!isset($anonymous['csrf_token'])&&$anonymous['agents']===[]&&$anonymous['agent']===null,'owner role label alone reveals no private enrollment or Agent names');
 workspace_reject(401,fn()=>$request(['action'=>'enroll','confirmed'=>true,'expected_revision'=>0,'csrf_token'=>str_repeat('c',64)]),'enrollment requires live owner session');
 $login(2,'other-password');$wrong=$request(['action'=>'status'],$other);
-workspace_assert($wrong['state']==='sign_in_required'&&!isset($wrong['csrf_token']),'another authenticated account cannot discover paired owner workspace');
+workspace_assert($wrong['state']==='approval_required'&&!isset($wrong['csrf_token']),'another authenticated account cannot discover paired owner workspace');
 $login();$status=$request(['action'=>'status']);
 workspace_assert($status['state']==='not_enrolled'&&$status['owner_eligible']&&$status['revision']===0&&isset($status['csrf_token']),'approved exact owner may explicitly enroll');
 workspace_assert(array_column($status['agents'],'id')===[0,7,8]&&$status['agent']['id']===0,'Main is default and Agent choices exclude foreign and inactive Agents');
@@ -324,6 +324,103 @@ workspace_reject(403,fn()=>vp3_phone_agent_native_execution_current_v1($pdo),'na
 unset($GLOBALS['VP3_PHONE_AGENT_NATIVE_EXECUTION_CONTEXT_V1']);
 workspace_reject(403,fn()=>vp3_phone_agent_native_execution_current_v1($pdo),'execution fence cannot run without a trusted wrapper context');
 session_start();session_destroy();
+
+// A main-app approval grants only this paired phone's native workspace, never a login.
+require_once dirname(__DIR__).'/includes/coding-canvas-phone-v1.php';
+session_id('phone-agent-main-grant-'.bin2hex(random_bytes(12)));session_start();
+$login(2,'other-password');
+$owner2=vp3_phone_agent_workspace_owner_v1($pdo,$other);
+$cDevice=vp3_phone_sql_v1($pdo,'SELECT * FROM vp3_phone_devices_v1 WHERE id=?',[$c])->fetch(PDO::FETCH_ASSOC);
+$eBefore=vp3_phone_agent_workspace_enrollment_v1($pdo,2,$c);
+$consent=['device_id'=>$c,'generation'=>1,'expected_revision'=>(int)$eBefore['revision'],'enabled'=>true,'confirmed'=>true,'agent_id'=>0,'notifications_enabled'=>false];
+workspace_reject(422,fn()=>vp3_phone_transaction_v1($pdo,fn()=>vp3_phone_agent_device_grant_v1($pdo,$owner2,$cDevice,array_replace($consent,['confirmed'=>false]),$now)),
+    'a device label or ordinary pairing cannot stand in for explicit main-app Agent approval');
+workspace_reject(409,fn()=>vp3_phone_transaction_v1($pdo,fn()=>vp3_phone_agent_device_grant_v1($pdo,$owner2,$cDevice,array_replace($consent,['expected_revision'=>0]),$now)),
+    'stale main-app grant cannot replace a newer enrollment');
+workspace_reject(409,fn()=>vp3_phone_transaction_v1($pdo,fn()=>vp3_phone_agent_device_grant_v1($pdo,$owner2,$cDevice,array_replace($consent,['generation'=>2]),$now)),
+    'approval must match the exact paired device generation');
+$chat=(int)$eBefore['conversation_id'];
+$pdo->prepare("UPDATE workspace_native_sources SET version=1,state='ready' WHERE source_id=?")->execute([$nativeCanvas]);
+$pdo->exec("UPDATE workspace_native_sources SET removed=1 WHERE source_id='90'");
+$pdo->prepare("UPDATE workspace_native_sources SET state='needs_review' WHERE source_id=?")->execute([$nativeDraft]);
+$deliveryInput=['device_id'=>$c,'generation'=>1,'expected_revision'=>(int)$eBefore['revision'],'request_id'=>'30000000-0000-4000-8000-000000000001','confirmed'=>true];
+$targets=vp3_coding_canvas_phone_v1($pdo,$other,0,$chat,$nativeCanvas,1,'phone_targets',[]);
+workspace_assert(array_column($targets['phones'],'id')===[$c]&&!$targets['phones'][0]['agent_access']['enabled'],
+    'Canvas recipient selection exposes only this owner’s approved phones and distinguishes missing device approval');
+$login(2,'other-password');workspace_reject(422,fn()=>vp3_coding_canvas_phone_v1($pdo,$other,0,$chat,$nativeCanvas,1,'phone_send',array_replace($deliveryInput,['confirmed'=>false])),
+    'Send Canvas requires an explicit access confirmation');
+$login(2,'other-password');workspace_reject(409,fn()=>vp3_coding_canvas_phone_v1($pdo,$other,0,$chat,$nativeCanvas,2,'phone_send',$deliveryInput),
+    'a stale Canvas version is not silently replaced by the latest artifact');
+$login(2,'other-password');$delivered=vp3_coding_canvas_phone_v1($pdo,$other,0,$chat,$nativeCanvas,1,'phone_send',$deliveryInput)['phone_delivery'];
+workspace_assert($delivered['item_ref']===$nativeRefs['canvas']&&!$delivered['duplicate'],
+    'Send Canvas grants the exact device and delivers its canonical private source without making a copy or a publication');
+$login(2,'other-password');$duplicate=vp3_coding_canvas_phone_v1($pdo,$other,0,$chat,$nativeCanvas,1,'phone_send',$deliveryInput)['phone_delivery'];
+workspace_assert($duplicate['duplicate']&&(int)$pdo->query('SELECT COUNT(*) FROM vp3_phone_canvas_deliveries_v1')->fetchColumn()===1,
+    'retrying an uncertain Canvas delivery returns the original receipt once');
+$login(2,'other-password');workspace_reject(409,fn()=>vp3_coding_canvas_phone_v1($pdo,$other,0,$chat,$nativeCanvas,1,'phone_send',array_replace($deliveryInput,['generation'=>2])),
+    'a delivery retry cannot cross a device generation');
+$_SESSION=['csrf_token'=>str_repeat('f',64),'phone_agent_workspace_key_v1'=>str_repeat('b',64)];
+$pairedStatus=vp3_phone_agent_workspace_request_v1($pdo,null,$tokenC,['action'=>'status','device_id'=>$c],$now);
+workspace_assert($pairedStatus['state']==='ready'&&$pairedStatus['authorization_mode']==='paired_device'&&!isset($_SESSION['user_id'],$_SESSION['auth_password_fingerprint']),
+    'main-app approval opens AGENT with only a paired cookie and an anonymous session');
+$pairedBound=$bound($pairedStatus);$pairedRequest=static fn(array $data):array=>vp3_phone_agent_workspace_request_v1($pdo,null,$tokenC,['device_id'=>$c]+$pairedBound+$data,$now);
+$newer=$pdo->prepare("INSERT INTO workspace_native_sources(source_id,owner_user_id,agent_id,conversation_id,source_kind,version,state,needs_action,occurred_epoch,updated_epoch,body) VALUES(?,2,0,?,'agent_result',1,'ready',0,?,?,'Later result')");
+for($n=300;$n<330;$n++)$newer->execute([(string)$n,$chat,$now,$now]);
+$firstPinned=$pairedRequest(['action'=>'feed','limit'=>10]);
+workspace_assert($firstPinned['items'][0]['item_ref']===$nativeRefs['canvas'],'an explicitly delivered older Canvas appears first on the recipient phone');
+$allRefs=array_column($firstPinned['items'],'item_ref');$nextPage=$firstPinned;
+while($nextPage['has_more']){$nextPage=$pairedRequest(['action'=>'feed','limit'=>10,'cursor'=>$nextPage['next_cursor']]);$allRefs=[...$allRefs,...array_column($nextPage['items'],'item_ref')];}
+workspace_assert(count($allRefs)===count(array_unique($allRefs))&&count($allRefs)===34,'pinning a delivered Canvas preserves complete cursor pagination without repeating or omitting items');
+$pairedFeed=$pairedRequest(['action'=>'feed']);
+workspace_assert(in_array($nativeRefs['canvas'],$allRefs,true)
+    &&in_array($nativeRefs['gmail_draft'],$allRefs,true),
+    'the no-login AGENT feed includes saved email drafts and delivered custom canvases');
+workspace_reject(401,fn()=>vp3_phone_agent_workspace_owner_v1($pdo,$other),'paired access does not create a main-app owner session');
+workspace_reject(401,fn()=>$pairedRequest(['action'=>'enroll','confirmed'=>true,'expected_revision'=>$pairedStatus['revision']]),
+    'the phone cannot elevate its pairing into a new owner grant');
+workspace_reject(403,fn()=>$pairedRequest(['action'=>'select_agent','agent_id'=>0,'expected_revision'=>$pairedStatus['revision']]),
+    'the phone cannot widen its approved Agent scope');
+workspace_reject(401,fn()=>vp3_phone_agent_workspace_scope_v1($pdo,null,$tokenA,$c,false,$now),
+    'a valid cookie for a different phone cannot open the approved device');
+$pairedScope=vp3_phone_agent_workspace_scope_v1($pdo,null,$tokenC,$c,false,$now);
+$pairedCanvas=vp3_phone_agent_workspace_item_v1($pdo,$pairedScope,$nativeRefs['canvas']);
+$pairedQuery=['device_id'=>$c,'item_ref'=>$nativeRefs['canvas'],'scope_revision'=>$pairedStatus['scope_revision'],'source_revision'=>$pairedCanvas['item']['source_revision']];
+$anonymousContext=vp3_phone_agent_native_context_v1($pdo,null,$pairedQuery,$now);
+vp3_phone_agent_native_action_v1($pdo,$anonymousContext,'canvas',['action'=>'open','canvas_id'=>$nativeCanvas,'revision'=>1,'agent_id'=>0,'conversation_id'=>$chat]);
+workspace_assert($anonymousContext['scope']['paired_access']&&!isset($_SESSION['user_id']),
+    'the native Canvas bridge validates the exact canonical item without a user login');
+$pairedEmail=['scope'=>$pairedScope,'resolved'=>vp3_phone_agent_workspace_item_v1($pdo,$pairedScope,$nativeRefs['gmail_draft'])];
+vp3_phone_agent_native_action_v1($pdo,$pairedEmail,'email',['action'=>'review','draft_id'=>$nativeDraft,'agent_id'=>0,'conversation_id'=>$chat]);
+$anonymousSession=$_SESSION;session_id('phone-agent-paired-'.bin2hex(random_bytes(12)));session_start();$_SESSION=$anonymousSession;session_write_close();
+$GLOBALS['VP3_PHONE_AGENT_NATIVE_EXECUTION_CONTEXT_V1']=['context'=>$pairedEmail,'kind'=>'email'];
+vp3_phone_agent_native_execution_current_v1($pdo);
+workspace_assert(session_status()!==PHP_SESSION_ACTIVE&&!isset($_SESSION['user_id']),
+    'the final canonical email execution fence supports anonymous paired sessions');
+$pdo->beginTransaction();vp3_phone_sql_v1($pdo,'SELECT revision FROM vp3_phone_agent_enrollments_v1 WHERE device_id=?',[$c])->fetchColumn();
+$peer->prepare('UPDATE vp3_phone_agent_enrollments_v1 SET enabled=0,revision=revision+1 WHERE device_id=?')->execute([$c]);
+workspace_reject([403,409],fn()=>vp3_phone_agent_native_execution_current_v1($pdo),
+    'main-app revocation blocks a no-login native action even after a repeatable-read snapshot began');$pdo->rollBack();
+session_start();$_SESSION=$anonymousSession;session_write_close();
+workspace_assert(vp3_phone_agent_workspace_request_v1($pdo,null,$tokenC,['action'=>'status','device_id'=>$c],$now)['state']==='approval_required',
+    'revocation leaves a visible approval gate and never asks the phone holder to log in');
+workspace_reject(403,fn()=>vp3_phone_agent_workspace_scope_v1($pdo,null,$tokenC,$c,false,$now),'revoked paired access cannot serve another private page');
+session_start();$login(2,'other-password');workspace_reject(409,fn()=>vp3_coding_canvas_phone_v1($pdo,$other,0,$chat,$nativeCanvas,1,'phone_send',$deliveryInput),
+    'replaying a sent Canvas after access withdrawal cannot silently approve the phone again');
+$login(2,'other-password');$eNow=vp3_phone_agent_workspace_enrollment_v1($pdo,2,$c);
+vp3_phone_transaction_v1($pdo,fn()=>vp3_phone_agent_device_grant_v1($pdo,$owner2,$cDevice,array_replace($consent,['expected_revision'=>(int)$eNow['revision']]),$now));
+$_SESSION=$anonymousSession;$newScope=vp3_phone_agent_workspace_scope_v1($pdo,null,$tokenC,$c,false,$now);
+workspace_reject(409,fn()=>vp3_phone_agent_workspace_scope_current_v1($pdo,$pairedScope),'reapproving rotates the grant and invalidates old no-login review scopes');
+$pdo->exec("UPDATE users SET password_hash='rotated-owner-password' WHERE id=2");
+workspace_reject(403,fn()=>vp3_phone_agent_workspace_scope_current_v1($pdo,$newScope),'password rotation withdraws no-login delegated access');
+$pdo->exec("UPDATE users SET password_hash='other-password' WHERE id=2");
+$pdo->exec('UPDATE users SET workspace_access=0 WHERE id=2');
+workspace_reject(403,fn()=>vp3_phone_agent_workspace_scope_current_v1($pdo,$newScope),'current account permissions still fence delegated phone access');
+$pdo->exec('UPDATE users SET workspace_access=1 WHERE id=2');
+$newCredential=vp3_phone_token_v1(random_bytes(32));$pdo->prepare('UPDATE vp3_phone_devices_v1 SET token_hash=? WHERE id=?')->execute([vp3_extension_hash_v2000($newCredential),$c]);
+workspace_reject(403,fn()=>vp3_phone_agent_workspace_scope_v1($pdo,null,$newCredential,$c,false,$now),'a newly paired installation does not inherit the previous installation’s Agent grant');
+unset($GLOBALS['VP3_PHONE_AGENT_NATIVE_EXECUTION_CONTEXT_V1']);
+session_start();session_destroy();
+
 $pdo->exec('ALTER TABLE vp3_phone_agent_enrollments_v1 DROP COLUMN notifications_since_epoch');
 workspace_assert(!vp3_phone_agent_workspace_ready_v1($pdo),'partial schema cannot advertise ready enrollment or background authority');
 echo 'PHONE_AGENT_WORKSPACE_MYSQL PASS '.$GLOBALS['workspaceChecks'].PHP_EOL;

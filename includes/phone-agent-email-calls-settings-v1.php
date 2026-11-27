@@ -263,7 +263,9 @@ function vp3_phone_agent_email_calls_request_v1(PDO $pdo,?array $user,array $inp
     $common=$phone?['action','device_id','enrollment_revision','scope_revision','agent_id','conversation_id','csrf_token']
         :['action','owner_key','agent_id','conversation_id','csrf_token'];
     vp3_phone_agent_email_calls_check_v1(is_string($action)&&isset($fields[$action])&&!array_diff(array_keys($input),[...$common,...$fields[$action]]),'invalid_request',422);
-    try{$live=vp3_phone_agent_workspace_owner_v1($pdo,$user);}
+    $delegated=$phone?vp3_phone_agent_device_scope_v1($pdo,(string)$token,(string)($input['device_id']??''),false,$now):null;
+    if($delegated!==null)vp3_phone_agent_email_calls_check_v1($action!=='save','owner_access_changed',403);
+    try{$live=$delegated['user']??vp3_phone_agent_workspace_owner_v1($pdo,$user);}
     catch(RuntimeException $error){throw new VP3PhoneAgentEmailCallException('owner_sign_in_required',$error->getCode()===403?403:401);}
     $owner=(int)$live['id'];
     vp3_phone_agent_email_calls_check_v1(is_string($input['csrf_token']??null)&&is_string($_SESSION['csrf_token']??null)
@@ -273,8 +275,8 @@ function vp3_phone_agent_email_calls_request_v1(PDO $pdo,?array $user,array $inp
         &&is_int($input['conversation_id']??null)&&$input['conversation_id']>0,'invalid_request',422);
     if(!$phone)vp3_phone_agent_email_calls_check_v1((is_int($input['owner_key']??null)||is_string($input['owner_key']??null))
         &&(string)$input['owner_key']===(string)$owner,'owner_access_changed',403);
-    return vp3_phone_transaction_v1($pdo,static function()use($pdo,$live,$owner,$input,$token,$phone,$now,$action):array{
-        $live=vp3_phone_agent_workspace_owner_v1($pdo,$live,true);$scope=null;$agent=$input['agent_id'];
+    return vp3_phone_transaction_v1($pdo,static function()use($pdo,$live,$owner,$input,$token,$phone,$now,$action,$delegated):array{
+        $live=$delegated!==null?vp3_phone_agent_workspace_user_v1($pdo,$owner,true):vp3_phone_agent_workspace_owner_v1($pdo,$live,true);$scope=null;$agent=$input['agent_id'];
         vp3_phone_agent_workspace_chat_v1($pdo,$owner,$agent,$input['conversation_id']);
         if($phone){
             $scope=vp3_phone_agent_workspace_scope_v1($pdo,$live,$token,(string)($input['device_id']??''),true,$now);
@@ -307,7 +309,7 @@ function vp3_phone_agent_email_calls_request_v1(PDO $pdo,?array $user,array $inp
             $result=vp3_phone_agent_email_calls_view_v1($pdo,$live,$agent,$now,$scope);
         }
         if($scope!==null){vp3_phone_agent_workspace_scope_current_v1($pdo,$scope,true);$result['scope']=vp3_phone_agent_email_calls_phone_envelope_v1($scope);}
-        vp3_phone_agent_workspace_owner_v1($pdo,$live,true);
+        if($delegated===null)vp3_phone_agent_workspace_owner_v1($pdo,$live,true);
         return $result;
     });
 }
