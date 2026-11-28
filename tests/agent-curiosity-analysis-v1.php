@@ -131,6 +131,10 @@ canvas_pipeline_check($done['ok']&&$calls===1&&canvas_pipeline_count('chat_messa
 $report=vp3_curiosity_analysis_report_v1($pdo,$owner,$binding);
 canvas_pipeline_check($report!==null&&$report['report']['preferences_confirmed']===false
     &&$report['report']['email_actions']===['message_opens'=>2,'link_opens'=>3],'The canonical finding distinguishes observed attention from confirmed taste');
+require_once dirname(__DIR__).'/includes/agent-specialist-invitations-v1.php';
+$invitationReports=vp3_specialist_invitation_reports_v1($pdo,vp3_agent_activity_scope_v1($pdo,$owner,7,(int)$binding['conversation_id']),$binding);
+canvas_pipeline_check(count(array_filter($invitationReports,static fn(array $row):bool=>$row['family']==='curiosity'
+    &&$row['key']===$report['key']))===1,'Invitations can consider the exact native Curiosity analysis without confirming a preference');
 canvas_pipeline_check(vp3_curiosity_analysis_snapshot_v1($pdo,$owner,$binding)['revision']===$snapshot['revision']
     &&vp3_curiosity_analysis_schedule_v1($pdo,$owner,$binding)==='already_handled',
     'Curiosity cannot turn its own completed analysis into new work');

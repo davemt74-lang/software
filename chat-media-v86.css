@@ -30,3 +30,5 @@
 .chat-media-library-actions{display:flex;gap:4px;margin-top:5px}
 .chat-agent-action-button{border:1px solid currentColor;background:transparent;color:inherit;border-radius:8px;padding:6px 9px;cursor:pointer;font:inherit}
 @media(max-width:800px){.chat-media-studio{padding:8px}.chat-media-panel{max-height:96vh}.chat-media-feeds{grid-template-columns:1fr}.chat-media-library-grid{grid-template-columns:1fr}.chat-media-head{align-items:flex-start}.chat-media-head-actions{justify-content:flex-end}}
+
+.chat-agent-action-button[data-chat-email-review]{min-height:44px;max-width:100%;white-space:normal;overflow-wrap:anywhere;text-align:left}

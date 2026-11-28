@@ -6,6 +6,9 @@ require_once __DIR__.'/agent-specialist-starters-v1.php';
 function vp3_casual_checkin_intent_v1(string $text): string
 {
     return match(true){
+        preg_match('~\A(?:(?:open|review|choose|the) )?(?:1|first)(?: draft| one)?[.?!]*\z~iu',$text)===1=>'draft_1',
+        preg_match('~\A(?:(?:open|review|choose|the) )?(?:2|second)(?: draft| one)?[.?!]*\z~iu',$text)===1=>'draft_2',
+        preg_match('~\A(?:(?:open|review|choose|the) )?(?:3|third)(?: draft| one)?[.?!]*\z~iu',$text)===1=>'draft_3',
         preg_match('~\A(?:(?:yes|yeah|yep|sure|ok(?:ay)?|go ahead)(?:[ ,]+(?:please|let[\x{2019}\x27]s do it))?|let[\x{2019}\x27]s do it)[.?!]*\z~iu',$text)===1=>'accept',
         preg_match('~\A(?:no(?:,? (?:thanks|thank you))?|skip(?: it| this one| that one)?)[.?!]*\z~iu',$text)===1=>'decline',
         preg_match('~\A(?:not (?:right )?now|(?:maybe )?later|another time)[.?!]*\z~iu',$text)===1=>'defer',
@@ -79,12 +82,16 @@ function vp3_casual_checkin_reply_target_v1(PDO $pdo,array $user,int $agent,int 
     if($youtubeAcceptance&&$ref==='casual:youtube_history')$intent='accept';
     elseif($intent==='clarify'&&$explicit===null)return null;
     if($ref==='casual:media'){
-        if(in_array($intent,['accept','play'],true))$intent='clarify';
+        if(in_array($intent,['accept','play'],true))$intent=($output['invitation']['kind']??null)==='music'?'music':'clarify';
     }elseif(in_array($intent,['music','youtube','play'],true)){
         if($ref==='casual:'.($intent==='play'?'music':$intent)
             ||($ref==='casual:youtube_history'&&in_array($intent,['youtube','play'],true)))$intent='accept';
         elseif($explicit===null)return null;
         else $intent='clarify';
+    }
+    if(str_starts_with($intent,'draft_')&&($ref!=='casual:email'||($output['invitation']['kind']??null)!=='email_drafts')){
+        if($explicit===null)return null;
+        $intent='clarify';
     }
     $state=$context['initiative_followthrough_state']??null;
     if($explicit!==null&&($state['last_reply_explicit']??false)===true
@@ -173,8 +180,11 @@ function vp3_casual_checkin_reply_chat_v1(PDO $pdo,array $user,array $principal,
                         $answer=$trackTitle!==''?'I’ll open “'.$trackTitle.'” in the VP3 Media Player.':'I’ll open that pick in the VP3 Media Player.';
                         break;
                     case 'youtube':
-                        $answer='What would you like to watch? Say “Search YouTube for” followed by your topic.';
-                        break;
+                        if(!isset($evidence['history_playback'])&&!isset($evidence['history_topic'])){
+                            $answer='What would you like to watch? Say “Search YouTube for” followed by your topic.';
+                            break;
+                        }
+                        // A named choice reuses the same native saved-video acceptance below.
                     case 'youtube_history':
                         require_once __DIR__.'/agent-connection-youtube-chat-v1.php';
                         $saved=$evidence['history_playback']??null;
@@ -195,6 +205,24 @@ function vp3_casual_checkin_reply_chat_v1(PDO $pdo,array $user,array $principal,
                         }else $stateName='stale';
                         break;
                     case 'email':
+                        if(isset($evidence['email_draft_targets'])){
+                            $targets=$evidence['email_draft_targets'];
+                            $items=$evidence['invitation']['items'];
+                            $selection=str_starts_with($intent,'draft_')?(int)substr($intent,6)-1:null;
+                            if($selection!==null&&!isset($targets[$selection])){
+                                $stateName='open';$answer='Choose one of the drafts listed in this invitation.';break;
+                            }
+                            $indices=$selection===null?array_keys($targets):[$selection];
+                            if($selection===null&&count($targets)>1)$stateName='open';
+                            foreach($indices as $index){
+                                $selected=$targets[$index];
+                                $actions[]=['type'=>'email_review','id'=>$selected['id'],'conversation_id'=>$selected['conversation_id'],
+                                    'is_reply'=>$selected['is_reply'],'auto'=>false,'invitation_title'=>$items[$index]['title']];
+                            }
+                            $answer=$stateName==='open'?'Choose a draft below, or say first, second or third. Each opens for your review.'
+                                :'Open the selected saved draft below. You can edit it and review it before sending.';
+                            break;
+                        }
                         $answer='Who should the draft go to, and what should it say? Try “Draft an email to name@example.com about our meeting.” You can review the draft in Chat.';
                         break;
                     case 'today':
@@ -288,7 +316,8 @@ function vp3_casual_checkin_saved_reply_v1(PDO $pdo,array $origin,string $text,?
         throw new RuntimeException('The conversation advanced after this check-in reply.',409);
     }
     $goal=$origin['goal'];
-    if($state['state']==='owner_resolved'&&(in_array($goal['primary'],['casual:today','casual:resume','casual:youtube_history'],true)
+    if(in_array($state['state'],['owner_resolved','open'],true)&&(isset($origin['result']['initiative_tool_result']['output']['invitation'])
+        ||in_array($goal['primary'],['casual:today','casual:resume','casual:youtube_history'],true)
         ||vp3_casual_starter_specialist_v1($goal['primary'])!==null)){
         vp3_coordination_result_evidence_v1($pdo,$origin['user'],$goal['binding'],$goal,$origin['result']['initiative_tool_result']);
     }

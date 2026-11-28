@@ -4,6 +4,7 @@ declare(strict_types=1);
 require_once __DIR__.'/agent-casual-checkin-settings-v1.php';
 require_once __DIR__.'/agent-media-entertainment-v1.php';
 require_once __DIR__.'/agent-specialist-starters-v1.php';
+require_once __DIR__.'/agent-specialist-invitations-v1.php';
 
 const VP3_CASUAL_CHECKIN_QUESTIONS_V1 = [
     'youtube_history'=>'Want to watch something on YouTube?',
@@ -183,6 +184,12 @@ function vp3_casual_checkin_record_v1(PDO $pdo,int $owner,string $kind,int $cid,
         if(in_array($kind,['today','resume'],true)&&is_string($evidence['source_ref']??null))$state['source_ref']=$evidence['source_ref'];
     }
     if($offers)$state['starter_offers']=$offers;
+    $invitationOffers=is_array($prior['invitation_offers']??null)?$prior['invitation_offers']:[];
+    if(isset($evidence['invitation_pin'])){
+        $invitationOffers[$kind]=['kind'=>$kind,'conversation_id'=>$cid,'agent_id'=>$evidence['agent_id']??null,
+            'offer_seed'=>$state['offer_seed']??vp3_casual_checkin_seed_v1($prior),'invitation_pin'=>$evidence['invitation_pin']];
+    }else unset($invitationOffers[$kind]);
+    if($invitationOffers)$state['invitation_offers']=$invitationOffers;
     $lastMedia=in_array($kind,VP3_CASUAL_MEDIA_KINDS_V1,true)?$messageId:($prior['media_offer_message_id']??0);
     if($lastMedia===0&&in_array($prior['kind']??null,VP3_CASUAL_MEDIA_KINDS_V1,true)){
         $lastMedia=vp3_casual_checkin_last_message_v1($pdo,$owner,$prior);
@@ -266,6 +273,12 @@ function vp3_casual_checkin_sources_v1(PDO $pdo,array $scope,array $binding,?arr
                 continue;
             }
             if(!$available)continue;
+            // Existing work takes precedence over a one-time generic capability demonstration.
+            if($kind==='starter-gmail'){
+                $drafts=vp3_specialist_invitation_email_v1($pdo,$scope,$binding);
+                if($drafts['state']!=='empty')continue;
+            }
+            if($kind==='starter-media'&&vp3_casual_checkin_music_v1($pdo,$scope,null)!==null)continue;
             $result['items'][$ref]=vp3_coordination_source_item_v1($ref,'casual',$example['title'],$example['title'],'',$example['question'],
                 vp3_agent_activity_chat_href_v1($scope['agent_id'],$scope['conversation_id']),'ready','low',
                 ['specialist-starter-v1',$owner,$scope['agent_id'],$scope['conversation_id'],$example['question']])
@@ -280,6 +293,7 @@ function vp3_casual_checkin_sources_v1(PDO $pdo,array $scope,array $binding,?arr
         // invitation keeps that anchor and its exact source while it is fresh.
         $savedHistory=$delivery['last_history_offer']??[];
         $previous=$kind==='youtube_history'&&($delivery['kind']??null)!==$kind?$savedHistory:$delivery;
+        if(isset($delivery['invitation_offers'][$kind]))$previous=$delivery['invitation_offers'][$kind]+$previous;
         $posted=$usePosted&&!$discovery
             &&($previous['kind']??null)===$kind&&($previous['conversation_id']??null)===$scope['conversation_id']
             &&($previous['agent_id']??null)===$scope['agent_id'];
@@ -287,6 +301,8 @@ function vp3_casual_checkin_sources_v1(PDO $pdo,array $scope,array $binding,?arr
         $trackId=$posted&&is_int($previous['track_id']??null)?$previous['track_id']:null;
         $sourceRef=$posted&&is_string($previous['source_ref']??null)?$previous['source_ref']:null;
         $historyPin=$posted&&is_array($previous['history_pin']??null)?$previous['history_pin']:null;
+        $invitationPin=$posted&&is_array($previous['invitation_pin']??null)?$previous['invitation_pin']:null;
+        $selectionPin=$kind!=='email'&&isset($invitationPin['selection'])?$invitationPin['selection']:$invitationPin;
         $excludePin=!$posted&&is_array($savedHistory['history_pin']??null)?$savedHistory['history_pin']:null;
         // Pacing governs new offers, while existing offers retain their exact reply target.
         if($kind==='youtube_history'&&in_array($historyGate,['disabled','report_only'],true))continue;
@@ -294,14 +310,27 @@ function vp3_casual_checkin_sources_v1(PDO $pdo,array $scope,array $binding,?arr
             $choice=match($kind){
                 'youtube_history'=>vp3_casual_checkin_youtube_history_v1($pdo,$scope,$now->getTimestamp(),$historyPin,$excludePin,
                     (array)($delivery['history_shown']??[])),
-                'media'=>$allowMusic&&$allowYoutube?vp3_casual_checkin_media_v1($pdo,$scope,$trackId):null,
-                'music'=>$allowMusic?vp3_casual_checkin_music_v1($pdo,$scope,$trackId):null,
-                'youtube'=>$allowYoutube?vp3_casual_checkin_youtube_v1($pdo,$owner):null,
-                'email'=>vp3_casual_checkin_email_v1($pdo,$owner),
+                'media'=>$allowMusic&&$allowYoutube?vp3_casual_checkin_media_v1($pdo,$scope,$trackId,$selectionPin):null,
+                'music'=>$allowMusic?vp3_casual_checkin_music_v1($pdo,$scope,$trackId,$selectionPin):null,
+                'youtube'=>$allowYoutube?vp3_casual_checkin_youtube_choice_v1($pdo,$scope,$selectionPin):null,
+                'email'=>vp3_casual_checkin_email_v1($pdo,$owner,$scope,$binding,$invitationPin),
                 'today'=>vp3_casual_checkin_today_v1($pdo,$scope,$now,$existingItems,$sourceRef),
                 'resume'=>vp3_casual_checkin_resume_v1($pdo,$scope,$binding,$now,$existingItems,$sourceRef),
                 default=>null,
             };
+            if($choice!==null&&$kind!=='email'&&isset($choice['evidence']['invitation'])){
+                $invitation=$choice['evidence']['invitation'];
+                $hint=vp3_specialist_invitation_connection_v1(implode(' ',array_column($invitation['items'],'title')),
+                    vp3_specialist_invitation_reports_v1($pdo,$scope,$binding));
+                $invitation['context']=$hint['text']??'';
+                $contextPin=['selection'=>$choice['evidence']['invitation_pin'],'context_key'=>$hint['key']??null];
+                if($invitationPin!==null&&$invitationPin!==$contextPin)$choice=null;
+                else{
+                    $choice['evidence']['invitation']=$invitation;
+                    $choice['evidence']['invitation_pin']=$contextPin;
+                    $choice['identity'][]=[$contextPin,$invitation];
+                }
+            }
         }catch(Throwable $error){
             if($error instanceof PDOException&&((string)$error->getCode()==='40001'
                 ||in_array((int)($error->errorInfo[1]??0),[1020,1205,1213],true)))throw $error;
@@ -326,28 +355,68 @@ function vp3_casual_checkin_youtube_history_v1(PDO $pdo,array $scope,int $now,?a
     return $exclude!==null&&($choice['evidence']['history_pin']??null)===$exclude?null:$choice;
 }
 
-function vp3_casual_checkin_media_v1(PDO $pdo,array $scope,?int $trackId): ?array
+function vp3_casual_checkin_media_v1(PDO $pdo,array $scope,?int $trackId,?array $pin=null): ?array
 {
-    $music=vp3_casual_checkin_music_v1($pdo,$scope,$trackId);
+    $music=vp3_casual_checkin_music_v1($pdo,$scope,$trackId,$pin['music']??null);
     if($music===null)return null;
     $youtube=vp3_casual_checkin_youtube_v1($pdo,(int)$scope['user']['id']);
     if($youtube===null)return null;
-    return ['title'=>'Music or a video','summary'=>'A VP3 Music pick and YouTube search are available.',
-        'identity'=>[$music['identity'],$youtube['identity']],'evidence'=>$music['evidence']];
+    $video=vp3_casual_checkin_youtube_choice_v1($pdo,$scope,$pin['youtube']??null);
+    if($pin!==null&&($pin['music']??null)!==($music['evidence']['invitation_pin']??null))return null;
+    $savedVideo=isset($video['evidence']['invitation']);
+    if($pin!==null&&($pin['youtube']??null)!==($savedVideo?$video['evidence']['invitation_pin']:null))return null;
+    $presentation=$music['evidence']['invitation'];
+    $presentation['kind']='media';
+    if($savedVideo){$presentation['kind']='media';$presentation['items'][]=$video['evidence']['invitation']['items'][0];}
+    return ['title'=>'Music or a video','summary'=>'Named choices from your current permitted Media sources.',
+        'question'=>$savedVideo?'Would you like to listen to the track or watch the saved video?':'Want to hear this track, or find something new on YouTube?',
+        'identity'=>[$music['identity'],$savedVideo?$video['identity']:$youtube['identity']],
+        'evidence'=>array_replace($music['evidence'],$savedVideo?array_intersect_key($video['evidence'],array_flip(['history_playback','history_topic'])):[],
+            ['invitation'=>$presentation,'invitation_pin'=>['music'=>$music['evidence']['invitation_pin'],'youtube'=>$savedVideo?$video['evidence']['invitation_pin']:null],
+                'invitation_default'=>$savedVideo?null:'music'])];
 }
 
-function vp3_casual_checkin_music_v1(PDO $pdo,array $scope,?int $trackId): ?array
+function vp3_casual_checkin_music_v1(PDO $pdo,array $scope,?int $trackId,?array $pin=null): ?array
 {
     require_once __DIR__.'/agent-media-playback-v1.php';
     $user=$scope['user'];
+    if($pin!==null){
+        if(array_keys($pin)!==['track_id','revision']||!is_int($pin['track_id'])||$pin['track_id']<1
+            ||!is_string($pin['revision']))return null;
+        $trackId=$pin['track_id'];
+    }
     $track=$trackId===null
         ?vp3_media_native_pick_v1($pdo,$user,$scope['agent_id'],vp3_media_native_taste_v1($pdo,(int)$user['id']))
         :vp3_media_native_track_v1($pdo,$user,$scope['agent_id'],$trackId);
     if($track===null)return null;
-    return ['title'=>'Music','summary'=>'A track is available in the VP3 Music Library.',
+    $nextPin=['track_id'=>$track['track_id'],'revision'=>$track['revision']];
+    if($pin!==null&&$pin!==$nextPin)return null;
+    $title=vp3_specialist_invitation_text_v1($track['title'],100);
+    $artist=vp3_specialist_invitation_text_v1($track['artist']??'',80);
+    $genre=vp3_specialist_invitation_text_v1($track['genre']??'',65);
+    $detail='VP3 Music Library'.($artist===''?'':' · '.$artist).($genre===''?'':' · '.$genre);
+    return ['title'=>'Music','summary'=>'A named track from your current VP3 Music Library.',
+        'question'=>'How about listening to this track?',
         'url'=>url('/music-library.php'),
         'identity'=>[$track['track_id'],$track['revision']],
-        'evidence'=>['track_id'=>$track['track_id'],'track_revision'=>$track['revision'],'source_title'=>$track['title']]];
+        'evidence'=>['track_id'=>$track['track_id'],'track_revision'=>$track['revision'],'source_title'=>$track['title'],
+            'invitation'=>['kind'=>'music','items'=>[['title'=>$title,'detail'=>vp3_specialist_invitation_text_v1($detail,180)]],'context'=>''],
+            'invitation_pin'=>$nextPin]];
+}
+
+/** Saved YouTube evidence is optional and remains subject to its existing history consent. */
+function vp3_casual_checkin_youtube_choice_v1(PDO $pdo,array $scope,?array $pin=null): ?array
+{
+    $available=vp3_casual_checkin_youtube_v1($pdo,(int)$scope['user']['id']);
+    if($available===null)return null;
+    require_once __DIR__.'/agent-idle-media-history-v1.php';
+    $choice=vp3_idle_media_history_choice_v1($pdo,$scope,time(),$pin,null);
+    if($pin!==null&&$choice===null)return null;
+    if($choice===null)return $available;
+    $choice['evidence']['invitation_pin']=$choice['evidence']['history_pin'];
+    $choice['evidence']['invitation']=['kind'=>'youtube','items'=>[['title'=>vp3_specialist_invitation_text_v1($choice['title'],100),
+        'detail'=>vp3_specialist_invitation_text_v1($choice['summary'],180)]],'context'=>''];
+    return $choice;
 }
 
 function vp3_casual_checkin_youtube_v1(PDO $pdo,int $owner): ?array
@@ -365,7 +434,7 @@ function vp3_casual_checkin_youtube_v1(PDO $pdo,int $owner): ?array
         'identity'=>[VP3_YOUTUBE_CONSENT_POLICY_V1]];
 }
 
-function vp3_casual_checkin_email_v1(PDO $pdo,int $owner): ?array
+function vp3_casual_checkin_email_v1(PDO $pdo,int $owner,?array $scope=null,array $binding=[],?array $pin=null): ?array
 {
     if(!table_exists('agent_connection_email_drafts_v1'))return null;
     require_once __DIR__.'/agent-connections-v1.php';
@@ -373,6 +442,11 @@ function vp3_casual_checkin_email_v1(PDO $pdo,int $owner): ?array
     $connection=$status['connection']??null;
     if(empty($status['provider_ready'])||($connection['status']??null)!=='connected'
         ||empty($connection['permissions']['send'])||empty($connection['revision']))return null;
+    if($scope!==null){
+        $drafts=vp3_specialist_invitation_email_v1($pdo,$scope,$binding,$pin);
+        if($drafts['state']==='ready')return $drafts['choice'];
+        if($drafts['state']!=='empty')return null;
+    }
     return ['title'=>'Draft an email','summary'=>'Gmail drafting is available in this Chat.',
         'identity'=>[$connection['id'],$connection['revision']]];
 }

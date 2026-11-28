@@ -28,6 +28,11 @@ on:
       - 'tests/fixtures/phone-agent-email-call-*'
       - 'tests/fixtures/agent-email-preferences-*'
       - 'includes/*gmail*'
+      - 'includes/agent-specialist-invitations-v1.php'
+      - 'includes/agent-casual-checkin*.php'
+      - 'includes/agent-coordination-work-v1.php'
+      - 'chat-media-v86.css'
+      - 'tests/*specialist-invitations*'
       - 'includes/*email*'
       - 'includes/agent-connections-v1.php'
       - 'includes/agent-chat-runtime-v2160.php'
@@ -80,6 +85,11 @@ on:
       - 'tests/fixtures/phone-agent-email-call-*'
       - 'tests/fixtures/agent-email-preferences-*'
       - 'includes/*gmail*'
+      - 'includes/agent-specialist-invitations-v1.php'
+      - 'includes/agent-casual-checkin*.php'
+      - 'includes/agent-coordination-work-v1.php'
+      - 'chat-media-v86.css'
+      - 'tests/*specialist-invitations*'
       - 'includes/*email*'
       - 'includes/agent-connections-v1.php'
       - 'includes/agent-chat-runtime-v2160.php'
@@ -152,6 +162,17 @@ jobs:
           php tests/agent-email-composer-v1.php
           php tests/agent-email-attachments-v1.php
           php tests/agent-email-display-v1.php
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Grounded specialist invitations, exact native review and compact layouts
+        env:
+          VP3_INVITATION_SCREENSHOT_DIR: artifacts/specialist-invitations
+        run: |
+          php tests/agent-specialist-invitations-v1.php
+          npm install --no-save --ignore-scripts playwright@1.62.1
+          bash tools/install-ci-chromium.sh
+          node tests/specialist-invitations-browser-v1.mjs
       - name: Explicit draft writing preferences, private revisions and publication recovery
         run: |
           php tests/agent-brain-soul-v1.php

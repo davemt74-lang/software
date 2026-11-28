@@ -68,6 +68,12 @@ $creative=array_values(array_filter($reports,static fn(array $report):bool=>$rep
 canvas_pipeline_check(count($creative)===1&&$creative[0]['ideas'][0]['primary']===$ideaRef
     &&$authority['brainstorm']['run_id']===$run,
     'OB1 receives the same receipt-verified ideas with the exact original source references');
+require_once dirname(__DIR__).'/includes/agent-specialist-invitations-v1.php';
+$invitationReports=vp3_specialist_invitation_reports_v1($pdo,vp3_agent_activity_scope_v1($pdo,$owner,7,(int)$binding['conversation_id']),$binding);
+canvas_pipeline_check(count(array_filter($invitationReports,static fn(array $row):bool=>$row['family']==='brainstorm'
+    &&$row['key']===$authority['brainstorm']['key']))===1
+    &&vp3_specialist_invitation_connection_v1('Reusable preparation workflow',$invitationReports)!==null,
+    'Invitations reuse the exact current verified Brainstorming idea only for related topics');
 $q=$pdo->prepare('SELECT id,result_json FROM agent_workflow_receipts WHERE run_id=? ORDER BY id DESC LIMIT 1');
 $q->execute([$run]);$receipt=$q->fetch(PDO::FETCH_ASSOC);
 $pdo->prepare('UPDATE agent_workflow_receipts SET result_json=? WHERE id=?')->execute([$receipt['result_json'].' ',$receipt['id']]);
