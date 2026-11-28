@@ -192,12 +192,13 @@ function vp3_music_preferences_state_v1(array $selected): array
 {
     $row=$selected['row'];$item=$selected['item'];$preference=$row['preference']??'clear';
     if($selected['source']==='youtube'&&$row!==null&&(int)$row['consent_at']!==$selected['sources']['consent_at'])$preference='clear';
-    $value=$preference==='clear'?'neutral':$preference;
+    $value=$preference==='clear'?'neutral':$preference;$hasSaved=$row!==null&&$row['preference']!=='clear';
     return ['protocol'=>VP3_MUSIC_PREFERENCES_PROTOCOL_V1]+vp3_music_chat_scope_fields_v1($selected['scope'])+[
         'reference'=>$row?vp3_music_preferences_reference_v1($row):null,'source'=>$selected['source'],'source_id'=>$item['source_id']??'',
         'title'=>$item['title']??'Unavailable music item','artist'=>$item['artist']??'','metadata_available'=>$item!==null,
-        'preference'=>$value,'has_saved_preference'=>$row!==null&&$row['preference']!=='clear','revision'=>(int)($row['revision']??0),
-        'reason'=>match($value){'like'=>'You explicitly liked this item.','dislike'=>'You explicitly disliked this item.',default=>'No explicit preference is saved for this item.'}];
+        'preference'=>$value,'has_saved_preference'=>$hasSaved,'revision'=>(int)($row['revision']??0),
+        'reason'=>match($value){'like'=>'You explicitly liked this item.','dislike'=>'You explicitly disliked this item.',
+            default=>$hasSaved?'Your saved preference is inactive. You can clear it.':'No explicit preference is saved for this item.'}];
 }
 
 function vp3_music_preferences_read_v1(PDO $pdo,array $user,int $agent,int $cid,array $selection): array
@@ -419,7 +420,7 @@ function vp3_music_preferences_snapshot_v1(PDO $pdo,array $user,int $agent,int $
             $preference=$preference==='clear'?'neutral':$preference;
             $facts=$evidence[$map]??['play_count'=>0,'measured_plays'=>0,'measured_seconds'=>0.0,'deliberate_skips'=>0];
             $reason=match($preference){'like'=>'You explicitly liked this item.','dislike'=>'You explicitly disliked this item.',
-                default=>$facts['measured_plays']>1?'You have repeated measured listening for this item.':($facts['measured_plays']===1?'You have measured listening for this item.':'No explicit preference is saved for this item.')};
+                default=>$facts['measured_plays']>1?'You have repeated measured listening for this item.':($facts['measured_plays']===1?'You have measured listening for this item.':'No active explicit preference applies to this item.')};
             if($facts['deliberate_skips']>0)$reason.=' You deliberately chose Next during '.$facts['deliberate_skips'].' recorded play'.($facts['deliberate_skips']===1?'':'s').'; this is not a dislike.';
             if($facts['play_count']>0)$reason.=' Listening evidence covers up to 200 retained receipts from the last 30 days.';
             $items[$source.':'.$item['source_id']]=$item+['preference'=>$preference,'preference_revision'=>(int)($row['revision']??0),'reason'=>$reason]+$facts;
