@@ -7,6 +7,7 @@ require_once __DIR__.'/gmail-email-capture-input-v1.php';
 require_once __DIR__.'/agent-gmail-document-input-v1.php';
 require_once __DIR__.'/user-calendar-v1300.php';
 require_once __DIR__.'/agent-reminders-v1.php';
+require_once __DIR__.'/gmail-email-capture-history-v1.php';
 
 function gmail_email_capture_row_v1(PDO $pdo,int $owner,int $agent,int $chat,string $id): ?array
 {
@@ -16,7 +17,9 @@ function gmail_email_capture_row_v1(PDO $pdo,int $owner,int $agent,int $chat,str
 
 function gmail_email_capture_public_v1(array $row): array
 {
+    $capture=json_decode(ai_decrypt_secret($row['capture_enc']),true,16,JSON_THROW_ON_ERROR);
     return ['id'=>$row['id'],'state'=>$row['state'],'reason'=>$row['reason'],
+        'mode'=>$capture['mode'],'selected_text'=>$capture['selected_text'],'created_at'=>gmdate('Y-m-d\TH:i:s\Z',intdiv((int)$row['created_epoch'],1000000)),'actions'=>[],
         'result'=>$row['state']==='ready'?json_decode(ai_decrypt_secret($row['result_enc']),true,16,JSON_THROW_ON_ERROR):null,
         'received_text'=>$row['state']==='failed'&&$row['answer_enc']!==null?mb_substr(ai_decrypt_secret($row['answer_enc']),0,12000):'',
         'received_response_retained'=>$row['answer_enc']!==null];
@@ -55,11 +58,7 @@ function gmail_email_capture_analyze_v1(PDO $pdo,array $user,array $principal,in
     });
     if (!$claim) {
         $row=gmail_email_capture_row_v1($pdo,$owner,$agent,$chat,$id);
-        if (in_array($row['state'],['preparing','dispatched'],true)&&(int)$row['lease_epoch']<=time()) {
-            $pdo->prepare("UPDATE agent_gmail_captures_v1 SET state='failed',reason=?,updated_epoch=? WHERE id=? AND state IN ('preparing','dispatched') AND lease_epoch<=?")->execute([$row['state']==='preparing'?'not_dispatched':'interrupted',time(),$id,time()]);
-            $row=gmail_email_capture_row_v1($pdo,$owner,$agent,$chat,$id);
-        }
-        return gmail_email_capture_public_v1($row);
+        return gmail_email_capture_public_v1(gmail_email_capture_expire_v1($pdo,$row));
     }
     $dispatched=false;
     try {
@@ -89,16 +88,16 @@ function gmail_email_capture_analyze_v1(PDO $pdo,array $user,array $principal,in
         $received=is_string($answer['answer']??null)?$answer['answer']:'';
         // Preserve the response before validation and before any source recheck can fail.
         if ($dispatched&&$received!==''&&strlen($received)<=48000) {
-            $pdo->prepare("UPDATE agent_gmail_captures_v1 SET answer_enc=?,updated_epoch=? WHERE id=? AND state='dispatched'")->execute([ai_encrypt_secret($received),time(),$id]);
+            $pdo->prepare("UPDATE agent_gmail_captures_v1 SET answer_enc=?,updated_epoch=? WHERE id=? AND (state='dispatched' OR (state='failed' AND reason='interrupted'))")->execute([ai_encrypt_secret($received),time(),$id]);
         }
         if (!$dispatched||empty($answer['ok'])) throw new DomainException('The model did not return a complete analysis. Check AI usage before starting a new attempt.',503);
         $result=gmail_email_capture_result_v1($received);
         gmail_email_capture_read_v1($pdo,$user,$principal,$chat,$source,$current,$http);
-        $pdo->prepare("UPDATE agent_gmail_captures_v1 SET state='ready',result_enc=?,lease_epoch=0,updated_epoch=? WHERE id=? AND state='dispatched'")
+        $pdo->prepare("UPDATE agent_gmail_captures_v1 SET state='ready',reason=NULL,result_enc=?,lease_epoch=0,updated_epoch=? WHERE id=? AND (state='dispatched' OR (state='failed' AND reason='interrupted'))")
             ->execute([ai_encrypt_secret(json_encode($result,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE)),time(),$id]);
     } catch (Throwable $e) {
         $reason=in_array((int)$e->getCode(),[401,403,404,409,419],true)?'source_changed':(!$dispatched?'not_dispatched':($e->getCode()===502?'invalid_response':'analysis_unavailable'));
-        $pdo->prepare("UPDATE agent_gmail_captures_v1 SET state='failed',reason=?,lease_epoch=0,updated_epoch=? WHERE id=? AND state IN ('preparing','dispatched')")->execute([$reason,time(),$id]);
+        $pdo->prepare("UPDATE agent_gmail_captures_v1 SET state='failed',reason=?,lease_epoch=0,updated_epoch=? WHERE id=? AND (state IN ('preparing','dispatched') OR (state='failed' AND reason='interrupted'))")->execute([$reason,time(),$id]);
         throw $e;
     }
     return gmail_email_capture_public_v1(gmail_email_capture_row_v1($pdo,$owner,$agent,$chat,$id));
@@ -111,11 +110,8 @@ function gmail_email_capture_get_v1(PDO $pdo,array $user,array $principal,int $c
     if (!gmail_email_capture_ready_v1($pdo)) throw new DomainException('Run Database Upgrade to enable email area analysis.',503);
     $row=gmail_email_capture_row_v1($pdo,(int)$user['id'],(int)($principal['agent_id']??0),$chat,$id);
     if (!$row||!hash_equals($row['source_hash'],gmail_email_capture_source_hash_v1($source,(int)($principal['agent_id']??0),$chat))) throw new DomainException('This analysis belongs to another email selection.',404);
-    if (in_array($row['state'],['preparing','dispatched'],true)&&(int)$row['lease_epoch']<=time()) {
-        $pdo->prepare("UPDATE agent_gmail_captures_v1 SET state='failed',reason=?,updated_epoch=? WHERE id=? AND state IN ('preparing','dispatched') AND lease_epoch<=?")->execute([$row['state']==='preparing'?'not_dispatched':'interrupted',time(),$id,time()]);
-        $row=gmail_email_capture_row_v1($pdo,(int)$user['id'],(int)($principal['agent_id']??0),$chat,$id);
-    }
-    return gmail_email_capture_public_v1($row);
+    return array_replace(gmail_email_capture_public_v1(gmail_email_capture_expire_v1($pdo,$row)),
+        ['actions'=>gmail_email_capture_actions_v1($pdo,$user,$principal,$chat,$source,$id)]);
 }
 
 /** Explicit reviewed fields use the existing native mutation kernels, with no inference. */
@@ -123,6 +119,8 @@ function gmail_email_capture_save_v1(PDO $pdo,array $user,array $principal,int $
 {
     if (!in_array($action,['calendar','reminder'],true)) throw new DomainException('Choose a calendar event or reminder.',422);
     $mail=gmail_email_capture_read_v1($pdo,$user,$principal,$chat,$source,$current,$http);
+    if (!gmail_email_capture_ready_v1($pdo)) throw new DomainException('Run Database Upgrade to save email actions.',503);
+    $capture=gmail_email_capture_action_capture_v1($pdo,$user,$principal,$chat,$source,$input);
     $text=gmail_email_capture_text_v1($input['text']??'',6000);
     $fields=$input['fields']??null;
     if (!is_array($fields)||array_is_list($fields)) throw new DomainException('Review the event or reminder details.',422);
@@ -135,7 +133,8 @@ function gmail_email_capture_save_v1(PDO $pdo,array $user,array $principal,int $
     $notes='Source email: '.$mail['subject']."\nFrom: ".$mail['from']."\nGmail message: ".$mail['message_id']."\nSelected email text:\n".$text;
     $key=gmail_email_capture_hash_v1([$sourceKey,$action,$title,$zone,$fields,$text]);
     $guard=static function()use($pdo,$user,$principal,$chat,$source,$current):void{
-        $current();agent_connection_email_chat_authority_v1($pdo,$user,$principal,$chat);
+        if ($current()===false) throw new DomainException('Private email access changed.',403);
+        agent_connection_email_chat_authority_v1($pdo,$user,$principal,$chat);
         $c=agent_connections_require_grant_v1($pdo,(int)$user['id'],$source['connection'],'read',$source['grant']);
         if ($c['client_fingerprint']!==$source['fingerprint']||$c['account_email']!==$source['account']) throw new DomainException('The email account changed.',409);
     };
@@ -143,11 +142,12 @@ function gmail_email_capture_save_v1(PDO $pdo,array $user,array $principal,int $
         if (!has_permission('account.access',$user)) throw new DomainException('Calendar access is unavailable.',403);
         if (array_diff(array_keys($fields),['title','timezone','date','start_time','end_date','end_time','location'])) throw new DomainException('Review the calendar fields.',422);
         try {user_calendar_local_range_v1300($fields,$zone);} catch (RuntimeException $e) {throw new DomainException($e->getMessage(),422,$e);}
-        $event=section12_owner_transaction($pdo,(int)$user['id'],static function()use($pdo,$user,$fields,$title,$zone,$notes,$key,$guard):array{
+        $saved=section12_owner_transaction($pdo,(int)$user['id'],static function()use($pdo,$user,$principal,$chat,$source,$capture,$fields,$title,$zone,$notes,$key,$guard):array{
             $guard();$event=user_calendar_create_local_event_v1300($pdo,$user,array_replace($fields,['title'=>$title,'timezone'=>$zone,'description'=>$notes]),'user',null,'gmail-capture:'.$key);
-            $guard();return $event;
+            $receipt=gmail_email_capture_record_action_v1($pdo,$user,$principal,$chat,$source,$capture,$key,'calendar',(int)$event['id']);
+            $guard();return ['id'=>(int)$event['id'],'action'=>$receipt];
         });
-        return ['kind'=>'calendar','id'=>(int)$event['id'],'message'=>'Calendar event saved.','source'=>['subject'=>$mail['subject'],'from'=>$mail['from']]];
+        return ['kind'=>'calendar']+$saved+['message'=>'Calendar event saved.','source'=>['subject'=>$mail['subject'],'from'=>$mail['from']]];
     }
     if (array_diff(array_keys($fields),['title','timezone','start_local'])) throw new DomainException('Review the reminder fields.',422);
     if (!reminder_ready_v1($pdo)) throw new DomainException('Run Database Upgrade to enable reminders.',503);
@@ -155,7 +155,7 @@ function gmail_email_capture_save_v1(PDO $pdo,array $user,array $principal,int $
     reminder_schedule_v1($schedule,reminder_now_v1());
     $origin=['connection'=>$source['connection'],'message'=>$source['message'],'thread'=>$source['thread'],'revision'=>$source['revision'],
         'subject'=>$mail['subject'],'from'=>$mail['from'],'selected_text'=>$text];
-    $result=agent_commerce_atomic_pa2($pdo,static function()use($pdo,$user,$chat,$key,$schedule,$notes,$guard,$origin):array{
+    $result=agent_commerce_atomic_pa2($pdo,static function()use($pdo,$user,$principal,$chat,$source,$capture,$key,$schedule,$notes,$guard,$origin):array{
         $guard();$r=reminder_execute_locked_v1($pdo,(int)$user['id'],'cloud:'.$chat,'gmail-capture:'.$key,json_encode([$schedule,$notes],JSON_THROW_ON_ERROR),['operation'=>'create','schedule'=>$schedule],[],$chat,null,$schedule['timezone']);
         // Keep provenance in the canonical receipt, without adding a second reminder ledger.
         if (!isset($r['email_capture_source_enc'])) {
@@ -163,7 +163,9 @@ function gmail_email_capture_save_v1(PDO $pdo,array $user,array $principal,int $
             $pdo->prepare('UPDATE agent_reminder_turns_v1 SET result_json=? WHERE owner_user_id=? AND thread_key=? AND request_key=?')
                 ->execute([json_encode($r,JSON_THROW_ON_ERROR|JSON_UNESCAPED_UNICODE),(int)$user['id'],'cloud:'.$chat,'gmail-capture:'.$key]);
         }
-        $guard();return $r;
+        $id=(int)($r['tool_receipt']['record_id']??0);
+        $receipt=gmail_email_capture_record_action_v1($pdo,$user,$principal,$chat,$source,$capture,$key,'reminder',$id);
+        $guard();return ['id'=>$id,'message'=>$r['answer'],'action'=>$receipt];
     });
-    return ['kind'=>'reminder','message'=>$result['answer'],'source'=>['subject'=>$mail['subject'],'from'=>$mail['from']]];
+    return ['kind'=>'reminder']+$result+['source'=>['subject'=>$mail['subject'],'from'=>$mail['from']]];
 }

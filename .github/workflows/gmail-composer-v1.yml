@@ -166,6 +166,7 @@ jobs:
       - name: Owner-selected email regions, source fences and native action kernels
         run: |
           php tests/gmail-email-capture-v1.php
+          php tests/gmail-email-capture-history-v1.php
           php tests/gmail-email-capture-provider-v1.php
           for file in includes/gmail-email-capture*.php api/gmail-email-capture-v1.php; do php -l "$file"; done
       - name: Private Phone Agent enrollment, native sources, receipts and background push

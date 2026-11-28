@@ -15,7 +15,7 @@ try {
     $input=json_decode($raw,true,12,JSON_THROW_ON_ERROR);
     if (!is_array($input)||array_is_list($input)) throw new DomainException('Choose a valid email selection action.',422);
     $base=['action','owner_key','agent_id','conversation_id','csrf_token','source_ref'];
-    $fields=match($input['action']??null){'analyze'=>['request_id','mode','text','image','timezone'],'get'=>['capture_id','request_id'],'calendar','reminder'=>['text','fields'],default=>throw new DomainException('Choose an email selection action.',422)};
+    $fields=match($input['action']??null){'analyze'=>['request_id','mode','text','image','timezone'],'get'=>['capture_id','request_id'],'history'=>['cursor'],'calendar','reminder','task','chat'=>['text','fields','capture_id'],default=>throw new DomainException('Choose an email selection action.',422)};
     if (!is_array($input)||array_is_list($input)||array_diff(array_keys($input),[...$base,...$fields])||!is_string($input['source_ref']??null)) throw new DomainException('Choose a valid email selection action.',422);
     if (defined('VP3_PHONE_AGENT_NATIVE_V1')||vp3_participant_scope_v1()!==null) throw new DomainException('Open your private owner Chat to use email selections.',403);
     $user=current_user();
@@ -32,10 +32,14 @@ try {
         if (isset($input['capture_id'])||!is_string($input['request_id'])||!preg_match('/\A[a-f0-9]{32}\z/D',$input['request_id'])) throw new DomainException('Choose one saved analysis request.',422);
         $input['capture_id']=substr(gmail_email_capture_hash_v1([(int)$user['id'],$input['agent_id'],$input['conversation_id'],$input['request_id']]),0,32);
     }
+    if ($input['action']==='get'&&(!is_string($input['capture_id']??null)||!preg_match('/\A[a-f0-9]{32}\z/D',$input['capture_id']))) throw new DomainException('Choose a saved email analysis.',422);
+    if ($input['action']==='history'&&isset($input['cursor'])&&!is_string($input['cursor'])) throw new DomainException('Refresh the saved analysis list.',422);
     if ($input['action']==='analyze') ignore_user_abort(true);
     $result=match($input['action']) {
         'analyze'=>['capture'=>gmail_email_capture_analyze_v1($pdo,$user,$principal,$input['conversation_id'],$source,$input,$current)],
         'get'=>['capture'=>gmail_email_capture_get_v1($pdo,$user,$principal,$input['conversation_id'],$source,(string)($input['capture_id']??''),$current)],
+        'history'=>['history'=>gmail_email_capture_history_v1($pdo,$user,$principal,$input['conversation_id'],$source,$input['cursor']??null,$current)],
+        'task','chat'=>['saved'=>gmail_email_capture_finding_v1($pdo,$user,$principal,$input['conversation_id'],$source,$input['action'],$input,$current)],
         default=>['saved'=>gmail_email_capture_save_v1($pdo,$user,$principal,$input['conversation_id'],$source,$input['action'],$input,$current)],
     };
     $current();echo json_encode(['ok'=>true]+$result,JSON_THROW_ON_ERROR|JSON_INVALID_UTF8_SUBSTITUTE);

@@ -45,6 +45,12 @@ function gmail_email_capture_get_v1($pdo,$user,$principal,$chat,$source,$id,$cur
  $current();if(!preg_match('/^[a-f0-9]{32}$/D',$id))throw new DomainException('Invalid saved result.',422);
  header('X-Fixture-Capture: get');return ['id'=>$id,'state'=>'ready'];
 }
+function gmail_email_capture_history_v1($pdo,$user,$principal,$chat,$source,$cursor,$current):array{
+ $current();header('X-Fixture-Capture: history');return ['items'=>[],'next_cursor'=>null,'actions'=>[]];
+}
+function gmail_email_capture_finding_v1($pdo,$user,$principal,$chat,$source,$action,$input,$current):array{
+ $current();header('X-Fixture-Capture: '.$action);return ['kind'=>$action,'message'=>'Finding saved'];
+}
 function gmail_email_capture_save_v1($pdo,$user,$principal,$chat,$source,$action,$input,$current):array{
  $current();header('X-Fixture-Capture: '.$action);return ['kind'=>$action,'message'=>'Saved'];
 }
@@ -65,6 +71,9 @@ function gmail_email_capture_save_v1($pdo,$user,$principal,$chat,$source,$action
   const get={...input,action:'get'};for(const field of ['mode','text','image','timezone'])delete get[field];
   ({r,data}=await post(get));assert.equal(r.status,200);assert.equal(data.capture.id,id,'Lost-body GET derives the exact same scoped saved attempt identity');n++;
   for(const action of ['calendar','reminder']){const body={...input,action,fields:{title:'Reviewed action'}};for(const key of ['request_id','mode','image','timezone'])delete body[key];const {r}=await post(body);assert.equal(r.status,200);assert.equal(r.headers.get('x-fixture-capture'),action);n++;}
+  const base={owner_key:input.owner_key,agent_id:7,conversation_id:11,csrf_token:input.csrf_token,source_ref:token};
+  ({r,data}=await post({...base,action:'history'}));assert.equal(r.status,200);assert.deepEqual(data.history.items,[]);assert.equal(r.headers.get('x-fixture-capture'),'history');n++;
+  for(const action of ['task','chat']){({r,data}=await post({...base,action,capture_id:id,text:'Reviewed excerpt',fields:action==='task'?{title:'Reviewed task',notes:'Finding'}:{message:'Reviewed finding'}}));assert.equal(r.status,200);assert.equal(data.saved.kind,action);assert.equal(r.headers.get('x-fixture-capture'),action);n++;}
   await expect(input,{'X-Fixture-Anonymous':'1'},401,'anonymous capture');
   await expect(input,{'X-Fixture-Deny':'1'},401,'revoked Chat entitlement');
   await expect({...input,owner_key:'2'},{},409,'changed owner');
@@ -82,6 +91,13 @@ function gmail_email_capture_save_v1($pdo,$user,$principal,$chat,$source,$action
   await expect({...input,action:'send_email'},{},422,'no email send operation');
   await expect([] ,{},422,'JSON list');await expect('"scalar"',{},422,'JSON scalar');await expect('x'.repeat(460001),{},413,'bounded body');
   await expect({...get,capture_id:'d'.repeat(32)},{},422,'ambiguous saved result identity');
+  const captureGet={...base,action:'get',capture_id:[]};await expect(captureGet,{},422,'non-string saved result identity');
+  await expect({...base,action:'history',cursor:[]},{},422,'non-string history cursor');
+  for(const action of ['history','task','chat']){
+    const body={...base,action,...(action==='history'?{}:{fields:{title:'No side effect'},text:''})};
+    await expect(body,{'X-Fixture-Revoked':'1'},403,action+' rechecks the live private Chat');
+    await expect(body,{'X-Fixture-Phone':'1'},403,action+' remains unavailable to paired Phone authority');
+  }
   const system={...input,agent_id:0,conversation_id:14};({r}=await post(system));assert.equal(r.status,200);n++;
   console.log(`GMAIL_EMAIL_CAPTURE_HTTP=PASS (${n} cases)`);
 }catch(error){console.error(logs.slice(-3000));throw error;}
