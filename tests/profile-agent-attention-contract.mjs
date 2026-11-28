@@ -5,6 +5,8 @@ const domain=read('includes/profile-agent.php');
 const runtime=read('includes/profile-agent-runtime.php');
 const api=read('api/profile-agent.php');
 const publicService=read('includes/profile-agent-public-service-v110.php');
+const responses=read('includes/profile-agent-responses-v1.php');
+const configure=domain.slice(domain.indexOf('function profile_configure_agent('),domain.indexOf('function profile_session_token('));
 const page=read('profile.php');
 const profileComposition=read('profile-v900.php');
 const portalPage=read('profile-agent.php');
@@ -31,7 +33,9 @@ assert.match(ht,/profile-v900\.php\?username=\$1 \[L,QSA,NC\]/,'root username ro
 assert.match(profileComposition,/require\s+__DIR__\s*\.\s*['"]\/profile\.php['"]/,'Profile Commerce composition must retain the existing profile renderer');
 assert.doesNotMatch(ht,/system_agent_name/,'editable system-agent name does not control URL routing');
 assert.match(domain,/profile_username_valid/,'user chooses validated unique username');
-assert.match(domain,/user_agent_get_v236\(\$pdo,\$uid,\$agentId\)/,'profile agent must belong to owner');
+assert.match(configure,/SELECT id,is_active FROM user_agents WHERE id=\? AND owner_user_id=\?'\.vp3_profile_responses_lock_v1\(\$pdo\)[\s\S]*?execute\(\[\$agentId,\$uid\]\)/,'configured profile agent is read under lock within its owner scope');
+assert.match(configure,/if\(!\$agent\|\|empty\(\$agent\['is_active'\]\)\)throw new RuntimeException/,'configuration rejects missing, foreign and inactive agents before saving');
+assert.match(domain,/user_agent_get_v236\(\$pdo,\(int\)\$profile\['user_id'\],\$agentId\)/,'active public profile agent lookup remains scoped to the profile owner');
 assert.match(domain,/profile_agent_enabled/,'public Profile Agent has explicit enable switch');
 assert.doesNotMatch(domain,/if\(!\$agent\|\|empty\(\$agent\['is_active'\]\)\|\|empty\(\$agent\['is_profile_agent'\]\)\)/,'public service does not fail because of a stale secondary profile-agent flag');
 assert.match(domain,/user_data_policy_can_use_v236/,'Profile Agent context uses central data policy authority');
@@ -58,7 +62,9 @@ assert.match(publicService,/profile_runtime_session\(\$pdo,\$owner,\$visitor,fal
 assert.match(api,/profile_runtime_owner_state/,'owner API uses hardened portal state');
 assert.match(api,/owner_reply/,'owner can answer Profile Agent conversations');
 assert.match(api,/conversation_status/,'owner can resolve and reopen Profile Agent conversations');
-assert.match(publicService,/I’ve asked .* for input rather than guessing/,'agent refuses to invent missing approved facts');
+assert.match(publicService,/if\(\$needsOwner\)\{\s*vp3_profile_owner_request_create_v1\(\$pdo,\$ctx,\$current,\$visitorMessageId,\(string\)\$generation\['owner_request_reason'\]\)[\s\S]*?'answer'=>''[\s\S]*?'awaiting_owner'=>true/,'unsupported answers become durable exact-message owner requests without an invented Agent answer');
+assert.match(responses,/INSERT INTO profile_agent_owner_requests_v1\(owner_user_id,profile_agent_id,conversation_id,visitor_message_id,reason,status[\s\S]*?'waiting'/,'owner input is persisted with the bound owner, Agent, conversation and visitor message');
+assert.match(responses,/\$receipt='Submitted to '\.\$name\.'\. Waiting for a response\.';[\s\S]*?VALUES\(\?,'receipt',NULL,\?,\?\)/,'submitted owner requests store a separate waiting receipt instead of impersonating an Agent reply');
 
 assert.doesNotMatch(portalPage,/Customer service workspace|See who is visiting your profile/,'standalone portal starts directly in the working service UI');
 assert.match(portalPage,/class="chat-sidebar profile-agent-sidebar"/,'Profile Agent owns a dedicated customer-service sidebar');

@@ -98,6 +98,22 @@ $before=$pdo->query('SELECT * FROM user_profiles WHERE user_id=1')->fetch();
 response_rejected_v1(fn()=>profile_configure_agent($pdo,pa3_owner(),array_replace($settingsInput,['profile_agent_greeting'=>'Must not persist','profile_agent_response_mode'=>'invalid'])),'invalid response mode is rejected by real owner configuration');
 pa3_check($pdo->query('SELECT * FROM user_profiles WHERE user_id=1')->fetch()===$before,'invalid mode does not partially update greeting or other Profile fields');
 
+$pdo->exec('UPDATE user_agents SET is_active=0 WHERE id=8');
+$settingsBefore=vp3_profile_response_settings_v1($pdo,1);
+$agentsBefore=$pdo->query('SELECT * FROM user_agents ORDER BY id')->fetchAll();
+foreach([9=>'another owner’s active Agent',8=>'the owner’s inactive Agent',999=>'a missing Agent'] as $agentId=>$label){
+    $error=null;
+    try{profile_configure_agent($pdo,pa3_owner(),array_replace($settingsInput,[
+        'profile_agent_id'=>$agentId,'profile_agent_greeting'=>'Must not persist',
+        'profile_agent_response_revision'=>(int)$settingsBefore['revision'],
+    ]));}catch(Throwable $caught){$error=$caught;}
+    pa3_check($error instanceof RuntimeException&&$error->getMessage()==='That agent is not available.','real owner configuration rejects '.$label.' at the Agent authority check');
+    pa3_check($pdo->query('SELECT * FROM user_profiles WHERE user_id=1')->fetch()===$before
+        &&vp3_profile_response_settings_v1($pdo,1)===$settingsBefore
+        &&$pdo->query('SELECT * FROM user_agents ORDER BY id')->fetchAll()===$agentsBefore,
+        'rejecting '.$label.' preserves Profile fields, response policy and every Agent designation');
+}
+
 foreach([false,true] as $reachable){
     pa3_reset();response_mode_v1('user_responses');if($reachable)pa3_presence();
     $key=bin2hex(random_bytes(16));$receipt=response_send_v1('Please ask the owner for their hours.',0,['client_request_id'=>$key]);
