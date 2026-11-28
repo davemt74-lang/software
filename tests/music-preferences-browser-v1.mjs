@@ -75,11 +75,11 @@ async function setChoice(page,row,value){
     {selector:`[data-history-entry-ref="${await row.getAttribute('data-history-entry-ref')}"] [data-music-preference="${value}"]`,value});
   return data;
 }
-async function read(selection){const response=await fixture.preferenceRequest('read',{selection});const data=await fixture.json(response);equal(response.status(),200,'A current private preference is readable');return data.state;}
+async function read(selection){const response=await fixture.preferenceRequest('read',{selection});const data=await fixture.json(response);equal(response.status,200,'A current private preference is readable');return data.state;}
 async function directSet(selection,preference){
   const state=await read(selection);
   const response=await fixture.preferenceRequest('set',{selection,preference,expected_revision:state.revision,request_id:randomUUID()});
-  const data=await fixture.json(response);equal(response.status(),200,'The concurrent fixture uses the actual compare-and-set handler');return data;
+  const data=await fixture.json(response);equal(response.status,200,'The concurrent fixture uses the actual compare-and-set handler');return data;
 }
 async function capture(page,label,container,anchor){
   check(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth+1),label+': no horizontal page overflow');
