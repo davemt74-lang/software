@@ -1917,9 +1917,10 @@
       return `<button class="chat-agent-action-button" type="button" data-chat-specialist-example="${escapeHtml(action.specialist)}">${escapeHtml(action.label)}</button>`;
     }
     if (action.type === 'email_review' && /^[a-f0-9]{32}$/.test(String(action.id || '')) && Number.isSafeInteger(action.conversation_id) && action.conversation_id > 0) {
-      const label = action.sent === true ? 'View sent reply' : (action.is_reply === true ? 'Review reply' : 'Review email');
+      const title = typeof action.invitation_title === 'string' ? action.invitation_title.trim().slice(0,100) : '';
+      const label = action.sent === true ? 'View sent reply' : (title ? 'Review: '+title : (action.is_reply === true ? 'Review reply' : 'Review email'));
       const queued = action.writing === true ? ' data-chat-email-writing="1"' : '';
-      return '<button class="chat-agent-action-button" type="button" data-chat-email-review="'+escapeHtml(action.id)+'" data-chat-email-conversation="'+action.conversation_id+'"'+queued+'>'+label+'</button>';
+      return '<button class="chat-agent-action-button" type="button" data-chat-email-review="'+escapeHtml(action.id)+'" data-chat-email-conversation="'+action.conversation_id+'"'+queued+'>'+escapeHtml(label)+'</button>';
     }
     if (action.type === 'gmail_followup' && Number.isSafeInteger(action.message_id) && action.message_id > 0
         && Number.isSafeInteger(action.conversation_id) && action.conversation_id > 0) {

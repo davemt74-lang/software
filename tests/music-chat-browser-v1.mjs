@@ -385,8 +385,10 @@ try {
   await waitUntil(() => selectedYouTubePlays() === beforeRestoredYouTube + 1, 'Reopened selected playlist did not create exactly one additional accepted receipt');
   await page.evaluate(() => window.VP3_MUSIC_CHAT_V1.runCommand('stop'));
 
+  // Use an untouched song: the earlier end-of-track test leaves song 41's
+  // resume position at 59.75s, so it can finish before WebKit observes startup.
   // An accepted automatic action can start only once; history restoration is read-only.
-  const automatic = await fixture.seed({items:[{source:'vp3',source_id:'41'}],autoplay:true});
+  const automatic = await fixture.seed({items:[{source:'vp3',source_id:'70'}],autoplay:true});
   const autoCard = await attach(page, automatic, true);
   await nativeStarted(page, autoCard);
   const afterAuto = requestCount('resolve');

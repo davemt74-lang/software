@@ -1210,7 +1210,7 @@ try{
     &&row.attempt_no===musicAssessmentAction.attempt_count&&row.executor==='cloud'&&row.status==='completed');
   assert.equal(musicAssessmentReceipts.length,1);
   assert.equal(musicAssessmentAction.result_json,musicAssessmentReceipts[0].result_json);
-  const musicQuestion='Want to listen to some music?';
+  const musicQuestion='How about listening to this track?';
   const firstMusic=await waitForCasualPost('casual:music',beforeFirstMusic,musicQuestion,queuedMusic.id);
   const casualMusic=firstMusic.element;
   assert.equal((await state()).plays.filter(row=>row.user_id===1).length,0,'Asking does not create a play session.');
@@ -1285,7 +1285,7 @@ try{
   const attemptsBeforeYoutube=(await state()).youtube_attempts;
   await waitForCasualIdle();
   await initiativeTick(17);
-  const mediaQuestion='Would you like to listen to music or watch a video?';
+  const mediaQuestion='Want to hear this track, or find something new on YouTube?';
   const combinedMedia=await waitForCasualPost('casual:media',beforeCombinedMedia,mediaQuestion);
   const casualMedia=combinedMedia.element;
   assert.equal((await casualRuns()).length,3,'Another check-in follows fresh activity the same day.');
@@ -1380,7 +1380,7 @@ try{
   await initiativeTick(17);
   const repeatedMedia=await waitForCasualPost('casual:media',beforeRepeatedMedia,mediaQuestion);
   const beforeChoice=repeatedMedia.state;
-  const combinedPosts=beforeChoice.messages.filter(row=>row.conversation_id===17&&row.role==='assistant'&&row.message===mediaQuestion);
+  const combinedPosts=beforeChoice.messages.filter(row=>row.conversation_id===17&&row.role==='assistant'&&row.message.includes(mediaQuestion));
   assert.equal(combinedPosts.length,2);
   await page.reload({waitUntil:'domcontentloaded'});
   await page.locator(`[data-chat-message-id="${combinedPosts.at(-1).id}"]`).filter({hasText:mediaQuestion}).waitFor({timeout:45000});

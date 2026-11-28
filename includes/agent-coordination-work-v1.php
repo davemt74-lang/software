@@ -292,6 +292,14 @@ function vp3_coordination_result_normalize_v1(array $work): ?array
             ||$report['questions_for_you']!==($output['question']!==''?[$output['question']]:[]))return null;
         $output['marketing_report']=$report;
     }
+    if(array_key_exists('invitation',$out)){
+        require_once __DIR__.'/agent-specialist-invitations-v1.php';
+        $invitation=vp3_specialist_invitation_normalize_v1($out['invitation']);
+        $ref=array_key_first($output['evidence_revisions']);
+        if($invitation===null||count($output['evidence_revisions'])!==1||!str_starts_with((string)$ref,'casual:')
+            ||$output['state']!=='needs_owner')return null;
+        $output['invitation']=$invitation;
+    }
     $safe=[];
     if(array_key_exists('draft',$work)){
         if(!is_string($work['draft'])||$work['draft']!==vp3_coordination_draft_v1($output))return null;
@@ -303,6 +311,10 @@ function vp3_coordination_result_normalize_v1(array $work): ?array
 
 function vp3_coordination_draft_v1(array $output): string
 {
+    if(isset($output['invitation'])){
+        require_once __DIR__.'/agent-specialist-invitations-v1.php';
+        return vp3_specialist_invitation_draft_v1($output['invitation'],$output['question']);
+    }
     if(isset($output['profile_report']))return vp3_coordination_profile_report_draft_v1($output['profile_report']);
     if(isset($output['media_report']))return vp3_coordination_media_report_draft_v1($output['media_report']);
     if(isset($output['marketing_report']))return vp3_coordination_marketing_report_draft_v1($output['marketing_report']);
@@ -377,7 +389,7 @@ function vp3_coordination_result_evidence_v1(PDO $pdo,array $user,array $binding
 {
     $items=vp3_coordination_read_v1($pdo,$user,$binding,vp3_coordination_saved_revisions_v1($goal,$toolResult));
     if(isset($toolResult['output']['profile_report'])||isset($toolResult['output']['marketing_report'])
-        ||isset($toolResult['output']['media_report'])){
+        ||isset($toolResult['output']['media_report'])||isset($toolResult['output']['invitation'])){
         $expected=vp3_coordination_saved_result_v1($goal,$items,$goal['coordination_route']??[]);
         if($expected['output']!==$toolResult['output'])throw new Vp3InitiativeSourcesChangedV1();
     }
@@ -567,6 +579,11 @@ function vp3_coordination_saved_result_v1(array $goal,array $evidence,array $rou
     $result=['output'=>['type'=>'initiative_coordination','situation_id'=>$goal['coordination_id'],
         'state'=>$question!==''?'needs_owner':'watching','title'=>$title,'summary'=>$summary,'next_step'=>$next,
         'question'=>$question,'evidence_revisions'=>$revisions]];
+    if(isset($primary['invitation'])&&($route['specialist']??null)==='casual'){
+        require_once __DIR__.'/agent-specialist-invitations-v1.php';
+        $result['output']['invitation']=vp3_specialist_invitation_normalize_v1($primary['invitation'])
+            ??throw new InvalidArgumentException('The invitation could not be verified.');
+    }
     if(vp3_coordination_media_report_goal_v1($goal)){
         $report=['contract'=>VP3_COORDINATION_MEDIA_REPORT_V1,
             'key_findings'=>[$summary],

@@ -10,6 +10,7 @@ require_once dirname(__DIR__).'/includes/agent-media-entertainment-v1.php';
 require_once dirname(__DIR__).'/includes/agent-media-entertainment-youtube-v1.php';
 require_once dirname(__DIR__).'/includes/agent-media-youtube-play-analysis-v1.php';
 require_once dirname(__DIR__).'/includes/agent-initiative-opportunity-sources-v1.php';
+require_once dirname(__DIR__).'/includes/agent-casual-checkin-v1.php';
 
 function music_preference_specialist_check_v1(bool $ok,string $message): void
 {
@@ -70,6 +71,10 @@ music_preference_specialist_check_v1(str_contains($liked['summary'],'explicitly 
     'the shared specialist report explains the real preference and names its offered song');
 music_preference_specialist_check_v1($liked['music_preference']['preference']==='like'&&$liked['revision']!==$liked['playback_revision'],
     'coordination evidence includes preference state while retaining a separate canonical playback revision');
+$casual=vp3_casual_checkin_music_v1($pdo,$scope,42);
+$likedInvitation=vp3_specialist_invitation_media_preferences_v1($pdo,$scope,$casual);
+music_preference_specialist_check_v1($likedInvitation!==null&&str_contains($likedInvitation['evidence']['invitation']['items'][0]['detail'],'explicitly liked'),
+    'the casual named invitation uses the same verified explicit Like reason');
 $action=vp3_media_native_pick_action_v1($pdo,$user,7,42,42,$liked['playback_revision']);
 $resolved=vp3_media_playback_resolve_v1($pdo,$user,$action);
 music_preference_specialist_check_v1(($resolved['tracks'][0]['id']??null)===42,'the preference-bound recommendation still resolves through the exact native Player contract');
@@ -90,6 +95,8 @@ music_preference_specialist_check_v1(vp3_media_preferences_brain_context_v1($pdo
 vp3_music_preferences_set_v1($pdo,$user,7,42,$selection(0),'dislike',1,'specialist-dislike-42');
 music_preference_specialist_check_v1(!in_array(42,$ids($choose()),true)&&$source(42)===[],
     'Dislike removes catalog recommendations and invalidates an exact previously offered source');
+music_preference_specialist_check_v1(vp3_specialist_invitation_media_preferences_v1($pdo,$scope,$casual)===null,
+    'a new Dislike withdraws an already offered casual music choice');
 $explicit=vp3_music_chat_resolve_v1($pdo,$user,7,42,['result_id'=>$native['result_id'],'revision'=>$native['revision'],'index'=>0]);
 music_preference_specialist_check_v1(($explicit['media_playback']['track_id']??null)===42,
     'an exact owner playback selection remains available even when recommendation feedback is Dislike');
@@ -97,6 +104,9 @@ $clear=vp3_music_preferences_set_v1($pdo,$user,7,42,$selection(0),'clear',2,'spe
 $cleared=$source(42)['media:track:42'];
 music_preference_specialist_check_v1($clear['state']['preference']==='neutral'&&in_array(42,$ids($choose()),true)
     &&$cleared['revision']!==$liked['revision'],'Clear restores neutral eligibility without reviving the older Like or its offered revision');
+$clearedInvitation=vp3_specialist_invitation_media_preferences_v1($pdo,$scope,$casual);
+music_preference_specialist_check_v1($clearedInvitation!==null&&$clearedInvitation['identity']!==$likedInvitation['identity'],
+    'cleared feedback has a new invitation revision while the exact playback identity stays separate');
 music_preference_specialist_check_v1(!isset(vp3_media_preferences_read_v1($pdo,$user,7,42)['items']['vp3:42'])
     &&!str_contains(json_encode(vp3_media_preferences_brain_context_v1($pdo,$user,7,42,'Music preferences'),JSON_THROW_ON_ERROR),'First Light'),
     'a cleared unplayed choice contributes no identity or title to spontaneous Agent preference context');
@@ -130,6 +140,11 @@ music_preference_specialist_check_v1(($ytItem['playback']['selected_video_id']??
     'saved YouTube recommendations select the liked exact video and exclude the disliked result');
 music_preference_specialist_check_v1(($ytItem['music_preference']['preference']??null)==='like'
     &&str_contains($ytItem['summary']??'','explicitly liked'),'YouTube specialist explanations use the same current preference reader');
+$videoChoice=['title'=>$ytItem['title'],'summary'=>$ytItem['summary'],'identity'=>[$ytItem['revision']],
+    'evidence'=>['history_playback'=>$ytItem['playback'],'invitation'=>['kind'=>'youtube',
+        'items'=>[['title'=>$ytItem['title'],'detail'=>'Saved YouTube video.']],'context'=>'']]];
+music_preference_specialist_check_v1(vp3_specialist_invitation_media_preferences_v1($pdo,$scope,$videoChoice)!==null,
+    'saved YouTube invitation eligibility uses the current shared music preference reader');
 if(!vp3_youtube_history_record_v1($pdo,11,$youtube['source_message_id'],'vp300000008',
     '33333333-3333-4333-8333-333333333333',str_repeat('c',32)))throw new RuntimeException('Fixture play rejected.');
 $novelty=music_preference_specialist_result_v1($pdo,[music_chat_fixture_video_v1(9),music_chat_fixture_video_v1(8)],'Fixture Music');
@@ -138,6 +153,8 @@ music_preference_specialist_check_v1(($rankedSeen['media:youtube:'.$novelty['sou
     'a currently liked YouTube video outranks an unplayed neutral result instead of letting novelty override feedback');
 vp3_music_preferences_set_v1($pdo,$user,7,42,$youtubeSelection(1),'dislike',1,'specialist-dislike-yt8');
 music_preference_specialist_check_v1($ytRead()===[],'a source containing only disliked videos produces no recommendation');
+music_preference_specialist_check_v1(vp3_specialist_invitation_media_preferences_v1($pdo,$scope,$videoChoice)===null,
+    'casual and history invitations cannot resurrect a disliked YouTube choice');
 // The legacy played-video specialist consumes the ordinary YouTube return marker.
 foreach([$history['message'],$youtube['source_message_id']] as $message){
     $q=$pdo->prepare('SELECT context_json FROM chat_messages WHERE id=?');$q->execute([$message]);

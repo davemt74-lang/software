@@ -1,0 +1,82 @@
+VP3 — Gmail and Media invitations grounded in current private sources
+
+DEPLOYMENT
+
+Extract the complete verified Cloud ZIP over the existing installation, run
+Database Upgrade for current main and refresh. This feature adds no tables or
+new provider credentials. Existing casual check-in and Media preferences,
+permissions, pacing, quiet-chat rules and pending-offer checks still apply.
+
+GMAIL
+
+When a check-in can use saved email work, it lists up to three reviewable drafts
+from the newest fifty pending rows for the selected private Agent. High priority
+and saved reply deadlines come first; relevant current analysis can break ties
+before recency. Each item shows its subject, recipient and useful source reason.
+
+The native draft review helpers exclude sent, discarded, answered, automatic,
+expired, stale, incomplete writing, corrupt and changed-grant proposals. An
+unavailable pending queue does not turn into a claim that no drafts exist. The
+existing generic new-email question remains only for a verified empty queue.
+One-time Gmail and Media capability examples yield to meaningful existing work.
+
+Reply yes to see exact review buttons. With multiple drafts, no arbitrary draft
+is chosen. Say first, second or third to select the corresponding offered item.
+The existing composer opens in the draft's original authorized conversation.
+Its send, attachment, follow-up and writing-preference approvals remain separate.
+An invitation, response or review does not send mail or rewrite a draft.
+
+The offer pins every displayed draft's original conversation and native edit
+revision. Newer drafts cannot replace the offered list. Editing, discarding,
+answering, revoked source access or a changed mailbox makes the old choice stale.
+Replay recovery also rechecks the source before returning saved review actions.
+
+MEDIA
+
+Native music invitations name a real current catalog choice and known artist or
+genre. Saved YouTube videos or search topics use the existing history reader,
+consent and source expiry. Combined invitations present the named choices. If
+there is no usable saved YouTube choice, the invitation offers the named native
+track alongside finding something new on YouTube; it does not invent a video.
+Bare assent to two possible paths asks which path. Exact music or video replies
+reuse the existing native Player or saved YouTube action.
+
+Named YouTube history retains its existing four-hour offer spacing in every
+invitation path; an already posted exact choice can still be answered.
+
+No invitation starts audio, creates a listen, runs a provider search or grants
+permission. Expired provider results retain only an allowed original search
+topic, and a further owner action uses the existing search workflow. This
+feature adds no competing player, preferences system or listening history store.
+The integrated MC3 reader supplies explicit Like, Dislike and measured-listening
+reasons to these invitations too. Dislike excludes an offered recommendation;
+Clear or other feedback changes its evidence revision. The separate exact Player
+action still uses its canonical playback identity, not a preference revision.
+
+CURIOSITY AND BRAINSTORMING
+
+Only the existing receipt-verified, currently source-authorized native reports
+can contribute. Two meaningful topic words must overlap a candidate before an
+analysis may affect its ranking or appear as a possible connection. The wording
+explicitly labels the relationship as possible, rather than a verified fact or
+an inferred preference. The report key is part of the exact offer revision;
+withdrawn or changed analysis invalidates that context. No additional model
+request is made to create an invitation. Mail bodies and send approvals are not
+copied into the invitation or a new analysis store.
+
+VERIFICATION
+
+Native MySQL/MariaDB acceptance covers ranking, source lifecycle, exact pins,
+privacy and mutation-free projection. The canonical pipeline exercises native
+worker claims, receipts, delivery, voice assent, ordinal selection, native
+composer review and lost-response recovery. Existing Brainstorming and Curiosity
+fixtures prove their current receipt-verified findings reach the invitation
+reader. Desktop, 390px and 320px browser checks exercise the production review
+button renderer and native pipeline output, including inert hostile titles and
+long labels. Review buttons retain at least a 44px touch height.
+
+Existing Media Chat/playback, Gmail composer/review, approvals, attachments,
+follow-up, phone and recovery checks remain release gates. Controlled fixtures
+are not a live Gmail account, physical phone, carrier call or actual host rollout.
+Exact candidate/merge/workflow and full archive evidence belongs to the PR for
+GitHub issue #966, rather than an inferred perfect live-device score.

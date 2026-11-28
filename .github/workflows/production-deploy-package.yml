@@ -75,6 +75,7 @@ jobs:
             "phone_call_continuity": "persistent-window-v1",
             "phone_agent_activity": "all-view-background-v1",
             "chat_sidebar_unread": "native-receipts-v1",
+            "specialist_invitations": "grounded-current-sources-v1",
             "phone_canvas_loading": "bounded-read-retry-v1",
             "member_transcriptions": "account-bound-library-v1",
             "admin_shell": "standard-header-v1",
@@ -202,6 +203,8 @@ jobs:
           test -s _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/assets/twilio-voice-LICENSE.txt
           test -f _deploy/includes/phone-workspace-v1.php
+          test -f _deploy/includes/agent-specialist-invitations-v1.php
+          test -f _deploy/docs/SPECIALIST-INVITATIONS-DEPLOY.txt
           test -f _deploy/includes/phone-contact-management-v1.php
           test -f _deploy/includes/phone-contact-schedules-v1.php
           test -f _deploy/includes/phone-recording-pipeline-v1.php
