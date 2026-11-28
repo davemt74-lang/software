@@ -48,6 +48,10 @@ No invitation starts audio, creates a listen, runs a provider search or grants
 permission. Expired provider results retain only an allowed original search
 topic, and a further owner action uses the existing search workflow. This
 feature adds no competing player, preferences system or listening history store.
+The integrated MC3 reader supplies explicit Like, Dislike and measured-listening
+reasons to these invitations too. Dislike excludes an offered recommendation;
+Clear or other feedback changes its evidence revision. The separate exact Player
+action still uses its canonical playback identity, not a preference revision.
 
 CURIOSITY AND BRAINSTORMING
 

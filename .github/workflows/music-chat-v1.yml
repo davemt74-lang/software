@@ -5,6 +5,20 @@ on:
     paths:
       - 'includes/music-chat-*.php'
       - 'includes/music-history-*.php'
+      - 'includes/music-preferences-*.php'
+      - 'api/music-preferences-*.php'
+      - 'assets/js/music-preferences-*.js'
+      - 'assets/css/music-preferences-*.css'
+      - 'tests/music-preferences-*'
+      - 'tests/fixtures/music-preferences-*'
+      - 'includes/agent-media-entertainment*.php'
+      - 'includes/agent-media-preferences-v1.php'
+      - 'includes/agent-initiative-opportunity-sources-v1.php'
+      - 'includes/agent-brain-context-v142.php'
+      - 'includes/agent-media-listening-analysis-v1.php'
+      - 'includes/agent-media-youtube-play-analysis-v1.php'
+      - 'includes/agent-initiative-native-music-v1.php'
+      - 'includes/agent-initiative-youtube-offer-v1.php'
       - 'api/music-history-*.php'
       - 'assets/js/music-history-*.js'
       - 'assets/css/music-history-*.css'
@@ -37,6 +51,20 @@ on:
     paths:
       - 'includes/music-chat-*.php'
       - 'includes/music-history-*.php'
+      - 'includes/music-preferences-*.php'
+      - 'api/music-preferences-*.php'
+      - 'assets/js/music-preferences-*.js'
+      - 'assets/css/music-preferences-*.css'
+      - 'tests/music-preferences-*'
+      - 'tests/fixtures/music-preferences-*'
+      - 'includes/agent-media-entertainment*.php'
+      - 'includes/agent-media-preferences-v1.php'
+      - 'includes/agent-initiative-opportunity-sources-v1.php'
+      - 'includes/agent-brain-context-v142.php'
+      - 'includes/agent-media-listening-analysis-v1.php'
+      - 'includes/agent-media-youtube-play-analysis-v1.php'
+      - 'includes/agent-initiative-native-music-v1.php'
+      - 'includes/agent-initiative-youtube-offer-v1.php'
       - 'api/music-history-*.php'
       - 'assets/js/music-history-*.js'
       - 'assets/css/music-history-*.css'
@@ -138,10 +166,29 @@ jobs:
           MUSIC_TEST_MYSQL_USER: root
           MUSIC_TEST_MYSQL_PASSWORD: music-test-only
         run: php tests/music-history-mysql-v1.php
+      - name: Private explicit preferences, current evidence and independent request races
+        run: |
+          php tests/music-preferences-v1.php
+          php tests/music-preferences-chat-v1.php
+          php tests/music-preferences-specialist-v1.php
+      - name: Actual preference HTTP authority, exact selections and canonical skip receipts
+        run: |
+          node tests/music-preferences-api-v1.mjs
+          node tests/music-preferences-runtime-v1.mjs
+      - name: Native MySQL preference transactions and request races
+        env:
+          MUSIC_PREFERENCES_RESET_TEST_DB: "1"
+          MUSIC_TEST_MYSQL_DSN: 'mysql:host=127.0.0.1;port=3306;dbname=vp3_music_test;charset=utf8mb4'
+          MUSIC_TEST_MYSQL_USER: root
+          MUSIC_TEST_MYSQL_PASSWORD: music-test-only
+        run: php tests/music-preferences-mysql-v1.php
+      - name: Preference client behavior and quiet restoration
+        run: node tests/music-preferences-client-v1.mjs
       - name: Production JavaScript syntax
         run: |
           node --check assets/js/music-chat-v1.js
           node --check assets/js/music-history-v1.js
+          node --check assets/js/music-preferences-v1.js
           node --check chat.js
           node --check chat-youtube-v1.js
           node --check chat-voice.js
@@ -162,6 +209,9 @@ jobs:
           php tests/music-chat-library-v1.php
           php tests/music-history-intent-v1.php
           php tests/music-history-v1.php
+          php tests/music-preferences-v1.php
+          php tests/music-preferences-chat-v1.php
+          php tests/music-preferences-specialist-v1.php
 
   music-chat-browser:
     runs-on: ubuntu-latest
@@ -173,8 +223,10 @@ jobs:
     env:
       MUSIC_CHAT_BROWSER: ${{ matrix.browser }}
       MUSIC_HISTORY_BROWSER: ${{ matrix.browser }}
+      MUSIC_PREFERENCES_BROWSER: ${{ matrix.browser }}
       MUSIC_CHAT_ARTIFACT_DIR: artifacts/music-chat-v1/${{ matrix.browser }}
       MUSIC_HISTORY_ARTIFACT_DIR: artifacts/music-history-v1/${{ matrix.browser }}
+      MUSIC_PREFERENCES_ARTIFACT_DIR: artifacts/music-preferences-v1/${{ matrix.browser }}
     steps:
       - uses: actions/checkout@v4
       - uses: shivammathur/setup-php@v2
@@ -193,12 +245,22 @@ jobs:
         run: node tests/music-chat-browser-v1.mjs
       - name: Actual PHP and browser history queries, exact replay and quiet restoration
         run: node tests/music-history-browser-v1.mjs
+      - name: Actual PHP and browser explicit taste, quiet review and deliberate skip
+        run: node tests/music-preferences-browser-v1.mjs
       - name: Publish screenshots and assertion evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: music-chat-${{ matrix.browser }}
           path: artifacts/music-chat-v1/${{ matrix.browser }}/
+          if-no-files-found: warn
+          retention-days: 14
+      - name: Publish preference screenshots and assertion evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-preferences-${{ matrix.browser }}
+          path: artifacts/music-preferences-v1/${{ matrix.browser }}/
           if-no-files-found: warn
           retention-days: 14
       - name: Publish history screenshots and assertion evidence

@@ -97,12 +97,17 @@ jobs:
             "music_history_sources": ["vp3", "youtube"],
             "music_history_coverage": "retained_owner_receipts_v1",
             "music_history_upgrade_note": "docs/MUSIC-HISTORY-DEPLOY.txt",
+            "music_preferences_protocol": "vp3_music_preferences_v1",
+            "music_preferences_sources": ["vp3", "youtube"],
+            "music_preferences_evidence": "explicit-taste-separated-from-observation-v1",
+            "music_preferences_upgrade_note": "docs/MUSIC-PREFERENCES-DEPLOY.txt",
             "music_upgrade_note": "docs/MUSIC-CATALOG-LISTENING-DEPLOY.txt",
             "phone_agent_email_calls": "owner-consented-v1",
             "phone_agent_email_call_delivery_default": "off",
             "gmail_draft_preferences": "owner-reviewed-email-soul-v1",
             "gmail_attachment_understanding": "owner-reviewed-documents-v1",
             "gmail_email_capture": "owner-selected-regions-v1",
+            "gmail_capture_history": "source-bound-recovery-v1",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
             "tracky_agent_eyes_section": "1G5",
@@ -127,6 +132,7 @@ jobs:
           test -f _deploy/includes/gmail-email-capture-source-v1.php
           test -f _deploy/includes/gmail-email-capture-input-v1.php
           test -f _deploy/includes/gmail-email-capture-schema-v1.php
+          test -f _deploy/includes/gmail-email-capture-history-v1.php
           test -f _deploy/docs/GMAIL-EMAIL-CAPTURE-DEPLOY.txt
           test -f _deploy/includes/agent-curiosity-email-activity-v1.php
           test -f _deploy/includes/agent-curiosity-screen-v1.php
@@ -185,6 +191,13 @@ jobs:
           test -f _deploy/assets/js/music-history-v1.js
           test -f _deploy/assets/css/music-history-v1.css
           test -f _deploy/docs/MUSIC-HISTORY-DEPLOY.txt
+          test -f _deploy/includes/music-preferences-v1.php
+          test -f _deploy/includes/music-preferences-chat-v1.php
+          test -f _deploy/includes/agent-media-preferences-v1.php
+          test -f _deploy/api/music-preferences-v1.php
+          test -f _deploy/assets/js/music-preferences-v1.js
+          test -f _deploy/assets/css/music-preferences-v1.css
+          test -f _deploy/docs/MUSIC-PREFERENCES-DEPLOY.txt
           test -s _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/assets/twilio-voice-LICENSE.txt
           test -f _deploy/includes/phone-workspace-v1.php

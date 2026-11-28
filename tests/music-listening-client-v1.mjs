@@ -109,10 +109,13 @@ export async function runMusicListeningClientTests({silent = false} = {}) {
     f.audio.emit('waiting'); f.audio.emit('play'); f.tracker.flush(); await turn();
     check(f.calls.length === 0, 'Loading, play intent and buffering before actual playing must not allocate a listen');
     await f.play(); f.audio.emit('playing'); await turn();
+    check(f.tracker.receipt() === null, 'An unacknowledged start cannot provide an authoritative preference receipt');
     check(f.calls.length === 1, 'Overlapping playing observations must coalesce to one start');
     await f.advance(5000, {timeupdate: false}); await f.pause();
     check(f.calls.length === 1, 'Events must wait for the session acknowledgement');
     pending.resolve(response(f.receive(f.calls[0].body))); await turn();
+    check(JSON.stringify(f.tracker.receipt()) === JSON.stringify({kind:'n',id:String(f.starts[0].session_id)}),
+      'An acknowledged native start exposes only its history address, without the session bearer token');
     assert.deepEqual(f.events().map(row => [row.action, row.cumulative_played_ms]), [['resume', 0], ['pause', 5000]]); checks++;
     check(f.starts.length === 1, 'A current paused session must refresh personal history after delayed start');
   }
@@ -334,6 +337,7 @@ export async function runMusicListeningClientTests({silent = false} = {}) {
     let user = 0; const f = fixture({listener: 0, current: () => user === 0});
     await f.play(); check(f.calls[0].input.listener_user_id === 0, 'Anonymous playback must retain anonymous expected identity');
     user = 11; await f.advance(1000); await f.pause();
+    check(f.tracker.receipt() === null, 'An account transition cannot reuse the former listener’s receipt');
     check(f.calls.length === 2 && f.errors[0]?.code === 'listener_changed', 'Anonymous-to-account transition must terminate the old outbox');
   }
 
@@ -343,6 +347,7 @@ export async function runMusicListeningClientTests({silent = false} = {}) {
     check(f.calls.length === 4 && new Set(f.calls.map(row => row.body)).size === 1, 'Network retry must be bounded to four identical attempts');
     check(f.errors.length === 1 && f.errors[0].coverage === 'partial', 'Exhausted transport must expose incomplete coverage without fabricating acknowledgements');
     check(f.starts.length === 0 && f.receipts.length === 0, 'Failed delivery must never be acknowledged locally');
+    check(f.tracker.receipt() === null, 'Failed starts cannot provide deliberate-skip evidence');
   }
 
   {
@@ -371,6 +376,17 @@ export async function runMusicListeningClientTests({silent = false} = {}) {
     check(f.environment.window.VP3MusicListeningV1.attach(f.audio, f.options) === f.tracker,
       'Moving or reattaching an existing player must not register a second tracker');
     check(!/localStorage|sessionStorage|indexedDB/.test(source), 'Receipt queues must remain scoped to the current page and account');
+  }
+
+  {
+    const f = fixture(); await f.play();
+    const first = f.tracker.receipt();
+    f.tracker.stop(); await turn();
+    check(f.tracker.receipt() === null, 'Terminal Stop removes the acknowledged receipt from active preference feedback');
+    await f.play();
+    check(f.tracker.receipt()?.id !== first.id, 'Explicit replay exposes the new canonical play rather than an older receipt');
+    f.tracker.detach();
+    check(f.tracker.receipt() === null, 'A detached native player cannot supply a skip receipt');
   }
 
   if (!silent) console.log(`MUSIC_LISTENING_CLIENT_V1=PASS checks=${checks}`);

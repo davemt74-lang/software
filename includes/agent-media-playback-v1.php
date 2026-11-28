@@ -112,9 +112,18 @@ function vp3_media_native_choices_v1(PDO $pdo,array $live,array $principal,strin
     $map=player_visible_track_map($live);
     unset($map[$excludeTrackId]);
     if(!$map)return [];
-    $ordered=vp3_media_playback_history_allowed_v1($pdo,$live,$principal)?player_for_you($live,$map,count($map)):array_values($map);
+    $historyAllowed=vp3_media_playback_history_allowed_v1($pdo,$live,$principal);
+    $preferences=['ready'=>false];
+    if($historyAllowed){
+        require_once __DIR__.'/agent-media-preferences-v1.php';
+        if(vp3_media_preferences_ready_v1($pdo))$preferences=vp3_media_preferences_read_v1($pdo,$live,(int)$principal['agent_id'],0,
+            vp3_media_preferences_candidates_v1(array_values($map),'vp3'));
+    }
+    $ordered=$historyAllowed&&($preferences['ready']??false)!==true
+        ?player_for_you($live,$map,count($map)):array_values($map);
     $terms=track_query_terms(mb_substr($taste,0,120));
     $moods=track_detect_moods($taste);
+    $relevance=[];
     if($terms||$moods){
         $ranked=[];
         foreach($ordered as $track){
@@ -124,11 +133,13 @@ function vp3_media_native_choices_v1(PDO $pdo,array $live,array $principal,strin
             foreach($moods as $mood){
                 if(array_intersect([$mood,...track_mood_aliases()[$mood]],$words))$score+=4;
             }
+            $relevance[(string)$track['id']]=$score;
             $ranked[]=['track'=>$track,'score'=>$score];
         }
         usort($ranked,static fn(array $a,array $b):int=>$b['score']<=>$a['score']);
         $ordered=array_column($ranked,'track');
     }
+    if(($preferences['ready']??false)===true)$ordered=vp3_media_preferences_rank_v1($ordered,$preferences,'vp3',$relevance);
     $choices=[];
     foreach($ordered as $row){
         $track=vp3_media_playable_track_v1($pdo,$live,(int)$row['id'],true);

@@ -82,6 +82,30 @@ function vp3_specialist_invitation_connection_v1(string $text,array $reports): ?
     return null;
 }
 
+/** The newly merged MC3 reader owns preference meaning, exclusion and consent epochs. */
+function vp3_specialist_invitation_media_preferences_v1(PDO $pdo,array $scope,array $choice): ?array
+{
+    require_once __DIR__.'/agent-media-preferences-v1.php';
+    $evidence=$choice['evidence']??[];$targets=[];
+    if(is_int($evidence['track_id']??null)&&$evidence['track_id']>0)$targets['media:track:'.$evidence['track_id']]='track';
+    $video=$evidence['history_playback']['selected_video_id']??null;
+    if(is_string($video)&&preg_match('/\A[A-Za-z0-9_-]{11}\z/D',$video))$targets['media:youtube-play:'.$video]='youtube_pick';
+    if(!$targets)return $choice;
+    $items=[];
+    foreach($targets as $ref=>$kind)$items[$ref]=['ref'=>$ref,'kind'=>$kind,'title'=>$choice['title'],'summary'=>$choice['summary'],
+        'question'=>$choice['question']??'','revision'=>vp3_specialist_invitation_hash_v1($choice['identity'])];
+    $current=vp3_media_preferences_sources_v1($pdo,$scope,$items);
+    if(count($current)!==count($items))return null;
+    $choice['identity'][]=['music_preferences'=>array_column($current,'revision','ref')];
+    foreach(array_values($current) as $index=>$item){
+        $reason=vp3_specialist_invitation_text_v1($item['music_preference']['reason']??'',120);
+        if($reason===''||!isset($choice['evidence']['invitation']['items'][$index]))continue;
+        $detail=$choice['evidence']['invitation']['items'][$index]['detail'];
+        $choice['evidence']['invitation']['items'][$index]['detail']=vp3_specialist_invitation_text_v1($detail.' · '.$reason,180);
+    }
+    return $choice;
+}
+
 /** Up to three actionable drafts from the latest fifty pending rows in this exact Agent. */
 function vp3_specialist_invitation_email_v1(PDO $pdo,array $scope,array $binding,?array $pin=null): array
 {

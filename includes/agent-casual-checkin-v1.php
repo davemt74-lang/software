@@ -318,6 +318,9 @@ function vp3_casual_checkin_sources_v1(PDO $pdo,array $scope,array $binding,?arr
                 'resume'=>vp3_casual_checkin_resume_v1($pdo,$scope,$binding,$now,$existingItems,$sourceRef),
                 default=>null,
             };
+            if($choice!==null&&in_array($kind,VP3_CASUAL_MEDIA_KINDS_V1,true)){
+                $choice=vp3_specialist_invitation_media_preferences_v1($pdo,$scope,$choice);
+            }
             if($choice!==null&&$kind!=='email'&&isset($choice['evidence']['invitation'])){
                 $invitation=$choice['evidence']['invitation'];
                 $hint=vp3_specialist_invitation_connection_v1(implode(' ',array_column($invitation['items'],'title')),

@@ -10,7 +10,7 @@ const analysis={coverage:'readable',summary:'Camera launch is on December 12.',e
 let checks=0;
 async function check(label,fn){await fn();checks++;console.log('PASS '+label);}
 async function setup(viewport={width:1100,height:900},modal=false){
-  const page=await browser.newPage({viewport}),errors=[],requests=[],records=new Map(),saves=new Map();
+  const page=await browser.newPage({viewport}),errors=[],requests=[],records=new Map(),saves=new Map(),receipts=new Map();
   page.on('pageerror',e=>errors.push(e.message));
   await page.route('https://capture.test/**',async route=>{
     const request=route.request();
@@ -19,18 +19,29 @@ async function setup(viewport={width:1100,height:900},modal=false){
       const denied=await page.evaluate(()=>window.denyStatus||0);if(denied)return route.fulfill({status:denied,json:{ok:false,error:'Email access changed.'}});
       assert.equal(body.owner_key,'1');assert.equal(body.agent_id,7);assert.equal(body.conversation_id,11);assert.equal(body.csrf_token,'capture-csrf');assert.equal(body.source_ref,'ab'.repeat(100));
       if(body.action==='analyze'){
-        const value={id:body.request_id,state:'ready',reason:null,result:analysis,received_text:'',received_response_retained:true};records.set(body.request_id,value);
+        const value={id:body.request_id,state:'ready',reason:null,result:analysis,received_text:'',received_response_retained:true,selected_text:body.text,mode:body.mode,created_at:new Date().toISOString(),actions:[]};records.set(body.request_id,value);
         if(await page.evaluate(()=>window.loseAnalysisBody)){await page.evaluate(()=>window.loseAnalysisBody=false);return route.fulfill({status:503,json:{ok:false,error:'Lost response'}});}
         return route.fulfill({json:{ok:true,capture:value}});
       }
-      if(body.action==='get')return route.fulfill({json:{ok:true,capture:records.get(body.request_id)}});
-      const hash=JSON.stringify(body),id=saves.get(hash)||saves.size+1;saves.set(hash,id);
+      if(body.action==='get'){
+        const value=records.get(body.capture_id||body.request_id);if(value?.finishOnPoll&&++value.gets>1)value.state='ready';
+        return route.fulfill({json:{ok:true,capture:value}});
+      }
+      if(body.action==='history'){
+        if(await page.evaluate(()=>window.deferHistory||false)){await page.evaluate(()=>window.historyWaiting=true);await page.waitForFunction(()=>window.releaseHistory,{timeout:5000});}
+        const rows=[...records.values()].reverse(),offset=body.cursor?10:0;
+        return route.fulfill({json:{ok:true,history:{items:rows.slice(offset,offset+10).map(v=>({id:v.id,state:v.state,reason:v.reason,mode:v.mode,created_at:v.created_at,excerpt:v.selected_text,summary:v.result?.summary||'',received_response_retained:v.received_response_retained})),next_cursor:rows.length>offset+10?'next-page':null,actions:[...receipts.values()]}}});
+      }
+      const effect={...body};delete effect.capture_id;const hash=JSON.stringify(effect),id=saves.get(hash)||saves.size+1;saves.set(hash,id);
+      const receipt={id:id.toString(16).padStart(64,'0'),kind:body.action,record_id:id,available:true,status:body.action==='task'?'open':'saved',title:body.fields.title||'Finding shared in Chat',detail:body.fields.notes||body.fields.message||body.fields.start_local||body.fields.date||'',href:body.action==='calendar'?`https://capture.test/calendar-event.php?id=${id}`:body.action==='chat'?'https://capture.test/chat.php?agent_id=7&conversation_id=11':null,created_at:new Date().toISOString()};receipts.set(receipt.id,receipt);
+      const saved=records.get(body.capture_id);if(saved&&!saved.actions.some(v=>v.id===receipt.id))saved.actions.push(receipt);
       if(await page.evaluate(()=>window.loseSaveBody)){await page.evaluate(()=>window.loseSaveBody=false);return route.fulfill({status:503,json:{ok:false,error:'Lost save reply'}});}
-      return route.fulfill({json:{ok:true,saved:{id,kind:body.action,message:body.action==='calendar'?'Calendar event saved.':'Reminder saved.'}}});
+      return route.fulfill({json:{ok:true,saved:{id,kind:body.action,message:({calendar:'Calendar event saved.',reminder:'Reminder saved.',task:'Task saved.',chat:'Finding sent to Chat.'})[body.action],action:receipt}}});
     }
     return route.fulfill({contentType:'text/html',body:'<!doctype html><html><meta name="viewport" content="width=device-width,initial-scale=1"><body style="margin:16px;font-family:Arial"><input id="chatInput" aria-label="Chat draft"><main id="email"></main></body></html>'});
   });
-  await page.goto('https://capture.test/');await page.addStyleTag({content:css});
+  async function boot(navigate=true){
+  if(navigate)await page.goto('https://capture.test/');await page.addStyleTag({content:css});
   if(modal)await page.evaluate(()=>{const dialog=document.createElement('dialog');dialog.id='sourceReader';dialog.style.cssText='width:min(900px,calc(100vw - 24px));max-height:90vh;overflow:auto;box-sizing:border-box';const close=document.createElement('button');close.textContent='Close original email';close.onclick=()=>dialog.close();dialog.append(close,document.getElementById('email'));document.body.append(dialog);dialog.showModal();});
   await page.evaluate(()=>{
     window.cfg={owner_key:'1',agent_id:7,conversation_id:11};window.STONEFELLOW_CHAT={userId:1,agentId:7};
@@ -69,7 +80,9 @@ async function setup(viewport={width:1100,height:900},modal=false){
   await page.frameLocator('iframe').locator('#date').waitFor();
   await page.waitForFunction(()=>{const f=document.querySelector('iframe');return f?.contentDocument?.body&&f.clientHeight>=f.contentDocument.body.scrollHeight;});
   await page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
-  return {page,errors,requests,records,saves};
+  }
+  await boot();
+  return {page,errors,requests,records,saves,receipts,reload:async()=>{await page.reload();await boot(false);}};
 }
 async function dragRegion(page,selector='#date'){
   const box=await page.frameLocator('iframe').locator(selector).boundingBox();assert.ok(box);
@@ -183,5 +196,61 @@ try{
     await sourceClosed.page.getByRole('button',{name:'Close original email',exact:true}).click();await sourceClosed.page.evaluate(()=>releasePicker());await sourceClosed.page.waitForFunction(()=>window.latestTrack?.readyState==='ended');assert.equal(await sourceClosed.page.locator('.vp3-email-capture-dialog').count(),0);assert.equal(sourceClosed.requests.length,0);
   });
   assert.deepEqual(sourceClosed.errors,[]);await sourceClosed.page.close();
+  const history=await setup();const hp=history.page;
+  await check('saved text analysis survives a full page reload without another model request',async()=>{
+    await hp.getByRole('button',{name:'Email actions',exact:true}).click();await hp.getByRole('button',{name:'Analyze text (uses AI)',exact:true}).click();await hp.getByText('Analysis ready. Review the details before saving an action.',{exact:true}).last().waitFor();
+    const original=await hp.getByLabel('Selected email text',{exact:true}).inputValue();assert.equal(history.requests.filter(r=>r.action==='analyze').length,1);
+    await history.reload();await hp.getByRole('button',{name:'Recent analyses',exact:true}).click();await hp.getByRole('button',{name:'Reopen analysis',exact:true}).click();
+    await hp.getByText('Saved analysis reopened.',{exact:true}).last().waitFor();assert.equal(await hp.getByLabel('Selected email text',{exact:true}).inputValue(),original);assert.equal(history.requests.filter(r=>r.action==='analyze').length,1);assert.match(await hp.locator('.vp3-email-capture-result').innerText(),/Camera launch/);
+  });
+  await check('restored analysis links a real saved calendar action and recovers it after reload',async()=>{
+    await hp.getByRole('button',{name:'Add to calendar',exact:true}).click();await hp.getByRole('button',{name:'Save calendar event',exact:true}).click();await hp.getByText('Calendar event saved.',{exact:true}).waitFor();
+    assert.equal(history.requests.at(-1).capture_id,[...history.records.keys()][0]);assert.match(await hp.getByRole('link',{name:'Open calendar event',exact:true}).getAttribute('href'),/calendar-event\.php\?id=1$/);
+    await history.reload();await hp.getByRole('button',{name:'Recent analyses',exact:true}).click();await hp.getByRole('button',{name:'Reopen analysis',exact:true}).click();await hp.getByRole('link',{name:'Open calendar event',exact:true}).waitFor();assert.equal(history.saves.size,1);assert.equal(history.requests.filter(r=>r.action==='analyze').length,1);
+  });
+  await check('task handoff reviews notes, preserves the Chat draft and retries one exact save',async()=>{
+    await hp.evaluate(()=>document.getElementById('chatInput').value='Keep my typed draft');await hp.getByRole('button',{name:'Save as task',exact:true}).click();assert.equal(history.saves.size,1);
+    await hp.getByLabel('Task title',{exact:true}).fill('Reviewed camera task');await hp.getByLabel('Task notes (optional)',{exact:true}).fill('Follow up with the sender.');await hp.evaluate(()=>window.loseSaveBody=true);
+    await hp.getByRole('button',{name:'Save task',exact:true}).click();await hp.getByRole('button',{name:'Retry save',exact:true}).click();await hp.getByText('Task saved.',{exact:true}).waitFor();assert.equal(history.saves.size,2);assert.equal(await hp.getByLabel('Chat draft').inputValue(),'Keep my typed draft');
+    await hp.getByText('View saved task',{exact:true}).click();assert.match(await hp.locator('.vp3-email-capture-completed').innerText(),/Follow up with the sender/);
+  });
+  await check('Chat handoff sends only the reviewed finding without overwriting a typed draft',async()=>{
+    await hp.getByRole('button',{name:'Send finding to Chat',exact:true}).click();await hp.getByLabel('Finding to share',{exact:true}).fill('Owner-reviewed finding <script>bad()</script>');
+    await hp.getByRole('button',{name:'Send to Chat',exact:true}).click();await hp.getByText('Finding sent to Chat.',{exact:true}).waitFor();assert.equal(history.saves.size,3);assert.equal(history.requests.at(-1).fields.message,'Owner-reviewed finding <script>bad()</script>');assert.equal(await hp.getByLabel('Chat draft').inputValue(),'Keep my typed draft');assert.equal(history.requests.filter(r=>r.action==='analyze').length,1);assert.equal(await hp.locator('.vp3-email-capture-completed script').count(),0);
+    if(process.env.VP3_GMAIL_CAPTURE_SCREENSHOTS)await hp.screenshot({path:process.env.VP3_GMAIL_CAPTURE_SCREENSHOTS+'/capture-history-desktop.png',fullPage:true});
+  });
+  await check('saved analyses paginate without another inference or duplicate history rows',async()=>{
+    await hp.getByRole('button',{name:'Close',exact:true}).click();const template=[...history.records.values()][0];
+    for(let i=1;i<13;i++){const id=i.toString(16).padStart(32,'0');history.records.set(id,{...template,id,actions:[]});}
+    await hp.getByRole('button',{name:'Recent analyses',exact:true}).click();await hp.getByRole('button',{name:'More analyses',exact:true}).click();await hp.waitForFunction(()=>document.querySelectorAll('.vp3-email-capture-history-item').length===13);assert.equal(await hp.getByRole('button',{name:'Reopen analysis',exact:true}).count(),13);assert.equal(history.requests.filter(r=>r.action==='analyze').length,1);
+  });
+  await check('history and saved actions fit a phone-sized viewport',async()=>{
+    await hp.setViewportSize({width:390,height:844});assert.ok(await hp.evaluate(()=>document.documentElement.scrollWidth<=innerWidth));const box=await hp.locator('.vp3-email-capture-dialog').boundingBox();assert.ok(box.x>=0&&box.x+box.width<=391);
+    if(process.env.VP3_GMAIL_CAPTURE_SCREENSHOTS)await hp.screenshot({path:process.env.VP3_GMAIL_CAPTURE_SCREENSHOTS+'/capture-history-phone.png',fullPage:true});
+  });
+  assert.deepEqual(history.errors,[]);await hp.close();
+  const stopped=await setup(),stoppedId='d'.repeat(32);stopped.records.set(stoppedId,{id:stoppedId,state:'failed',reason:'invalid_response',mode:'text',selected_text:'Saved excerpt',created_at:new Date().toISOString(),received_response_retained:true,received_text:'<script>received response</script>',result:null,actions:[]});
+  await check('failed received output is recoverable from history as plain text',async()=>{
+    await stopped.page.getByRole('button',{name:'Recent analyses',exact:true}).click();await stopped.page.getByRole('button',{name:'Reopen analysis',exact:true}).click();await stopped.page.getByText('Received analysis',{exact:true}).click();assert.equal(await stopped.page.locator('.vp3-email-capture-result pre').innerText(),'<script>received response</script>');assert.equal(await stopped.page.locator('.vp3-email-capture-result script').count(),0);assert.equal(stopped.requests.filter(r=>r.action==='analyze').length,0);
+  });
+  assert.deepEqual(stopped.errors,[]);await stopped.page.close();
+  const pending=await setup(),pendingId='e'.repeat(32);pending.records.set(pendingId,{id:pendingId,state:'dispatched',reason:null,mode:'text',selected_text:'Pending saved excerpt',created_at:new Date().toISOString(),received_response_retained:false,received_text:'',result:analysis,actions:[],finishOnPoll:true,gets:0});
+  await check('reopening an in-flight attempt polls its saved identity and leaves controls usable',async()=>{
+    await pending.page.getByRole('button',{name:'Recent analyses',exact:true}).click();await pending.page.getByRole('button',{name:'Reopen analysis',exact:true}).click();await pending.page.getByText('Analysis ready. Review the details before saving an action.',{exact:true}).last().waitFor();assert.equal(pending.requests.filter(r=>r.action==='analyze').length,0);assert.equal(pending.requests.filter(r=>r.action==='get').length,2);
+    await pending.page.getByRole('button',{name:'Analyze text (uses AI)',exact:true}).click();await pending.page.waitForFunction(()=>!document.querySelector('[data-email-capture-action="text"]').disabled);assert.equal(pending.requests.filter(r=>r.action==='analyze').length,1);
+  });
+  assert.deepEqual(pending.errors,[]);await pending.page.close();
+  const photoHistory=await setup();
+  await check('saved photo analysis reopens without retaining screenshot pixels or restarting sharing',async()=>{
+    await dragRegion(photoHistory.page);await photoHistory.page.getByRole('menuitem',{name:'Snap photo',exact:true}).click();await photoHistory.page.getByAltText('Captured email area').waitFor();await photoHistory.page.getByRole('button',{name:'Analyze photo (uses AI)',exact:true}).click();await photoHistory.page.getByText('Analysis ready. Review the details before saving an action.',{exact:true}).last().waitFor();
+    await photoHistory.reload();await photoHistory.page.getByRole('button',{name:'Recent analyses',exact:true}).click();await photoHistory.page.getByRole('button',{name:'Reopen analysis',exact:true}).click();await photoHistory.page.getByText('Saved analysis reopened.',{exact:true}).last().waitFor();assert.equal(await photoHistory.page.getByAltText('Captured email area').getAttribute('src'),null);assert.equal(await photoHistory.page.getByRole('button',{name:'Analyze photo (uses AI)',exact:true}).isDisabled(),true);assert.equal(await photoHistory.page.evaluate(()=>pickers.length),0);assert.equal(photoHistory.requests.filter(r=>r.action==='analyze').length,1);
+  });
+  assert.deepEqual(photoHistory.errors,[]);await photoHistory.page.close();
+  const lateHistory=await setup();
+  await check('late history delivery cannot restore private results after a Chat change',async()=>{
+    await lateHistory.page.evaluate(()=>window.deferHistory=true);await lateHistory.page.getByRole('button',{name:'Recent analyses',exact:true}).click();await lateHistory.page.waitForFunction(()=>window.historyWaiting);
+    await lateHistory.page.evaluate(()=>{dispatchEvent(new Event('stonefellow:chat-context-changing'));window.releaseHistory=true;});await lateHistory.page.waitForTimeout(50);assert.equal(await lateHistory.page.locator('.vp3-email-capture-dialog,.vp3-email-capture-history').count(),0);assert.equal(lateHistory.requests.filter(r=>r.action==='analyze').length,0);
+  });
+  assert.deepEqual(lateHistory.errors,[]);await lateHistory.page.close();
   console.log(`GMAIL_EMAIL_CAPTURE_BROWSER=PASS (${checks} workflows)`);
 }finally{await browser.close();}

@@ -334,7 +334,12 @@ $musicChatRuntime = '<script>window.VP3_MUSIC_CHAT_CONFIG_V1='
     .json_encode(['endpoint'=>url('/api/music-history-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],
         'agentId'=>(int)($activeUserAgent['id']??0)], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
     .'<link rel="stylesheet" href="'.e(url('/assets/css/music-history-v1.css?v='.substr(hash_file('sha256',__DIR__.'/assets/css/music-history-v1.css'),0,12))).'">'
-    .'<script src="'.e(url('/assets/js/music-history-v1.js?v='.substr(hash_file('sha256',__DIR__.'/assets/js/music-history-v1.js'),0,12))).'"></script>';
+    .'<script src="'.e(url('/assets/js/music-history-v1.js?v='.substr(hash_file('sha256',__DIR__.'/assets/js/music-history-v1.js'),0,12))).'"></script>'
+    .'<script>window.VP3_MUSIC_PREFERENCES_V1_CONFIG='
+    .json_encode(['endpoint'=>url('/api/music-preferences-v1.php'),'csrf'=>csrf_token(),'userId'=>(int)$user['id'],
+        'agentId'=>(int)($activeUserAgent['id']??0)], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES).';</script>'
+    .'<link rel="stylesheet" href="'.e(url('/assets/css/music-preferences-v1.css?v='.substr(hash_file('sha256',__DIR__.'/assets/css/music-preferences-v1.css'),0,12))).'">'
+    .'<script src="'.e(url('/assets/js/music-preferences-v1.js?v='.substr(hash_file('sha256',__DIR__.'/assets/js/music-preferences-v1.js'),0,12))).'"></script>';
 $html = preg_replace(
     '~(<script[^>]+src="[^"]*chat\.js\?v=[^"]+"[^>]*></script>)~i',
     $agentChatBootstrap . $voiceBootstrap . $voiceDiagnostics . $youtubeChatRuntime . $musicChatRuntime . '$1',

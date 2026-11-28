@@ -270,6 +270,8 @@ function vp3_media_sources_v1(PDO $pdo,array $scope,array $binding,?array $refs,
         catch(PDOException){$coverage='limited';}
     }
     if($refs!==null)$items=array_intersect_key($items,array_fill_keys($refs,true));
+    require_once __DIR__.'/agent-media-preferences-v1.php';
+    $items=vp3_media_preferences_sources_v1($pdo,$scope,$items);
     if($coverage==='ready'&&in_array($youtube['coverage'],['limited','unavailable'],true))$coverage='limited';
     $result=['items'=>$items,'coverage'=>$coverage];
     if($coordination&&$refs===null&&$coverage==='ready'&&!$items)$result['offer_gate']='no_playable_sources';
@@ -507,9 +509,9 @@ function vp3_media_reply_chat_v1(PDO $pdo,array $user,array $principal,int $cid,
                 $source=$sources[$goal['primary']];
                 $track=$source['track_id']??0;
                 if(str_starts_with($goal['primary'],'media:resume:')){
-                    $playback=vp3_media_resume_action_v1($pdo,$live,$agent,$cid,$track,$source['revision'],$target['message_id']);
+                    $playback=vp3_media_resume_action_v1($pdo,$live,$agent,$cid,$track,$source['playback_revision']??$source['revision'],$target['message_id']);
                 }elseif(str_starts_with($goal['primary'],'media:track:')){
-                    $playback=vp3_media_native_pick_action_v1($pdo,$live,$agent,$cid,$track,$source['revision'],$target['message_id']);
+                    $playback=vp3_media_native_pick_action_v1($pdo,$live,$agent,$cid,$track,$source['playback_revision']??$source['revision'],$target['message_id']);
                 }elseif(str_starts_with($goal['primary'],'media:stoneward:')){
                     if($prepared!==null&&array_intersect_key($source,$prepared['source'])===$prepared['source']){
                         $stoneward=$prepared['playback'];

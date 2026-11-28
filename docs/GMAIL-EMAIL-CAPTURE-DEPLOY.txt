@@ -25,6 +25,35 @@ Actions
 - Research product in Chat: review the phrase and prepare it in the original Chat.
   Existing typed drafts are preserved; the user sends the research request.
 - Search Amazon: review the phrase and explicitly open an Amazon search.
+- Recent analyses: reopen saved results for this exact email, Agent and Chat,
+  including after a page reload. Listing, reopening and resuming status checks
+  do not dispatch another model request. History is paged in groups of ten.
+  Failed attempts retain their received-response inspector. Reopening a photo
+  analysis restores its interpretation; raw screenshot pixels are not stored.
+- Save as task: review title and notes, then save one existing Brain task in the
+  originating Agent. Source provenance is encrypted in the canonical task.
+- Send finding to Chat: review the finding, then save one owner message in the
+  originating Chat. This does not run another model or replace a typed Chat draft.
+
+Saved actions
+New calendar, reminder, task and Chat saves record native-ID links in
+agent_gmail_capture_actions_v1 inside the same owner transaction as the effect.
+They do not create another task/calendar/reminder/message store. Replayed saves
+keep one canonical effect, and separate analyses can refer to that same effect.
+Saved cards read current native titles/status. Deleted or inaccessible records
+are shown as unavailable; reopening or retrying does not recreate them.
+Calendar actions link to the real event editor. Reminder/task details are shown
+from their canonical records; the existing reminder list can also be opened.
+Back to email returns to the original open reader. Actions made before this
+upgrade retain their original native records; unverifiable old analysis/action
+associations are not guessed or backfilled.
+
+Upgrade for saved analyses
+Run Database Upgrade once even if the first capture release was already installed.
+It preserves the existing analysis rows, adds the native action reference table
+and source-history indexes, and runs no model analysis or request-time DDL.
+Expired in-flight attempts are not redispatched. A late response from the already
+claimed physical request is still retained and can complete that same analysis.
 
 Browser and model requirements
 Text selection and action forms work in the existing responsive owner reader.
@@ -55,11 +84,17 @@ are not saved as durable permission grants in calendar/reminder records.
 Validation
 Native MySQL acceptance covers encrypted results, single-use dispatch, replay,
 source/owner/Agent/Chat fences, revocation and real calendar/reminder kernels.
+History acceptance also covers stable cursors, renewal, copied/tampered cursors,
+actual scoped Brain tasks, canonical Chat messages, native permission revocation,
+deleted records, receipt/effect rollback, and responses arriving after expiry.
 Provider tests retain actual metering/request builders and replace physical HTTP.
 HTTP tests exercise the shipped controller's authentication and request contract.
 Chromium tests use real iframe selection, pointer/keyboard input and video/canvas
 processing, with deterministic sharing/provider doubles. They do not certify live
 OCR quality or a real operating-system sharing picker on every device.
+Browser recovery includes full page reloads, text/photo/failed/pending analyses,
+native action links, reviewed task/Chat handoff, lost-save replies, pagination,
+phone layout and late history delivery after a Chat change.
 
 Browser API reference:
 https://developer.chrome.com/docs/web-platform/region-capture

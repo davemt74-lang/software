@@ -879,6 +879,11 @@
         onMusicState:observer.onState, resumeFromHistory:false, resumeAtMs});
     if (!active) return null;
     return {
+      receipt() {
+        const play = active.play;
+        return activePlayer === active && play.recorded && canCapture(active, play)
+          ? {kind:active.playlistId ? 'p' : 'y', id:play.fields.play_id} : null;
+      },
       pause() { if(activePlayer===active)pauseForMusic(); },
       resume() {
         if(activePlayer!==active||!active.ready||document.hidden)throw new Error('Use Play to reopen this YouTube selection.');

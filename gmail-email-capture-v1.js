@@ -45,13 +45,14 @@
     if (!captured||!root||!body||typeof source!=='string'||source.length>6000||!/^[a-f0-9]+$/.test(source)) return null;
     let endpoint;try {endpoint=new URL(window.VP3_CHAT_EMAIL_V1.captureEndpoint,location.href);if(endpoint.origin!==location.origin||endpoint.username||endpoint.password) return null;}catch{return null;}
     const life=new AbortController(),key=signature(captured),doc=body.ownerDocument,sourceDialog=root.closest('dialog');
-    let disposed=false,selecting=false,drag=null,region=null,selection='',photo='',generation=0,busy=false,stream=null,analysis=null,analysisRequest=null,poll=0;
+    let disposed=false,selecting=false,drag=null,region=null,selection='',photo='',generation=0,busy=false,stream=null,analysis=null,analysisRequest=null,poll=0,currentActions=[],historyCursor=null;
     const current=()=>!disposed&&root.isConnected&&root.getClientRects().length>0&&(!sourceDialog||sourceDialog.open)&&signature(scope())===key&&isCurrent();
     const button=(label,fn)=>{const el=node('button',label);el.type='button';el.addEventListener('click',event=>{if(event.isTrusted&&current())void fn(event);});return el;};
     const status=node('span','','vp3-email-capture-status');status.setAttribute('role','status');
     const choose=button('Capture area',()=>setSelecting(!selecting));choose.setAttribute('aria-pressed','false');
     const actions=button('Email actions',()=>{if (!region&&!selection) useWholeText();openPreview();});
-    toolbar.append(choose,actions,status);
+    const recent=button('Recent analyses',()=>{openPreview();void loadHistory();});
+    toolbar.append(choose,actions,recent,status);
     content.classList.add('vp3-email-capture-host');
     const overlay=node('div','','vp3-email-capture-overlay'),box=node('div','','vp3-email-capture-box');
     overlay.hidden=true;box.hidden=true;content.append(overlay,box);
@@ -62,13 +63,15 @@
     const selected=node('textarea');selected.rows=5;selected.maxLength=6000;selected.setAttribute('aria-label','Selected email text');
     const image=node('img');image.alt='Captured email area';image.hidden=true;
     const output=node('section','','vp3-email-capture-result'),notice=node('p','','vp3-email-capture-notice');notice.setAttribute('role','status');
-    const controls=node('div','','vp3-email-capture-actions'),formHost=node('section');
-    dialog.append(heading,origin,selected,image,notice,controls,output,formHost);root.append(dialog);
+    const controls=node('div','','vp3-email-capture-actions'),formHost=node('section'),completed=node('section','','vp3-email-capture-completed');
+    const history=node('section','','vp3-email-capture-history');history.hidden=true;
+    const back=button('Back to email',()=>{dialog.close();root.scrollIntoView({block:'nearest'});});
+    dialog.append(heading,origin,back,selected,image,notice,controls,history,output,completed,formHost);root.append(dialog);
     let lastFocus=null;
     const say=text=>{if(current()){status.textContent=text;notice.textContent=text;}};
     const snapshot=()=>({generation,text:selection,photo});
     const matches=s=>current()&&s.generation===generation&&s.text===selection&&s.photo===photo;
-    function clearAttempt() {clearTimeout(poll);poll=0;analysis=analysisRequest=null;output.replaceChildren();formHost.replaceChildren();}
+    function clearAttempt() {clearTimeout(poll);poll=0;analysis=analysisRequest=null;currentActions=[];output.replaceChildren();completed.replaceChildren();formHost.replaceChildren();history.hidden=true;history.replaceChildren();historyCursor=null;}
     function changed() {generation++;clearAttempt();}
     function setSelecting(value) {
       if (!current()||busy) return;
@@ -132,11 +135,14 @@
     body.addEventListener('contextmenu',contextMenu,{signal:life.signal});
     overlay.addEventListener('contextmenu',event=>{if(region){event.preventDefault();openMenu(event.clientX,event.clientY);}});
     const registry=[
+      {id:'history',label:'Saved analyses',run:()=>loadHistory()},
       {id:'text',label:'Analyze text (uses AI)',run:()=>analyze('text')},
       {id:'snap',label:'Snap photo',run:event=>snap(event)},
       {id:'photo',label:'Analyze photo (uses AI)',run:()=>analyze('photo')},
       {id:'calendar',label:'Add to calendar',run:()=>showForm('calendar')},
       {id:'reminder',label:'Set reminder',run:()=>showForm('reminder')},
+      {id:'task',label:'Save as task',run:()=>showForm('task')},
+      {id:'chat',label:'Send finding to Chat',run:()=>showForm('chat')},
       {id:'research',label:'Research product in Chat',run:()=>showForm('research')},
       {id:'amazon',label:'Search Amazon',run:()=>showForm('amazon')},
     ];
@@ -146,7 +152,7 @@
         menu.hidden=true;if(action.id!=='snap')openPreview();void action.run(event);
       });el.dataset.emailCaptureAction=action.id;el.disabled=disabled(action.id);if(forMenu)el.setAttribute('role','menuitem');host.append(el);}
     }
-    function refreshControls(){renderActions(controls);selected.disabled=busy;choose.disabled=busy;actions.disabled=busy;}
+    function refreshControls(){renderActions(controls);selected.disabled=busy;choose.disabled=busy;actions.disabled=busy;recent.disabled=busy;for(const b of history.querySelectorAll('button'))b.disabled=busy;}
     function openPreview() {
       if(!current())return;menu.hidden=true;selected.value=selection;image.hidden=!photo;if(photo)image.src=photo;
       refreshControls();if(!dialog.open){lastFocus=document.activeElement;dialog.showModal();}
@@ -187,9 +193,69 @@
       } finally {clearTimeout(timer);life.signal.removeEventListener('abort',stop);}
     }
     const timezone=()=>{try{return Intl.DateTimeFormat().resolvedOptions().timeZone||'UTC';}catch{return 'UTC';}};
+    function receiptNode(value) {
+      const item=node('article','','vp3-email-capture-receipt');
+      const kind=({calendar:'Calendar event',reminder:'Reminder',task:'Task',chat:'Chat message'})[value.kind]||'Saved action';
+      const status=bounded(value.status,40).replaceAll('_',' ');
+      item.append(node('strong',bounded(value.title||'Saved action',240)),node('p',`${kind} #${Number(value.record_id)||0} · ${status.charAt(0).toUpperCase()+status.slice(1)}`));
+      if(value.available!==true)return item;
+      if(value.detail){const details=node('details');details.append(node('summary','View saved '+bounded(value.kind,12)),node('p',bounded(value.detail,10000)));item.append(details);}
+      if(typeof value.href==='string'){
+        try{const target=new URL(value.href,location.href);if(target.origin===location.origin&&!target.username&&!target.password){
+          const link=node('a',value.kind==='calendar'?'Open calendar event':'Open Chat');link.href=target.href;link.target='_blank';link.rel='noopener noreferrer';item.append(link);
+        }}catch{}
+      }
+      if(value.kind==='reminder'&&window.VP3TaskNotes?.open)item.append(button('Open reminder list',()=>{
+        dialog.close();sourceDialog?.close();window.VP3TaskNotes.open({kind:'reminders',id:0,view:'all',timezone:timezone()});
+      }));
+      return item;
+    }
+    function renderCompleted(values=[]) {
+      currentActions=Array.isArray(values)?values.slice(0,40):[];completed.replaceChildren();
+      if(currentActions.length){completed.append(node('h3','Saved actions'));for(const value of currentActions)completed.append(receiptNode(value));}
+    }
+    async function loadHistory(cursor=null) {
+      if(busy||!current())return;const s=snapshot();busy=true;refreshControls();history.hidden=false;
+      if(cursor===null)history.replaceChildren(node('h3','Recent analyses'),node('p','Loading saved analyses…'));
+      try{
+        const data=await request('history',cursor?{cursor}:{});if(!matches(s))return;
+        const saved=data.history;if(!saved||!Array.isArray(saved.items)||saved.items.length>10)throw Error('The saved analysis list could not be verified.');
+        if(cursor===null)history.replaceChildren(node('h3','Recent analyses'),node('div','','vp3-email-capture-history-list'));
+        const list=history.querySelector('.vp3-email-capture-history-list')||history;
+        history.querySelector('[data-history-more]')?.remove();
+        if(!saved.items.length&&cursor===null)history.append(node('p','No saved analyses for this email in this Chat yet.'));
+        for(const item of saved.items){
+          if(!item||!/^[a-f0-9]{32}$/.test(item.id))throw Error('The saved analysis list could not be verified.');
+          const row=node('article','','vp3-email-capture-history-item'),date=new Date(item.created_at);
+          row.append(node('strong',`${item.mode==='photo'?'Photo':'Text'} analysis · ${bounded(item.state,20)}`),node('small',Number.isFinite(date.getTime())?date.toLocaleString():''),node('p',bounded(item.summary||item.excerpt||'Saved analysis attempt',300)),button('Reopen analysis',()=>restoreAnalysis(item.id)));
+          list.append(row);
+        }
+        historyCursor=typeof saved.next_cursor==='string'?saved.next_cursor:null;
+        if(historyCursor){const more=button('More analyses',()=>loadHistory(historyCursor));more.dataset.historyMore='true';history.append(more);}
+        if(cursor===null&&Array.isArray(saved.actions)&&saved.actions.length){
+          const details=node('details','','vp3-email-capture-source-actions');details.append(node('summary','Saved actions from this email'));const seen=new Set();
+          for(const value of saved.actions.slice(0,40)){const key=value.kind+':'+value.record_id;if(!seen.has(key)){details.append(receiptNode(value));seen.add(key);}}history.append(details);
+        }
+        say('Saved analyses loaded. Choose one to reopen.');
+      }catch(error){if(matches(s)){if(cursor===null)history.replaceChildren(node('h3','Recent analyses'));history.append(node('p',error.message));say(error.message);}}
+      finally{if(matches(s)){busy=false;refreshControls();}}
+    }
+    async function restoreAnalysis(id) {
+      if(busy||!current())return;const s=snapshot();busy=true;refreshControls();say('Reopening saved analysis…');
+      try{
+        const data=await request('get',{capture_id:id});if(!matches(s))return;
+        changed();selection=bounded(data.capture?.selected_text||'',6000);selected.value=selection;photo='';region=null;box.hidden=true;image.hidden=true;image.removeAttribute('src');
+        showAnalysis(data.capture);history.hidden=true;
+        if(['preparing','dispatched'].includes(data.capture.state)){
+          const token=analysisRequest='saved:'+id,next=snapshot();poll=setTimeout(()=>void checkAttempt(token,next,id),1500);return;
+        }
+        say('Saved analysis reopened.');
+      }catch(error){if(current())say(error.message);}
+      finally{if(current()&&!poll){busy=false;refreshControls();}}
+    }
     function showAnalysis(value) {
       if(!value||!/^[a-f0-9]{32}$/.test(value.id)||!['preparing','dispatched','ready','failed'].includes(value.state))throw Error('The saved analysis could not be verified.');
-      analysis=value;output.replaceChildren();
+      analysis=value;output.replaceChildren();renderCompleted(value.actions);
       if(value.state==='ready'){
         const result=value.result;
         if(!result||typeof result.summary!=='string'||result.summary.length>8000||typeof result.extracted_text!=='string'||result.extracted_text.length>24000
@@ -203,12 +269,13 @@
         if(typeof value.received_text==='string'&&value.received_text){const details=node('details');details.append(node('summary','Received analysis'),node('pre',value.received_text));output.append(details);}
       }else say('Email specialist is analyzing the selected area…');
     }
-    async function checkAttempt(attempt,s) {
+    async function checkAttempt(attempt,s,captureId=null) {
       if(!matches(s)||analysisRequest!==attempt)return;
+      poll=0;
       try {
-        const data=await request('get',{request_id:attempt});if(!matches(s)||analysisRequest!==attempt)return;
+        const data=await request('get',captureId?{capture_id:captureId}:{request_id:attempt});if(!matches(s)||analysisRequest!==attempt)return;
         showAnalysis(data.capture);
-        if(['preparing','dispatched'].includes(data.capture.state))poll=setTimeout(()=>void checkAttempt(attempt,s),2000);
+        if(['preparing','dispatched'].includes(data.capture.state))poll=setTimeout(()=>void checkAttempt(attempt,s,captureId),2000);
         else {busy=false;refreshControls();}
       }catch(error){if(matches(s)){busy=false;refreshControls();say(error.message);}}
     }
@@ -265,8 +332,8 @@
     }
     function showForm(kind) {
       if(busy)return;formHost.replaceChildren();const form=node('form'),fields={},info=node('p');info.setAttribute('role','status');
-      form.append(node('h3',({calendar:'Add to calendar',reminder:'Set reminder',research:'Research product in Chat',amazon:'Search Amazon'})[kind]));
-      const field=(name,label,type,value='',max=500)=>{const wrapper=node('label',label),input=node('input');input.type=type;input.name=name;input.value=value;input.maxLength=max;input.required=true;wrapper.append(input);fields[name]=input;form.append(wrapper);return input;};
+      form.append(node('h3',({calendar:'Add to calendar',reminder:'Set reminder',task:'Save as task',chat:'Send finding to Chat',research:'Research product in Chat',amazon:'Search Amazon'})[kind]));
+      const field=(name,label,type,value='',max=500)=>{const wrapper=node('label',label),input=node(type==='textarea'?'textarea':'input');if(type==='textarea')input.rows=4;else input.type=type;input.name=name;input.value=value;input.maxLength=max;input.required=true;wrapper.append(input);fields[name]=input;form.append(wrapper);return input;};
       const suggested=analysis?.state==='ready'?analysis.result:null;
       const date=suggested?.dates?.[0]||{},defaultTitle=bounded(date.title||selection.trim().split('\n')[0]||message.subject||'',190);
       let dateChoice=null;
@@ -275,7 +342,12 @@
         for(const [i,d] of suggested.dates.entries()){const option=node('option',[d.title,dateLabel(d.start_local)].filter(Boolean).join(' · '));option.value=String(i);select.append(option);}
         label.append(select);form.append(label);
       }
-      if(['research','amazon'].includes(kind)) {
+      if(['task','chat'].includes(kind)){
+        const finding=[suggested?.summary,suggested?.extracted_text||selection].filter(Boolean).join('\n\n');
+        if(kind==='task'){field('title','Task title','text',bounded(defaultTitle,180),180);field('notes','Task notes (optional)','textarea',bounded(finding,4000),4000).required=false;}
+        else field('message','Finding to share','textarea',bounded(finding,8000),8000);
+        form.append(node('p',kind==='task'?'Save to this Agent’s existing tasks with the email source attached.':'Save this reviewed finding in this Chat. Your typed Chat draft is kept.'));
+      }else if(['research','amazon'].includes(kind)) {
         const cleaned=selection.replace(/https?:\/\/\S+|\b\S+@\S+\b/g,'').replace(/\s+/g,' ').trim();
         const max=kind==='research'?120:160;
         field('query','Search phrase','text',bounded(suggested?.product_query||cleaned,max),max);
@@ -299,7 +371,7 @@
           fields.end_date.value=d.end_local?.slice(0,10)||d.start_local?.slice(0,10)||'';fields.end_time.value=d.end_local?.slice(11,16)||'';
         }else fields.start_local.value=d.start_local||'';
       });
-      const save=button(kind==='calendar'?'Save calendar event':kind==='reminder'?'Save reminder':kind==='research'?'Prepare in Chat':'Search Amazon',()=>form.requestSubmit());
+      const save=button(({calendar:'Save calendar event',reminder:'Save reminder',task:'Save task',chat:'Send to Chat',research:'Prepare in Chat',amazon:'Search Amazon'})[kind],()=>form.requestSubmit());
       form.append(save,info);formHost.append(form);
       form.addEventListener('submit',async event=>{
         event.preventDefault();if(!current()||busy||!form.reportValidity())return;
@@ -315,8 +387,9 @@
         }
         const s=snapshot();busy=true;for(const input of Object.values(fields))input.disabled=true;if(dateChoice)dateChoice.disabled=true;save.disabled=true;info.textContent='Saving…';refreshControls();
         try {
-          const data=await request(kind,{text:selection,fields:values});if(!matches(s))return;
+          const data=await request(kind,{text:selection,fields:values,...(analysis?.id?{capture_id:analysis.id}:{})});if(!matches(s))return;
           info.textContent=data.saved?.message||'Saved.';save.textContent='Saved';
+          if(data.saved?.action){const updated=[data.saved.action,...currentActions.filter(x=>x.id!==data.saved.action.id)];renderCompleted(updated);if(analysis)analysis.actions=updated;}
         }catch(error){if(matches(s)){
           info.textContent=error.message+(error.status===422?'':' Retry keeps the same details.');
           if(error.status===422){for(const input of Object.values(fields))input.disabled=false;if(dateChoice)dateChoice.disabled=false;}
@@ -338,7 +411,8 @@
     function destroy() {
       if(disposed)return;disposed=true;life.abort();clearTimeout(poll);for(const track of stream?.getTracks()||[])track.stop();stream=null;
       resize?.disconnect();
-      for(const el of [choose,actions,status,overlay,box,menu,dialog])el.remove();selection=photo='';analysis=analysisRequest=null;views.delete(entry);
+      image.removeAttribute('src');selected.value='';output.replaceChildren();completed.replaceChildren();history.replaceChildren();formHost.replaceChildren();
+      for(const el of [choose,actions,recent,status,overlay,box,menu,dialog])el.remove();selection=photo='';analysis=analysisRequest=null;currentActions=[];historyCursor=null;views.delete(entry);
     }
     sourceDialog?.addEventListener('close',destroy,{signal:life.signal});
     const entry={root,destroy,current};views.add(entry);refreshControls();return entry;

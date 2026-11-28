@@ -9,7 +9,7 @@
 .vp3-email-capture-menu button:disabled{opacity:.45}
 .vp3-email-capture-dialog{box-sizing:border-box;width:min(760px,calc(100vw - 24px));max-height:90dvh;overflow:auto;padding:20px;border:1px solid #cad3df;border-radius:14px;background:#fff;color:#172032}
 .vp3-email-capture-dialog::backdrop{background:#0f172a70}
-.vp3-email-capture-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.vp3-email-capture-dialog header{display:flex;align-items:center;justify-content:space-between;gap:12px;position:sticky;top:0;z-index:2;background:#fff;padding:8px 0;margin-bottom:12px;border-bottom:1px solid #e1e7ef;box-shadow:0 -24px 0 #fff}
 .vp3-email-capture-dialog h2{margin:0;font-size:1.2rem}.vp3-email-capture-dialog h3{font-size:1.05rem}
 .vp3-email-capture-origin{font-size:.85rem;color:#526174;overflow-wrap:anywhere}
 .vp3-email-capture-dialog textarea,.vp3-email-capture-dialog input,.vp3-email-capture-dialog select{box-sizing:border-box;max-width:100%;width:100%;border:1px solid #b9c6d6;border-radius:7px;padding:10px;font:inherit;background:#fff;color:#172032}
@@ -20,4 +20,10 @@
 .vp3-email-capture-dialog label{display:block;font-size:.9rem;margin:12px 0}.vp3-email-capture-dialog label input{display:block;margin-top:4px}
 .vp3-email-capture-result p,.vp3-email-capture-result pre{white-space:pre-wrap;overflow-wrap:anywhere;max-width:100%}
 .vp3-email-capture-notice{font-size:.9rem;color:#3e546f}
+.vp3-email-capture-history[hidden]{display:none}
+.vp3-email-capture-history-item,.vp3-email-capture-receipt{padding:12px 0;border-top:1px solid #e1e7ef;overflow-wrap:anywhere}
+.vp3-email-capture-history-item small{display:block;color:#526174;margin-top:4px}
+.vp3-email-capture-history-item p,.vp3-email-capture-receipt p{white-space:pre-wrap;overflow-wrap:anywhere;margin:8px 0}
+.vp3-email-capture-receipt a{display:inline-block;margin-top:8px;color:#245fae}
+.vp3-email-capture-source-actions{margin-top:14px}
 @media(max-width:600px){.vp3-email-capture-dialog{padding:14px;width:calc(100vw - 16px)}.vp3-email-capture-actions button{flex:1 1 46%;font-size:.85rem}}

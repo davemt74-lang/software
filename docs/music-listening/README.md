@@ -2,7 +2,7 @@
 
 Canonical planning entry point for the VP3 music revival, `/music-workspace.php`, song metadata and rights, hosted streaming, and the standalone Stoneward integration.
 
-**Status:** ML0 through ML3A are merged. VP3 [PR #951](https://github.com/davemt74-lang/software/pull/951) delivered all-time listening totals as `98cccd1e8a56a182a19e8007601915757840889a`, following the Music Workspace reporting in [PR #948](https://github.com/davemt74-lang/software/pull/948). Stoneward [PR #391](https://github.com/davemt74-lang/stoneward/pull/391), v1.3.333 at `a15a0505627a18e0ead2310c9ac3915b044711d6`, remains the paired public-page attribution client. Their complete release archives were verified. Implementation and release qualification for [MC1 music Chat and private playlists](MC1-MUSIC-CHAT.md) are tracked in [PR #957](https://github.com/davemt74-lang/software/pull/957), which owns exact candidate, merge and archive evidence. See [development status](DEVELOPMENT-STATUS.md). Joint live acceptance, funded earnings, payments and managed hosting retain their separate gates.
+**Status:** ML0 through ML3A are merged. VP3 [PR #951](https://github.com/davemt74-lang/software/pull/951) delivered all-time listening totals as `98cccd1e8a56a182a19e8007601915757840889a`, following the Music Workspace reporting in [PR #948](https://github.com/davemt74-lang/software/pull/948). Stoneward [PR #391](https://github.com/davemt74-lang/stoneward/pull/391), v1.3.333 at `a15a0505627a18e0ead2310c9ac3915b044711d6`, remains the paired public-page attribution client. Their complete release archives were verified. [MC1 music Chat and private playlists](MC1-MUSIC-CHAT.md) and [MC2 personal history](MC2-MUSIC-HISTORY.md) are released in [PR #957](https://github.com/davemt74-lang/software/pull/957) and [PR #962](https://github.com/davemt74-lang/software/pull/962). [MC3 preferences and shared Agent context](MC3-MUSIC-PREFERENCES.md) is the active implementation; its implementation PR owns exact candidate, CI, merge and archive qualification. See [development status](DEVELOPMENT-STATUS.md). Joint live acceptance, funded earnings, payments and managed hosting retain their separate gates.
 
 ## Product direction
 
@@ -32,6 +32,7 @@ These user requirements are distinct from engineering recommendations and unreso
 | [ML3A lifetime totals](ML3A-LIFETIME-TOTALS.md) | All retained measured history per song/workspace and authorized platform, SQL aggregation, retention limits and acceptance |
 | [MC1 music Chat](MC1-MUSIC-CHAT.md) | Exact requests across VP3 and YouTube, durable private playlists, coordinated playback, source authority and scored release criteria |
 | [MC2 music history](MC2-MUSIC-HISTORY.md) | Shared private session history, filters/pagination, exact Agent recall, source coverage and scored acceptance |
+| [MC3 music preferences](MC3-MUSIC-PREFERENCES.md) | Exact private choices, distinct listening/Next evidence, shared suggestions and Agent context, retry safety and scored acceptance |
 | [Development status](DEVELOPMENT-STATUS.md) | Current completion state, test evidence, pending verification and next action |
 
 ## First complete integration milestone
