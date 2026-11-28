@@ -32,10 +32,12 @@ for (const file of ['profile.php','profile-commerce-product.php','profile-promot
   fs.copyFileSync(file, path.join(tmp, file));
 }
 for (const file of ['profile.css','profile-cleanup-v174.css','profile-conversion-v175.css','profile-canvases-v1.css','chat-canvas-media-v1.css','profile-image-owner-preview-v1.css','profile-image-owner-preview-v1.js','profile-agent.js','profile-image-edits-v1.js','agent-orb-particles.css','agent-orb-particles.js','profile-calls-pa3c.css','profile-calls-pa3c.js','profile-speech-pa4a.css','voice-lease-v122.js','profile-conversation-checkout-pa5.js','profile-webmcp-v100.js',
+  'profile-phone-v1.css','profile-phone-v1.js',
   'chat-notifications-drawer-v240.js','chat-notifications-drawer-v240.css','chat-header-ui.css','member-page-scroll.css','member-agent-voice-menu.css','member-agent-voice-menu.js','vp3-authenticated-runtime-bridge.js','member-shell-v77.js']) {
   fs.symlinkSync(path.resolve(file), path.join(tmp, file));
 }
 fs.copyFileSync('api/profile-agent.php', path.join(tmp, 'api/profile-agent.php'));
+fs.copyFileSync('api/profile-phone-v1.php', path.join(tmp, 'api/profile-phone-v1.php'));
 fs.writeFileSync(path.join(tmp, 'includes/bootstrap.php'), `<?php
 define('STONEFELLOW_ROOT',dirname(__DIR__));
 require getenv('VP3_PA3_ROOT').'/tests/fixtures/profile-handoff-pa3.php';
@@ -140,6 +142,12 @@ try {
     await new Promise(resolve => setTimeout(resolve, 30));
   }
   assert.ok(ready, logs);
+  const calling = await fetch(base + '/api/profile-phone-v1.php?action=public&username=fixture-owner');
+  assert.equal(calling.status,200);
+  assert.deepEqual(await calling.json(),{
+    ok:true,contract:'vp3.profile-phone.v1',enabled:false,number:'',href:'',
+    browser:{contract:'vp3.profile-browser-phone.v1',enabled:false,reason:'Browser calling is unavailable. You can use your phone app.'}
+  },'anonymous calling exposes only disabled public actions, without private line or provider configuration');
   const response = await fetch(base + imagePath);
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), image);
   assert.equal(response.headers.get('content-type'), 'image/png');

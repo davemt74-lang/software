@@ -88,7 +88,7 @@ function vp3_profile_workspace_conversations_v1(PDO $pdo,array $scope,string $fi
             'profile_agent_name'=>mb_substr(trim((string)($agent[0]['display_name']??'Profile Agent')),0,100),
             'status'=>(string)$row['status'],'mode'=>(string)($thread['mode']??($row['status']==='owner_joined'?'owner':'none')),
             'latest_summary'=>mb_substr((string)($last[0]['message']??$row['last_summary']),0,240),'last_message_at'=>(string)$row['last_message_at'],
-            'latest_message_id'=>(int)($last[0]['id']??0),'needs_owner'=>$turn!==null&&in_array($turn['state'],['awaiting_delivery','awaiting_owner','owner_claimed'],true)]
+            'latest_message_id'=>(int)($last[0]['id']??0),'needs_owner'=>$turn!==null&&in_array($turn['state'],['awaiting_delivery','awaiting_owner','owner_requested','owner_claimed'],true)]
             +vp3_profile_workspace_identity_v1($pdo,$row);
     }
     $next=null;

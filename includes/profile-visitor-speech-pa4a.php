@@ -302,8 +302,8 @@ function vp3_profile_speech_automatic_delivery_pa4a(PDO $pdo,array $item,array $
         }
         $thread=vp3_profile_handoff_thread_pa3($pdo,$owner,$cid,$lock);
         $q=$pdo->prepare('SELECT * FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND conversation_id=? ORDER BY id DESC LIMIT 1'.$suffix);$q->execute([$owner,$cid]);$turn=$q->fetch(PDO::FETCH_ASSOC);
-        if($turn&&in_array($turn['state'],['awaiting_delivery','awaiting_owner','owner_claimed','agent_ready','agent_running'],true)){
-            $visible=($turn['chat_mode']??'auto')!=='agent'&&($thread['requested_mode']??'auto')!=='agent';
+        if($turn&&in_array($turn['state'],['awaiting_delivery','awaiting_owner','owner_requested','owner_claimed','agent_ready','agent_running'],true)){
+            $visible=$turn['state']==='owner_requested'||(($turn['chat_mode']??'auto')!=='agent'&&($thread['requested_mode']??'auto')!=='agent');
             if(!$visible){$q=$pdo->prepare('SELECT d.delivery_id FROM profile_agent_handoff_deliveries_pa3 d INNER JOIN profile_agent_handoff_turns_pa3 t ON t.id=d.turn_id AND t.owner_user_id=d.owner_user_id WHERE d.owner_user_id=? AND t.conversation_id=? AND d.chat_conversation_id=? AND d.chat_agent_id=? LIMIT 1'.$suffix);$q->execute([$owner,$cid,(int)$scope['chat_conversation_id'],(int)$scope['chat_agent_id']]);$visible=(bool)$q->fetchColumn();}
             if($visible)return $deny('native_handoff_presentation');
         }

@@ -55,6 +55,15 @@
     verified_refunded_orders:['commerce','count','Verified refund-affected orders']
   };
   const analyticsGroups=[['images','Free image creations'],['events','Visits'],['conversations','Conversations'],['calls','Calls'],['commerce','Commerce']];
+  const responseMetricCatalog={
+    owner_requests_submitted:['count','Questions submitted to the owner'],
+    knowledge_gap_requests:['count','Knowledge gaps'],user_response_requests:['count','User responses'],
+    service_unavailable_requests:['count','Service failures'],quota_exhausted_requests:['count','Allowance limits'],
+    unknown_reason_requests:['count','Original reason unknown'],
+    owner_requests_answered:['count','Submitted questions answered'],owner_response_messages:['count','Owner replies answering questions'],
+    median_owner_response_seconds:['seconds','Median owner response time'],p90_owner_response_seconds:['seconds','90th percentile owner response time']
+  };
+  const responseReasons={knowledge_gap:'Knowledge gap',user_responses:'User responses',service_unavailable:'Service unavailable',quota_exhausted:'Allowance limit'};
   const analyticsCoverage=new Set(['ready','limited','unavailable','unconfigured']);
   const analyticsPointCoverage=new Set(['complete','partial','unavailable']);
   const analyticsReasons={
@@ -216,6 +225,83 @@
       ||failures.coverage==='unavailable'&&(failures.count!==null||failures.observed_count!==null))return false;
     return analyticsImageFailures(failures.reasons,total)&&(failures.coverage!=='unavailable'||failures.reasons.length===0);
   }
+  function responseSource(row) {
+    return row&&['request_id','conversation_id','visitor_message_id'].every(key=>positive(row[key]));
+  }
+  function responseGroups(value,live=false) {
+    if(!Array.isArray(value.questions)||value.questions.length>10||!Array.isArray(value.topics)||value.topics.length>10
+      ||typeof value.questions_truncated!=='boolean'||typeof value.topics_truncated!=='boolean')return false;
+    const seen=new Set();
+    for(const group of value.questions){
+      if(!revision(group?.key)||seen.has(group.key)||!analyticsImageLabel(group.question_excerpt,240)||!positive(group.count)
+        ||!positive(group.conversation_count)||group.conversation_count>group.count
+        ||!Array.isArray(group.samples)||!group.samples.length||group.samples.length>3||!group.samples.every(responseSource))return false;
+      seen.add(group.key);
+      if(group.suggestions!==undefined){
+        if(!live||!Array.isArray(group.suggestions)||group.suggestions.length>3)return false;
+        const noteIds=new Set();
+        for(const note of group.suggestions){
+          if(!positive(note?.knowledge_id)||noteIds.has(note.knowledge_id)||!nonnegative(note.folder_id)||!analyticsImageLabel(note.title,190)
+            ||!localUrl(note.url)||!Array.isArray(note.matched_terms)||note.matched_terms.length<2||note.matched_terms.length>6
+            ||!note.matched_terms.every(term=>analyticsImageLabel(term,240)))return false;
+          const url=new URL(note.url,location.origin);
+          if(!url.pathname.endsWith('/knowledge.php')||url.search!=='?folder='+note.folder_id+'&edit='+note.knowledge_id)return false;
+          noteIds.add(note.knowledge_id);
+        }
+      }
+    }
+    return value.topics.every(topic=>analyticsImageLabel(topic?.keyword,240)&&positive(topic.count));
+  }
+  function responseAnalytics(activity,backlog,observed) {
+    if(activity===undefined&&backlog===undefined)return true;
+    if(activity?.contract!=='vp3.profile-response-analytics.v1'||activity.record_scope!=='recorded_owner_requests'
+      ||!analyticsPointCoverage.has(activity.coverage)||!Object.hasOwn(analyticsReasons,activity.reason)
+      ||!Array.isArray(activity.metrics)||activity.metrics.length!==Object.keys(responseMetricCatalog).length)return false;
+    const seen=new Set();
+    for(const metric of activity.metrics){
+      const known=Object.hasOwn(responseMetricCatalog,metric?.key)?responseMetricCatalog[metric.key]:null;
+      if(!known||seen.has(metric.key)||metric.group!=='owner_responses'||metric.unit!==known[0]||!plain(metric.definition,600)
+        ||!analyticsNumberPoint(metric.current,metric.unit)||!analyticsNumberPoint(metric.previous,metric.unit))return false;
+      const c=metric.comparison,comparable=metric.current.coverage==='complete'&&metric.previous.coverage==='complete'
+        &&metric.current.value!==null&&metric.previous.value!==null;
+      if(!c||!['delta','percent'].every(key=>c[key]===null||typeof c[key]==='number'&&Number.isFinite(c[key])))return false;
+      if(!comparable){if(c.delta!==null||c.percent!==null)return false;}
+      else {const delta=metric.current.value-metric.previous.value;
+        if(c.delta!==delta||metric.previous.value===0&&c.percent!==null
+          ||metric.previous.value!==0&&(c.percent===null||Math.abs(c.percent-100*delta/Math.abs(metric.previous.value))>.005001))return false;}
+      seen.add(metric.key);
+    }
+    const optionalCount=n=>n===null||nonnegative(n),optionalSeconds=n=>n===null||typeof n==='number'&&Number.isFinite(n)&&n>=0&&n<=Number.MAX_SAFE_INTEGER;
+    for(const period of ['current','previous']){
+      const side=activity[period];
+      if(!side||!analyticsPointCoverage.has(side.coverage)||!Object.hasOwn(analyticsReasons,side.reason)||!analyticsPointCoverage.has(side.reason_coverage)
+        ||!optionalCount(side.unknown_reason_count)||!optionalCount(side.response_sample_size)||!responseGroups(side))return false;
+    }
+    if(backlog?.contract!=='vp3.profile-response-analytics.v1'||!analyticsPointCoverage.has(backlog.coverage)||!Object.hasOwn(analyticsReasons,backlog.reason)
+      ||!['waiting_count','observed_waiting_count','delegated_count','observed_delegated_count','unknown_count'].every(key=>optionalCount(backlog[key]))
+      ||!optionalSeconds(backlog.oldest_wait_seconds)||!optionalSeconds(backlog.median_wait_seconds)||!responseGroups(backlog,true)
+      ||!Array.isArray(backlog.oldest)||backlog.oldest.length>10||typeof backlog.oldest_truncated!=='boolean'
+      ||!Array.isArray(backlog.reasons)||backlog.reasons.length>4)return false;
+    for(const prefix of ['waiting','delegated']){
+      const count=backlog[prefix+'_count'],subset=backlog['observed_'+prefix+'_count'];
+      if(backlog.coverage==='complete'&&(!nonnegative(count)||subset!==null)
+        ||backlog.coverage==='partial'&&(count!==null||!nonnegative(subset))
+        ||backlog.coverage==='unavailable'&&(count!==null||subset!==null))return false;
+    }
+    if(backlog.coverage==='unavailable'&&(backlog.questions.length||backlog.oldest.length||backlog.topics.length))return false;
+    const reasons=new Set();
+    for(const row of backlog.reasons){if(!Object.hasOwn(responseReasons,row?.reason)||reasons.has(row.reason)||!nonnegative(row.count))return false;reasons.add(row.reason);}
+    for(const row of backlog.oldest){
+      if(!responseSource(row)||!Object.hasOwn(responseReasons,row.reason)||!analyticsImageLabel(row.question_excerpt,240)
+        ||!positive(row.first_submitted_at_utc_ms)||!positive(row.waiting_since_utc_ms)||row.waiting_since_utc_ms<row.first_submitted_at_utc_ms
+        ||row.waiting_since_utc_ms>observed||!optionalSeconds(row.wait_seconds)||row.wait_seconds===null
+        ||Math.abs(row.wait_seconds-(observed-row.waiting_since_utc_ms)/1000)>.000001)return false;
+    }
+    const knowledge=backlog.knowledge;
+    if(!knowledge||!analyticsPointCoverage.has(knowledge.coverage)||!Object.hasOwn(analyticsReasons,knowledge.reason)||typeof knowledge.candidates_truncated!=='boolean')return false;
+    if(knowledge.coverage==='unavailable'&&backlog.questions.some(group=>group.suggestions?.length))return false;
+    return true;
+  }
   function analyticsPeriodModel(value,requestedRef='') {
     const ref=analyticsRef(value?.ref),window=value?.window;
     if(value?.contract!=='vp3.profile-analytics-period.v1'||!ref||requestedRef&&ref.ref!==requestedRef
@@ -294,6 +380,7 @@
       backlogKeys.add(metric.key);
     }
     if(!analyticsImageUsage(value.image_usage,value.metrics)||!analyticsImageBacklog(backlog))return null;
+    if(!responseAnalytics(value.response_activity,backlog.owner_requests,value.observed_at_utc_ms))return null;
     return value;
   }
   function analyticsLedgerAmount(value,currency,withSign=false) {
@@ -1116,7 +1203,7 @@
       else if(metric.previous.value===0)wrap.append(node('small','No percentage from a zero baseline'));
       return wrap;
     }
-    function analyticsTable(rows,currencyRows=false) {
+    function analyticsTable(rows,currencyRows=false,responseRows=false) {
       const table=node('table','','vp3-profile-period-table');
       const head=node('thead'),headRow=node('tr');
       for(const label of ['Measure','Selected period','Previous period','Change']){const th=node('th',label);th.setAttribute('scope','col');headRow.append(th);}
@@ -1124,7 +1211,8 @@
       const body=node('tbody');
       for(const metric of rows){
         const row=node('tr');row.dataset.profileAnalyticsMetric=metric.key+(currencyRows?':'+metric.currency:'');
-        const title=currencyRows?(metric.key==='verified_payments'?'Verified payments':'Verified refunds')+' · '+metric.currency:analyticsMetricCatalog[metric.key][2];
+        const title=currencyRows?(metric.key==='verified_payments'?'Verified payments':'Verified refunds')+' · '+metric.currency
+          :responseRows?responseMetricCatalog[metric.key][1]:analyticsMetricCatalog[metric.key][2];
         const name=node('th',title);name.setAttribute('scope','row');row.append(name);
         for(const [key,label] of [['current','Selected period'],['previous','Previous period']]){
           const cell=node('td');cell.dataset.label=label;cell.append(analyticsPoint(metric[key],metric.unit,currencyRows?metric.currency:''));row.append(cell);
@@ -1225,6 +1313,94 @@
       saved.append(node('small','Current saved failures across the creation history. These records are not a count of failures in the selected completed period.'));
       section.append(saved);return section;
     }
+    function responseDuration(seconds) {
+      if(seconds===null)return 'No timing samples';
+      const unit=seconds>=86400?'day':seconds>=3600?'hour':seconds>=60?'minute':'second';
+      const divisor={day:86400,hour:3600,minute:60,second:1}[unit],n=seconds/divisor;
+      return new Intl.NumberFormat(undefined,{maximumFractionDigits:1}).format(n)+' '+unit+(n===1?'':'s');
+    }
+    function responseTopics(topics) {
+      const wrap=node('p','','vp3-profile-response-topics');
+      wrap.textContent=topics.length?'Question keywords: '+topics.map(row=>row.keyword+' ('+row.count+')').join(' · '):'No verified question keywords in these records.';
+      return wrap;
+    }
+    function responseQuestionGroups(value,{live=false}={}) {
+      const wrap=node('section','','vp3-profile-response-questions');wrap.dataset.profileResponseQuestions=live?'waiting':'period';
+      wrap.append(node('h5',live?'Waiting knowledge gaps':'Knowledge-gap question wording'));
+      wrap.append(node('p','Matching wording is grouped after case and punctuation are normalized. Counts are questions, not unique people.'));
+      if(value.coverage!=='complete')wrap.append(node('p',value.coverage==='unavailable'?'Question evidence is unavailable.':'These are the verified questions in the available evidence.'));
+      if(!value.questions.length)wrap.append(node('p',value.coverage==='complete'?'No recorded knowledge-gap questions in this view.':'No knowledge-gap questions could be verified in the available records.'));
+      const list=node('ol');
+      for(const group of value.questions){
+        const item=node('li');item.dataset.profileResponseQuestion=group.key;
+        item.append(node('strong',group.question_excerpt),node('p',group.count+' question'+(group.count===1?'':'s')+' in '+group.conversation_count+' conversation'+(group.conversation_count===1?'':'s')));
+        const links=node('div','','vp3-profile-actions'),conversations=new Set();
+        for(const sample of group.samples){
+          if(conversations.has(sample.conversation_id))continue;conversations.add(sample.conversation_id);
+          const open=button('Open conversation'+(group.samples.length>1?' '+conversations.size:''),()=>select({tab:'conversations',publicConversationId:sample.conversation_id}));
+          open.dataset.profileResponseConversation=String(sample.conversation_id);links.append(open);
+        }
+        item.append(links);
+        if(live&&group.suggestions?.length){
+          const notes=node('ul','','vp3-profile-response-notes');notes.setAttribute('aria-label','Existing Knowledge notes to review');
+          for(const suggestion of group.suggestions){
+            const li=node('li'),link=node('a','Review “'+suggestion.title+'”');link.href=suggestion.url;link.dataset.profileResponseKnowledge=String(suggestion.knowledge_id);
+            li.append(link,node('small','Matching keywords: '+suggestion.matched_terms.join(', ')));notes.append(li);
+          }
+          item.append(notes);
+        }
+        list.append(item);
+      }
+      wrap.append(list);
+      if(value.questions_truncated)wrap.append(node('small','Showing the 10 most frequent wording groups. Other verified questions remain in their conversations.'));
+      return wrap;
+    }
+    function responsePeriod(activity) {
+      const section=node('section','','vp3-profile-period-group vp3-profile-response-period');section.dataset.profileResponsePeriod='';
+      section.append(node('h4','Owner responses and knowledge gaps'));
+      section.append(node('p','Recorded submissions and verified replies in the selected completed period. Earlier questions that were never recorded as owner requests are outside this report.'));
+      if(activity.coverage!=='complete')section.append(node('p',analyticsReasons[activity.reason]||'Some response evidence could not be verified.'));
+      section.append(analyticsTable(activity.metrics,false,true));
+      const selected=activity.current;
+      section.append(node('p',(selected.response_sample_size===null?'Timing sample unavailable':selected.response_sample_size+' verified answered question'+(selected.response_sample_size===1?'':'s')+' in the response-time sample')
+        +'. Time starts at first submission and includes any delegation. Waiting questions are shown separately below.'));
+      if(selected.unknown_reason_count>0)section.append(node('p',selected.unknown_reason_count+' original submission reason'+(selected.unknown_reason_count===1?' was':'s were')+' not preserved. Later reasons are not used to fill these gaps.'));
+      section.append(responseQuestionGroups(selected),responseTopics(selected.topics));
+      const previous=node('details','','vp3-profile-period-definitions');previous.append(node('summary','Previous period question details'),responseQuestionGroups(activity.previous),responseTopics(activity.previous.topics));section.append(previous);
+      const definitions=node('details','','vp3-profile-period-definitions'),list=node('dl');definitions.append(node('summary','Response definitions and coverage'));
+      for(const metric of activity.metrics)list.append(node('dt',responseMetricCatalog[metric.key][1]),node('dd',metric.definition));
+      definitions.append(list);section.append(definitions);return section;
+    }
+    function responseBacklog(value) {
+      const section=node('section','','vp3-profile-response-current');section.dataset.profileResponseBacklog='';
+      section.append(node('h4','Questions waiting for you now'));
+      if(value.coverage==='unavailable'){section.append(node('p','Current owner requests are unavailable. '+(analyticsReasons[value.reason]||'')));return section;}
+      const count=value.coverage==='complete'?value.waiting_count:value.observed_waiting_count;
+      const delegated=value.coverage==='complete'?value.delegated_count:value.observed_delegated_count;
+      section.append(node('p',count+' waiting for your response'+(value.coverage==='partial'?' in the verified subset':'')+' · '+delegated+' delegated to the Agent and still awaiting a reply'));
+      if(value.coverage!=='complete')section.append(node('p','Some current request evidence is incomplete; these are observed counts, not a complete backlog.'));
+      section.append(node('p',count?'Longest current wait: '+responseDuration(value.oldest_wait_seconds)+' · Median current wait: '+responseDuration(value.median_wait_seconds):'No waiting questions were verified.'));
+      section.append(node('small','Wait age starts at the latest submission or re-submission to you. Completed-period owner response times start at the first submission.'));
+      const reasons=node('ul','','vp3-profile-image-failures');
+      for(const row of value.reasons)reasons.append(node('li',responseReasons[row.reason]+': '+row.count));section.append(reasons);
+      if(value.oldest.length){
+        const oldest=node('details','','vp3-profile-period-definitions');oldest.append(node('summary','Oldest waiting questions'));
+        const list=node('ol');
+        for(const row of value.oldest){
+          const item=node('li');item.append(node('p',row.question_excerpt),node('small',responseReasons[row.reason]+' · Waiting '+responseDuration(row.wait_seconds)),
+            button('Open conversation',()=>select({tab:'conversations',publicConversationId:row.conversation_id})));list.append(item);
+        }
+        oldest.append(list);if(value.oldest_truncated)oldest.append(node('small','Showing the 10 longest current waits.'));section.append(oldest);
+      }
+      section.append(responseQuestionGroups(value,{live:true}),responseTopics(value.topics));
+      const knowledge=node('p');knowledge.dataset.profileResponseKnowledgeStatus='';
+      knowledge.textContent=value.knowledge.coverage==='unavailable'
+        ?'Existing-note suggestions are unavailable under the current Knowledge access or storage. Your questions remain available above.'
+        :'Existing-note suggestions use matching keywords in notes this Chat Agent may currently read. Open a note to review any update; this report does not edit notes or change Knowledge Access.';
+      section.append(knowledge);
+      if(value.knowledge.candidates_truncated)section.append(node('small','Suggestions checked the 500 newest personal notes; older notes may also be relevant.'));
+      return section;
+    }
     function renderAnalyticsPeriod(target,value,mine) {
       const frame=node('section','','vp3-profile-period');frame.dataset.profileAnalyticsPeriod=value.ref;
       const meta=node('div','','vp3-profile-period-meta');
@@ -1269,6 +1445,7 @@
         const list=node('dl');
         for(const metric of metrics){list.append(node('dt',analyticsMetricCatalog[metric.key][2]),node('dd',metric.definition));}
         definitions.append(list);section.append(definitions);frame.append(section);
+        if(group==='images'&&value.response_activity)frame.append(responsePeriod(value.response_activity));
       }
       const money=node('section','','vp3-profile-period-group');money.append(node('h4','Commerce ledger amounts'));
       money.append(node('p','Amounts use the saved commerce ledger scale of two decimal places. Each currency is reported separately.'));
@@ -1277,6 +1454,7 @@
       frame.append(money,analyticsCohortDetail(value));
       const backlog=node('section','','vp3-profile-period-backlog');
       backlog.append(node('h4','Current activity and allowance'),analyticsImageCurrent(value.backlog));
+      if(value.backlog.owner_requests)backlog.append(responseBacklog(value.backlog.owner_requests));
       for(const point of value.backlog.metrics){
         const row=node('section');row.dataset.profileBacklog=point.key;
         row.append(node('h5',point.key==='current_unresolved_conversations'?'Current unresolved conversations':'Current unanswered visitor requests'));

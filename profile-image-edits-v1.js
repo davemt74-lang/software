@@ -38,6 +38,7 @@
     const intro=node('p','Upload your photo, then choose a collection image as a style or visual reference. Describe what to keep, change, combine, or remix in chat.');
     intro.className='profile-image-intro';
     const ownerNote=node('p','Choose an image to use as a reference in your private image generator. Visitors cannot send messages from this preview. Manage approved images in Profile Agent settings.');ownerNote.hidden=!ownerPreview;
+    const allowanceStatus=node('p');allowanceStatus.dataset.profileImageAllowance='unavailable';allowanceStatus.setAttribute('role','status');allowanceStatus.hidden=ownerPreview;
     const manage=node('a','Manage image collection','profile-agent-panel-action');
     try{const destination=new URL(cfg.imageSettingsUrl||'/profile-agent.php?tab=agent',window.location.href);if(destination.origin===window.location.origin&&['http:','https:'].includes(destination.protocol))manage.href=destination.href;}catch(_error){}
     manage.hidden=!ownerPreview||!manage.href;
@@ -64,7 +65,7 @@
     });done.dataset.profileImageUse='';
     const cancel=button('Back to conversation',()=>displayPanel(null));
     const actions=node('div',undefined,'profile-agent-panel-actions');actions.append(done,manage,cancel);done.hidden=ownerPreview;
-    panel.append(heading,intro,ownerNote,subject,collectionState,catalogLabel,imageLabel,referenceHeading,gallery,allStyles,promptHint,feedback,actions);
+    panel.append(heading,intro,ownerNote,allowanceStatus,subject,collectionState,catalogLabel,imageLabel,referenceHeading,gallery,allStyles,promptHint,feedback,actions);
     shell.querySelector('.profile-agent-footer').before(panel);
     const entry={panel,button:null};registerPanel(entry);
 
@@ -117,6 +118,16 @@
         &&item.references.every(reference=>positive(reference?.asset_id)&&text(reference.title,500)&&reference.price_cents===0
           &&(reference.preview_url===undefined||referenceUrl(reference.preview_url,item,reference))));
       return {...value,catalogs};
+    }
+    function renderAllowance(){
+      if(ownerPreview)return;
+      const value=service?.allowance,reset=Number(value?.resets_at_utc_ms);
+      const ready=value?.contract==='vp3.profile-image-allowance.v1'&&value.ready===true
+        &&Number.isSafeInteger(value.remaining)&&value.remaining>=0&&Number.isSafeInteger(value.resets_at_utc_ms)
+        &&reset>Date.now()+Number(context().clockOffset||0)&&Number.isFinite(new Date(reset).getTime());
+      allowanceStatus.dataset.profileImageAllowance=ready?'ready':'unavailable';
+      const label=ready?`${value.remaining} free image render${value.remaining===1?'':'s'} left today. Resets at ${new Date(reset).toISOString().slice(11,16)} UTC.`:'Your remaining free image renders could not be checked. Open the image collection again to refresh.';
+      if(allowanceStatus.textContent!==label)allowanceStatus.textContent=label;
     }
     function selectedCatalog(){return service?.catalogs.find(item=>item.collection_id===Number(catalogSelect.value));}
     function renderCatalogs(){
@@ -211,6 +222,7 @@
         if(version===serviceVersion)update(data);
       }catch(error){
         if(attempt!==collectionSequence||!collectionOpen||!active()||context().key!==key)return;
+        if(version!==serviceVersion)return;
         collectionError='The image collection could not be loaded. Try opening it again.';service=null;renderCatalogs();
       }finally{if(attempt===collectionSequence){collectionLoading=false;renderCollectionState();sync();}}
     }
@@ -367,6 +379,7 @@
     }
     function sync(){
       const current=context(),locked=busy||current.busy||!active();
+      renderAllowance();
       openButtons.forEach(open=>{if(!open.closest('[data-profile-attachment-help]'))open.hidden=ownerPreview||!enabled();open.disabled=locked||ownerPreview;});
       if(collectionButton){collectionButton.hidden=false;collectionButton.disabled=!active();}
       if(conversationButton)conversationButton.disabled=false;

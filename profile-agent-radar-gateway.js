@@ -14,8 +14,14 @@ function profileDefaultAction(contact){const profile=profileDefinition();if(!pro
 function policyState(contact){const explicit=currentPolicy(contact.id);return explicit?{action:String(explicit.action||'monitor'),inherited:false,policy:explicit}:{action:profileDefaultAction(contact),inherited:!!accessProfile,policy:null};}
 function currentLimit(contactId){return Number(currentPolicy(contactId)?.metadata?.requests_per_30m||30);}
 function scoreTone(value,kind='positive'){value=Number(value||0);if(kind==='negative')return value>=70?'bad':value>=40?'warn':'good';return value>=80?'good':value>=55?'warn':'neutral';}
-async function loadRadar(){const r=await fetch(cfg.radarEndpoint,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);if(!r.ok||!d?.ok)throw new Error(d?.error||'Agent Radar request failed.');return d.radar||null;}
-async function policyRequest(payload=null){const options=payload?{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf_token:cfg.csrf,...payload})}:{credentials:'same-origin',cache:'no-store'};const r=await fetch(cfg.radarPolicyEndpoint,options),d=await r.json().catch(()=>null);if(!r.ok||!d?.ok)throw new Error(d?.error||'Agent Gateway request failed.');return d;}
+async function portalRequest(endpoint,options,mutation=false){
+  const request=window.VP3ProfileAgentPortalHttpV1?.request;
+  if(typeof request!=='function')throw new Error('Refresh Profile Agent to reconnect Agent Gateway.');
+  try{return await request(endpoint,options,mutation?45000:15000);}
+  catch(error){if(mutation&&error?.code==='PROFILE_REQUEST_TIMEOUT')throw new Error('The Gateway request timed out. Refresh to check whether the change was saved before trying again.');throw error;}
+}
+async function loadRadar(){const d=await portalRequest(cfg.radarEndpoint,{credentials:'same-origin',cache:'no-store'});return d.radar||null;}
+async function policyRequest(payload=null){const options=payload?{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({csrf_token:cfg.csrf,...payload})}:{credentials:'same-origin',cache:'no-store'};return portalRequest(cfg.radarPolicyEndpoint,options,payload!==null);}
 function ensureShell(){let shell=host.querySelector('[data-radar-gateway-shell]');if(shell)return shell;shell=document.createElement('section');shell.className='profile-agent-radar-gateway-shell';shell.dataset.radarGatewayShell='1';const sitesShell=host.querySelector('[data-radar-sites-shell]');if(sitesShell)sitesShell.insertAdjacentElement('afterend',shell);else host.prepend(shell);render();return shell;}
 function accessProfileHtml(){
   const activeSlug=String(accessProfile?.slug||'');

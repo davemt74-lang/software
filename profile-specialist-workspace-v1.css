@@ -95,6 +95,15 @@
 .vp3-profile-image-rankings small,.vp3-profile-image-current small{color:var(--muted,#526177);margin-top:4px}
 .vp3-profile-image-failures{padding:0;margin:8px 0;list-style:none;display:grid;gap:5px}
 .vp3-profile-image-failures li{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.vp3-profile-response-questions,.vp3-profile-response-current{display:grid;gap:10px;min-width:0}
+.vp3-profile-response-questions h5{font-size:14px;line-height:1.5;margin:4px 0}
+.vp3-profile-response-questions>ol,.vp3-profile-response-current details>ol{display:grid;gap:12px;padding-left:22px;margin:0;min-width:0}
+.vp3-profile-response-questions>ol>li{border-top:1px solid var(--line,#dbe3ee);padding-top:10px;min-width:0;overflow-wrap:anywhere}
+.vp3-profile-response-questions p,.vp3-profile-response-current p{margin:0}
+.vp3-profile-response-notes{display:grid;gap:8px;padding-left:18px}.vp3-profile-response-notes small{display:block}
+.vp3-profile-response-topics{overflow-wrap:anywhere;color:var(--muted,#526177)}
+.vp3-profile-response-current{border-top:1px solid var(--line,#dbe3ee);padding-top:14px;margin-top:8px}
+.vp3-profile-response-current small{color:var(--muted,#526177)}
 .vp3-profile-image-current p{margin:6px 0}
 @container(max-width:560px){.vp3-profile-image-rankings,.vp3-profile-image-current{grid-template-columns:1fr}}
 #vp3ChatSpecialistActivity .vp3-profile-workspace .vp3-profile-period :where(p,span,label,button,th,td,a,b,strong,dt,dd,summary){font-size:13px;line-height:1.5}

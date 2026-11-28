@@ -45,7 +45,7 @@ function backend(initialState='agent_ready'){
   const reply=(data,status=200)=>({ok:status<400,status,json:async()=>structuredClone(data)});
   const handler=async(action,body,meta)=>{
     if(state.namespaceChanged)return reply({ok:false,code:'PROFILE_SESSION_CHANGED',error:'Refresh this profile.'},409);
-    if(action==='state'||action==='poll')return reply({ok:true,agent:{name:'Fixture Guide',greeting:''},conversation:state.conversation,messages:messages.filter(message=>message.id>Number(body.after_id||0)),handoff:state.handoff&&{...state.handoff,server_now_ms:meta.now}});
+    if(action==='state'||action==='poll')return reply({ok:true,agent:{name:'Fixture Guide',greeting:''},conversation:state.conversation,response:state.response,messages:messages.filter(message=>message.id>Number(body.after_id||0)),handoff:state.handoff&&{...state.handoff,server_now_ms:meta.now}});
     if(action==='message'){
       let accepted=records.get(body.client_request_id);
       if(!accepted){
@@ -119,9 +119,32 @@ async function widget({backend:server=backend(),local=new Map(),session=new Map(
 }
 {
   const server=backend('owner_claimed'),f=await widget({backend:server});await f.send('Please ask the owner');await f.advance(20000);
-  check(server.state.dispatchCount===0&&f.status.textContent.includes('owner has joined'),'owner takeover suppresses automatic Agent dispatch across polling');
+  check(server.state.dispatchCount===0&&f.status.textContent.includes('owner is handling'),'owner takeover suppresses automatic Agent dispatch without claiming live presence');
   server.messages.push({id:200,sender_type:'owner',message:'Fixture direct owner response'});await f.advance(10000);
   check(f.thread.textContent.includes('Fixture direct owner response'),'direct owner replies appear through the same canonical message poll');f.close();
+}
+{
+  const server=backend('owner_requested'),normal=server.handler;
+  server.state.response={contract:'vp3.profile-response.v1',mode:'user_responses',ready:true,request:null};
+  server.handler=async(action,body,meta)=>{
+    const result=await normal(action,body,meta);
+    if(action!=='message')return result;
+    const data=await result.json();
+    if(!server.state.response.request){
+      server.state.response.request={id:51,conversation_id:31,visitor_message_id:data.visitor_message_id,status:'waiting',reason:'user_responses',receipt_message_id:1000,reply_message_id:0,revision:1};
+      server.messages.push({id:1000,sender_type:'system',message:'Submitted to the profile owner. Waiting for a response.'});
+    }
+    return server.reply({...data,response:server.state.response});
+  };
+  const local=new Map(),session=new Map(),first=await widget({backend:server,local,session});await first.send('Please answer when you can');await first.advance(60000);
+  check(server.state.dispatchCount===0&&first.status.textContent.includes('Submitted to')&&!first.status.textContent.includes('seconds'),'durable owner request survives the live pickup window without automatic dispatch');
+  check(first.thread.querySelectorAll('.system').length===1&&first.thread.querySelector('.system').textContent.startsWith('Status'),'saved submission receipt is distinct from an Agent answer');
+  first.close();const resumed=await widget({backend:server,local,session});
+  check(resumed.status.textContent.includes('Waiting for a response')&&server.records.size===1,'reload restores the same saved owner request without another submission');
+  server.state.response.request={...server.state.response.request,status:'answered',reply_message_id:1001,revision:2};server.messages.push({id:1001,sender_type:'owner',message:'A saved owner response'});await resumed.advance(10000);
+  check(!resumed.status.textContent.includes('Waiting for a response')&&resumed.thread.textContent.includes('A saved owner response'),'verified terminal request status clears waiting and retains the owner response');
+  server.state.response.request={...server.state.response.request,status:'waiting',reply_message_id:0,revision:1};await resumed.advance(10000);
+  check(!resumed.status.textContent.includes('Waiting for a response'),'an older response request revision cannot restore a settled waiting state');resumed.close();
 }
 {
   const server=backend(),normal=server.handler;

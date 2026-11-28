@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 const VP3_PROFILE_AGENT_PUBLIC_SERVICE_V110='vp3-profile-agent-public-service-v110-20260928';
 require_once __DIR__.'/profile-agent-handoff-pa3.php';
+require_once __DIR__.'/profile-agent-answer-v1.php';
+require_once __DIR__.'/profile-agent-responses-v1.php';
 
 final class VP3ProfileAgentPublicException extends RuntimeException
 {
@@ -285,6 +287,7 @@ function vp3_profile_agent_public_state_service_v110(PDO $pdo,array $ctx,int $co
         'conversation'=>$conversationState,
         'handoff'=>$handoff,
         'chat'=>$chat,
+        'response'=>vp3_profile_response_projection_v1($pdo,(int)$ctx['owner_user_id'],$conversationId),
     ];
 }
 
@@ -305,7 +308,7 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
     }
     $profile=$ctx['profile'];$owner=(int)$ctx['owner_user_id'];$ownerUser=$ctx['owner_user'];
     $visitor=$ctx['visitor'];$agent=$ctx['agent'];$agentId=(int)$ctx['agent_id'];
-    $session=vp3_profile_agent_public_event_session_v1($ctx);$sessionId=(int)$ctx['session_id'];$cid=max(0,$conversationId);
+    $session=vp3_profile_agent_public_event_session_v1($ctx);$sessionId=(int)$ctx['session_id'];$cid=max(0,$conversationId);$submitted=false;
 
     $pdo->beginTransaction();
     try{
@@ -324,6 +327,11 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
         profile_agent_message_received_v1341($pdo,$profile,$agent,$session,$conversation,$visitorMessageId,$query);
         $responseToken=vp3_profile_agent_response_token_v1($pdo,$cid,true);
         if($responseToken==='')vp3_profile_agent_public_unavailable_v1();
+        $policy=vp3_profile_response_settings_v1($pdo,$owner,true);
+        if($policy['mode']==='user_responses'||vp3_profile_owner_request_pending_v1($pdo,$owner,$cid)){
+            vp3_profile_owner_request_create_v1($pdo,$ctx,$conversation,$visitorMessageId,$policy['mode']==='user_responses'?'user_responses':'knowledge_gap');
+            $submitted=true;
+        }
         vp3_profile_agent_public_live_v1($pdo,$ctx,true);
         $pdo->commit();
     }catch(Throwable $e){
@@ -331,11 +339,12 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
         throw $e;
     }
 
-    if(!vp3_profile_agent_agent_may_reply_v390($conversation)){
+    if($submitted||!vp3_profile_agent_agent_may_reply_v390($conversation)){
         $chat=vp3_profile_handoff_chat_pa3d($pdo,$owner,$cid);
         vp3_profile_agent_public_live_v1($pdo,$ctx);
         return [
             'conversation_id'=>$cid,'answer'=>'','awaiting_owner'=>true,
+            'response'=>vp3_profile_response_projection_v1($pdo,$owner,$cid),
             'conversation'=>vp3_profile_agent_public_state_v390($conversation),
             'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()],
             'chat'=>$chat,
@@ -357,39 +366,13 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
     if(!vp3_profile_agent_public_sources_current_v1($pdo,$ctx,$context,$historySources))vp3_profile_agent_public_unavailable_v1();
     vp3_profile_agent_public_live_v1($pdo,$ctx);
 
-    $greeting=(bool)preg_match('/^(?:hi|hello|hey|good\s+(?:morning|afternoon|evening))[!.\s]*$/i',$query);
-    $profileHome=['attempted'=>false,'success'=>false,'execution'=>null,'failure_class'=>'none'];
-    $answerMode='model';
-    $needsOwner=false;
-    if($greeting&&trim((string)($profile['profile_agent_greeting']??''))!==''){
-        $answer=(string)$profile['profile_agent_greeting'];$answerMode='configured_greeting';
-    }else{
-        // Approved knowledge constrains facts, not the ability to converse.
-        // Reuse the owner's stateless HomeServer route and Cloud quota engine.
-        $homeAnswer=function_exists('homeserver_profile_v235_answer')
-            ?homeserver_profile_v235_answer($owner,$query,$history,$context):null;
-        $profileHome=function_exists('homeserver_profile_v235_last')?homeserver_profile_v235_last():$profileHome;
-        if(is_array($homeAnswer)&&trim((string)($homeAnswer['answer']??''))!==''){
-            $answer=(string)$homeAnswer['answer'];$answerMode='homeserver_model';
-        }else{
-            if(!vp3_profile_agent_public_sources_current_v1($pdo,$ctx,$context,$historySources))vp3_profile_agent_public_unavailable_v1();
-            vp3_profile_agent_public_live_v1($pdo,$ctx);
-            $control=[
-                'surface'=>'profile_agent','profile_owner_user_id'=>$owner,
-                'profile_agent_id'=>$agentId,'profile_agent_name'=>(string)$agent['display_name'],
-                'profile_owner_name'=>(string)($profile['display_name']??$ownerUser['display_name']??''),
-                'profile_instructions'=>(string)($profile['profile_agent_instructions']??''),
-            ];
-            $generated=ai_generate_chat_response($query,$history,$context,$ownerUser,'profile_agent',$control);
-            $answer=!empty($generated['ok'])?trim((string)($generated['answer']??'')):'';
-            if($answer===''){
-                $needsOwner=true;
-                $answerMode=!empty($generated['quota_exhausted'])?'quota_handoff':'owner_handoff';
-                $answer=($answerMode==='quota_handoff'?'This Profile Agent has reached its AI usage allowance. ':'I could not complete that reply right now. ')
-                    .'I’ve asked '.(string)($profile['display_name']??'the profile owner').' for input rather than guessing.';
-            }
-        }
-    }
+    $guard=static function()use($pdo,$ctx,$context,$historySources):void{
+        if(!vp3_profile_agent_public_sources_current_v1($pdo,$ctx,$context,$historySources))vp3_profile_agent_public_unavailable_v1();
+        vp3_profile_agent_public_live_v1($pdo,$ctx);
+    };
+    $generation=vp3_profile_answer_generate_v1($pdo,$ctx,$query,$history,$context,$guard);
+    $answer=$generation['answer'];$answerMode=$generation['answer_mode'];$needsOwner=$generation['needs_owner'];$profileHome=$generation['homeserver_compute'];
+    if($needsOwner){$context=[];$historySources=[];$sourceDependencies=[];}
 
     $sources=[];
     foreach($context as $c){
@@ -405,6 +388,11 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
     try{
         vp3_profile_agent_public_live_v1($pdo,$ctx,true);
         $current=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$cid,true);
+        $policy=vp3_profile_response_settings_v1($pdo,$owner,true);
+        if($policy['mode']==='user_responses'||(int)$policy['revision']!==(int)$generation['response_policy_revision']){
+            $generation=vp3_profile_answer_owner_v1($policy['mode']==='user_responses'?'user_responses':'service_unavailable',(int)$policy['revision']);
+            $answer='';$answerMode=$generation['answer_mode'];$needsOwner=true;$context=[];$historySources=[];$sourceDependencies=[];$sources=[];$promotionKey=null;
+        }
         if(!vp3_profile_agent_public_sources_current_v1($pdo,$ctx,$context,$historySources))vp3_profile_agent_public_unavailable_v1();
         vp3_profile_agent_public_live_v1($pdo,$ctx,true);
         $current=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$cid,true);
@@ -413,13 +401,21 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
             $pdo->commit();
             return [
                 'conversation_id'=>$cid,'answer'=>'',
-                'awaiting_owner'=>vp3_profile_agent_status_v390($current)==='owner_joined',
+                'awaiting_owner'=>vp3_profile_agent_status_v390($current)==='owner_joined'||vp3_profile_owner_request_pending_v1($pdo,$owner,$cid),
+                'response'=>vp3_profile_response_projection_v1($pdo,$owner,$cid),
                 'conversation'=>vp3_profile_agent_public_state_v390($current),
                 'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()],
                 'chat'=>$chat,
             ];
         }
-        if($needsOwner)profile_agent_needs_owner($pdo,$profile,$agent,$session,$conversation,$query);
+        if($needsOwner){
+            vp3_profile_owner_request_create_v1($pdo,$ctx,$current,$visitorMessageId,(string)$generation['owner_request_reason']);
+            vp3_profile_agent_response_token_v1($pdo,$cid,true);
+            $response=vp3_profile_response_projection_v1($pdo,$owner,$cid);$chat=vp3_profile_handoff_chat_pa3d($pdo,$owner,$cid);
+            vp3_profile_agent_public_live_v1($pdo,$ctx,true);$pdo->commit();
+            return ['conversation_id'=>$cid,'answer'=>'','sources'=>[],'answer_mode'=>$answerMode,'awaiting_owner'=>true,'response'=>$response,
+                'conversation'=>vp3_profile_agent_public_state_v390($current),'agent'=>vp3_profile_agent_public_agent_projection_v110($ctx),'chat'=>$chat];
+        }
         $messageContext=['sources'=>$sources,'source_dependencies'=>$sourceDependencies,'answer_mode'=>$answerMode];
         if($promotionKey!==null)$messageContext['product_promotion_key']=$promotionKey;
         if(!empty($profileHome['attempted'])){
@@ -448,6 +444,7 @@ function vp3_profile_agent_public_message_service_v110(PDO $pdo,array $ctx,strin
 
     return [
         'conversation_id'=>$cid,'answer'=>$answer,'sources'=>$sources,'answer_mode'=>$answerMode,
+        'response'=>vp3_profile_response_projection_v1($pdo,$owner,$cid),
         'conversation'=>vp3_profile_agent_public_state_v390($current),
         'agent'=>['name'=>(string)$agent['display_name'],'system_name'=>system_agent_name()],
         'chat'=>$chat,
@@ -462,16 +459,17 @@ function vp3_profile_agent_public_poll_service_v110(PDO $pdo,array $ctx,int $con
     }
     $ctx=vp3_profile_agent_public_live_v1($pdo,$ctx);
     $conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId);
-    $s=$pdo->prepare("SELECT id,sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? AND id>? AND sender_type IN ('visitor','agent','owner') ORDER BY id ASC LIMIT 50");
+    $s=$pdo->prepare("SELECT id,sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? AND id>? AND sender_type IN ('visitor','agent','owner','receipt') ORDER BY id ASC LIMIT 50");
     $s->execute([$conversationId,max(0,$afterId)]);
     $messages=$s->fetchAll()?:[];
+    foreach($messages as &$message){if($message['sender_type']==='receipt')$message['sender_type']='system';}unset($message);
     $conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId);
     $handoff=vp3_profile_agent_public_handoff_pa3($pdo,$ctx,$conversationId);
     $chat=vp3_profile_handoff_chat_pa3d($pdo,(int)$ctx['owner_user_id'],$conversationId);
     $conversation=vp3_profile_agent_public_bound_conversation_v1($pdo,$ctx,$conversationId);
     $cards=profile_product_promotion_chat_cards_v1($pdo,$ctx['profile'],$conversationId,$messages);
     vp3_profile_agent_public_live_v1($pdo,$ctx);
-    return $cards+['conversation'=>vp3_profile_agent_public_state_v390($conversation),'handoff'=>$handoff,'chat'=>$chat];
+    return $cards+['conversation'=>vp3_profile_agent_public_state_v390($conversation),'handoff'=>$handoff,'chat'=>$chat,'response'=>vp3_profile_response_projection_v1($pdo,(int)$ctx['owner_user_id'],$conversationId)];
 }
 
 /** A projection read never advances a deadline, claims work or calls a model. */
@@ -550,7 +548,8 @@ function vp3_profile_agent_public_accept_pa3(PDO $pdo,array $ctx,string $query,i
         vp3_profile_agent_public_live_v1($pdo,$ctx,true);$pdo->commit();
     }catch(Throwable $e){if($pdo->inTransaction())$pdo->rollBack();throw $e;}
     return ['conversation_id'=>$cid,'visitor_message_id'=>(int)$turn['visitor_message_id'],'client_request_id'=>$requestId,
-        'answer'=>'','accepted'=>true,'duplicate'=>$duplicate,'awaiting_owner'=>vp3_profile_agent_status_v390($conversation)==='owner_joined',
+        'answer'=>'','accepted'=>true,'duplicate'=>$duplicate,'awaiting_owner'=>vp3_profile_agent_status_v390($conversation)==='owner_joined'||vp3_profile_owner_request_pending_v1($pdo,(int)$ctx['owner_user_id'],$cid),
+        'response'=>vp3_profile_response_projection_v1($pdo,(int)$ctx['owner_user_id'],$cid),
         'conversation'=>vp3_profile_agent_public_state_v390($conversation),'agent'=>vp3_profile_agent_public_agent_projection_v110($ctx),
         'handoff'=>$handoff,'chat'=>$chat]+($attachment!==null?['attachment'=>['name'=>$attachment['name'],'mime'=>$attachment['mime'],'bytes'=>$attachment['bytes']]]:[]);
 }

@@ -116,6 +116,8 @@ function vp3_profile_call_slot_pa3c(PDO $pdo,int $owner,bool $lock=false): ?arra
 }
 function vp3_profile_call_owner_busy_pa3c(PDO $pdo,int $owner): bool
 {
+    require_once __DIR__.'/profile-browser-phone-schema-v1.php';
+    if(vp3_profile_browser_phone_active_v1($pdo,$owner))return true;
     $slot=vp3_profile_call_slot_pa3c($pdo,$owner);if(!empty($slot['active_call_id']))return true;
     $q=$pdo->prepare("SELECT id FROM profile_calls_pa3c WHERE owner_user_id=? AND state='ending' LIMIT 1");$q->execute([$owner]);return(bool)$q->fetchColumn();
 }
@@ -257,6 +259,8 @@ function vp3_profile_call_visitor_state_pa3c(PDO $pdo,array $ctx,int $cid): arra
 function vp3_profile_call_owner_list_pa3c(PDO $pdo,array $user,array $input=[]): array
 {
     vp3_profile_call_require_pa3c($pdo);$chat=vp3_profile_call_id_pa3c($input['chat_conversation_id']??0,true);$aid=vp3_profile_call_id_pa3c($input['chat_agent_id']??0,true);$cid=vp3_profile_call_id_pa3c($input['conversation_id']??0,true);$live=vp3_profile_handoff_owner_pa3($pdo,$user,$chat,$aid);$owner=(int)$live['id'];
+    require_once __DIR__.'/profile-browser-phone-schema-v1.php';
+    vp3_profile_browser_phone_reconcile_owner_v1($pdo,$owner);
     $out=['contract'=>VP3_PROFILE_CALL_PA3C,'calls'=>[],'can_offer'=>false,'reason'=>'','server_now_ms'=>vp3_profile_call_now_pa3c(),'conversation_id'=>$cid];if(!$chat)return $out;
     $sql="SELECT c.* FROM profile_calls_pa3c c WHERE c.owner_user_id=? AND (c.state IN ('offered','preparing','ready','active','ending') OR EXISTS(SELECT 1 FROM profile_call_deliveries_pa3c d WHERE d.call_id=c.id AND d.owner_user_id=c.owner_user_id AND d.chat_conversation_id=? AND d.chat_agent_id=?))"; $params=[$owner,$chat,$aid];if($cid){$sql.=' AND c.conversation_id=?';$params[]=$cid;}$sql.=' ORDER BY c.id DESC LIMIT 20';$q=$pdo->prepare($sql);$q->execute($params);$pending=false;
     foreach($q->fetchAll(PDO::FETCH_ASSOC) as $row){$valid=true;try{vp3_profile_call_context_pa3c($pdo,$owner,(int)$row['conversation_id'],false,$row);}catch(VP3ProfileCallException $e){$valid=false;}$card=vp3_profile_call_owner_card_pa3c($pdo,$row,$input,$valid);try{vp3_profile_call_ready_pa3c($row);}catch(VP3ProfileCallException $e){$card['can_accept']=false;$card['can_join']=false;if($valid)$card['reason']='configuration_changed';}$out['calls'][]=$card;if((int)$row['conversation_id']===$cid&&in_array($card['state'],['offered','preparing','ready','active','ending'],true))$pending=true;}
@@ -316,6 +320,10 @@ function vp3_profile_call_action_pa3c(PDO $pdo,string $role,array $auth,array $i
     $cid=vp3_profile_call_id_pa3c($input['conversation_id']??null);$id=$op==='offer'?0:vp3_profile_call_id_pa3c($input['call_id']??null);$revision=$op==='offer'?0:vp3_profile_call_id_pa3c($input['revision']??null);$request=$op==='heartbeat'?'':vp3_profile_call_token_pa3c($input['request_id']??null);
     $mode=$op==='offer'?($input['mode']??null):null;if($op==='offer'&&!in_array($mode,['audio','video'],true))vp3_profile_call_error_pa3c('PROFILE_CALL_INVALID',422);
     $checked=vp3_profile_call_authorize_pa3c($pdo,$role,$auth,$cid,$input);$owner=$checked['owner'];$auth=$checked['auth'];$actor=hash('sha256',$role.'|'.$owner.'|'.($role==='visitor'?$checked['context']['binding']['credential_hash']:'owner'));
+    if($role==='owner'&&in_array($op,['offer','accept'],true)){
+        require_once __DIR__.'/profile-browser-phone-schema-v1.php';
+        vp3_profile_browser_phone_reconcile_owner_v1($pdo,$owner);
+    }
     $notice=is_string($input['assistance_notice']??null)&&preg_match('/^[a-f0-9]{64}$/D',$input['assistance_notice'])?$input['assistance_notice']:'';
     $intent=[$role,$cid,$id,$revision,$op,$mode,(int)($input['chat_conversation_id']??0),(int)($input['chat_agent_id']??0)];
     if($notice!==''&&in_array($op,['offer','accept'],true))$intent[]=$notice;

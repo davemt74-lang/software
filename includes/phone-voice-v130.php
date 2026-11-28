@@ -3,6 +3,7 @@ declare(strict_types=1);
 
 /** PH3C: provider-neutral call metadata with signed Twilio voice callbacks. */
 require_once __DIR__.'/phone-voicemail-v1.php';
+require_once __DIR__.'/profile-browser-phone-schema-v1.php';
 
 function vp3_phone_voice_schema_ready_v130(): bool
 {
@@ -165,6 +166,12 @@ function vp3_phone_voice_current_route_v131(PDO $pdo,string $callSid,int $maxAge
     if (!vp3_phone_package_v100($pdo,$owner)['voice']
         ||!vp3_phone_agent_owned_v100($pdo,$owner,$agent))
         return ['accepted'=>false,'reason'=>'account_ineligible'];
+    if (vp3_profile_browser_phone_find_sid_v1($pdo,$callSid)!==null) {
+        if (time()-$created>600) return ['accepted'=>false,'reason'=>'call_expired'];
+        require_once __DIR__.'/profile-browser-phone-v1.php';
+        if (!vp3_profile_browser_phone_current_sid_v1($pdo,$callSid))
+            return ['accepted'=>false,'reason'=>'profile_call_changed'];
+    }
     return ['accepted'=>true,'owner_user_id'=>$owner,'phone_number_id'=>$numberId,
         'agent_id'=>$agent,'caller_e164'=>(string)$receipt['caller_e164'],
         'called_e164'=>(string)$receipt['called_e164'],
@@ -198,8 +205,6 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
         $native=vp3_native_dialthrough_inbound_v1($pdo,$number,$callSid,$caller,$to,time());
         if($native!==null)return $native;
     }
-    $q=$pdo->prepare('SELECT display_name FROM user_agents WHERE id=? AND owner_user_id=? AND is_active=1 LIMIT 1');
-    $q->execute([$agent,$owner]);$agentName=(string)($q->fetchColumn()?:'');
     $pdo->beginTransaction();
     try {
         $exists=$pdo->prepare('SELECT id,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164,state
@@ -224,8 +229,20 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $error;
     }
+    return vp3_phone_voice_route_accepted_v130($pdo,$callSid,$callback);
+}
+
+/** Route an existing carrier-proven receipt without granting caller identity or tool authority. */
+function vp3_phone_voice_route_accepted_v130(PDO $pdo,string $callSid,string $callback): array
+{
     $route=vp3_phone_voice_current_route_v131($pdo,$callSid,14400,['voicemail_offered','conversation_active','streaming_active']);
     if (!$route['accepted']) return $route;
+    $q=$pdo->prepare('SELECT id,state FROM phone_voice_calls_v130 WHERE provider=\'twilio\' AND provider_call_sid=? LIMIT 1');
+    $q->execute([$callSid]);$row=$q->fetch(PDO::FETCH_ASSOC);
+    if (!$row) return ['accepted'=>false,'reason'=>'unknown_call'];
+    $q=$pdo->prepare('SELECT display_name FROM user_agents WHERE id=? AND owner_user_id=? AND is_active=1 LIMIT 1');
+    $q->execute([(int)$route['agent_id'],(int)$route['owner_user_id']]);$agentName=(string)($q->fetchColumn()?:'');
+    $profileCall=vp3_profile_browser_phone_find_sid_v1($pdo,$callSid);
     $browserReason='browser_unavailable';
     if(function_exists('vp3_phone_browser_incoming_v1')&&vp3_phone_workspace_schema_ready_v1($pdo)){
         $browserTwiml=null;
@@ -237,7 +254,10 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
         try{vp3_phone_workspace_legacy_incoming_v1($pdo,$route,$callSid,$browserReason);}
         catch(Throwable){error_log('Phone incoming Chat projection is temporarily unavailable.');}
     }
-    if (function_exists('vp3_phone_stream_route_v150') && vp3_phone_stream_route_v150($pdo,$route)) {
+    // The existing HomeServer bridge requires a carrier-proven caller number.
+    // Public SDK callers have no member or telephone-number identity to supply.
+    if (!($profileCall!==null&&$route['caller_e164']==='')
+        && function_exists('vp3_phone_stream_route_v150') && vp3_phone_stream_route_v150($pdo,$route)) {
         if ($row && (string)$row['state']==='streaming_active')
             return ['accepted'=>false,'reason'=>'call_already_streaming'];
         $start=$pdo->prepare("UPDATE phone_voice_calls_v130 SET state='streaming_active'
@@ -245,6 +265,7 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
         $start->execute([$callSid]);
         if ($start->rowCount()!==1) return ['accepted'=>false,'reason'=>'call_already_routed'];
         $stream=vp3_phone_stream_route_v150($pdo,$route);
+        if ($profileCall!==null) vp3_profile_browser_phone_route_v1($pdo,$callSid,'agent');
         return ['accepted'=>true,'twiml'=>vp3_phone_stream_dial_v150($callSid,$route,
             (int)$stream['homeserver_agent_id'],$callback,time())];
     }
@@ -270,11 +291,13 @@ function vp3_phone_voice_incoming_v130(PDO $pdo,array $form,string $signature,
                 $spoken=(string)$last['response_text'];
             }
         }
+        if ($profileCall!==null) vp3_profile_browser_phone_route_v1($pdo,$callSid,'agent');
         return ['accepted'=>true,'twiml'=>vp3_phone_voice_gather_v140(
             $agentName,$callback,$spoken,$step)];
     }
     if ((string)($row['state']??'')==='conversation_active')
         return ['accepted'=>false,'reason'=>'conversation_mode_changed'];
+    if ($profileCall!==null) vp3_profile_browser_phone_route_v1($pdo,$callSid,'voicemail');
     return ['accepted'=>true,'twiml'=>vp3_phone_voicemail_twiml_v1($pdo,$route,$callSid,$agentName,$callback)];
 }
 

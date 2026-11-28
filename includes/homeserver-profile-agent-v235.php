@@ -43,12 +43,13 @@ function homeserver_profile_v235_text(mixed $value,int $max): string
     return mb_strimwidth($text,0,$max,'…');
 }
 
-function homeserver_profile_v235_messages(string $query,array $history,array $context): array
+function homeserver_profile_v235_messages(string $query,array $history,array $context,bool $structured=false): array
 {
     $system="You are a public Profile Agent. Use only the approved context in this request. "
       ."Do not use or infer any HomeServer memory, awareness, contacts, files, tasks, notifications, tools, or other private data that is not explicitly included below. "
       ."Never invent private facts, commitments, pricing, availability, or contact details. If approved context is insufficient, say so.";
 
+    if($structured){require_once __DIR__.'/profile-agent-answer-v1.php';$system.=' '.vp3_profile_answer_contract_v1();}
     $parts=[];
     $budget=0;
     foreach(array_slice($context,0,24) as $item){
@@ -80,7 +81,7 @@ function homeserver_profile_v235_messages(string $query,array $history,array $co
     return $messages;
 }
 
-function homeserver_profile_v235_answer(int $ownerUserId,string $query,array $history,array $approvedContext): ?array
+function homeserver_profile_v235_answer(int $ownerUserId,string $query,array $history,array $approvedContext,bool $structured=false): ?array
 {
     homeserver_profile_v235_set_last(['attempted'=>false,'success'=>false,'execution'=>null,'failure_class'=>'none']);
     if($ownerUserId<1||trim($query)===''||!function_exists('homeserver_execution_v230_execute'))return null;
@@ -89,7 +90,7 @@ function homeserver_profile_v235_answer(int $ownerUserId,string $query,array $hi
     homeserver_profile_v235_set_last(['attempted'=>true,'success'=>false,'execution'=>null,'failure_class'=>'none']);
     try{
         $run=homeserver_execution_v230_execute($ownerUserId,'agent.infer.local',[
-          'messages'=>homeserver_profile_v235_messages($query,$history,$approvedContext),
+          'messages'=>homeserver_profile_v235_messages($query,$history,$approvedContext,$structured),
         ]);
         $result=is_array($run['result']??null)?$run['result']:[];
         $reply=trim((string)($result['reply']??''));

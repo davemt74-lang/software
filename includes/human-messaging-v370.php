@@ -449,18 +449,33 @@ function vp3_human_team_general_v370(PDO $pdo,int $workspaceOwnerId,int $actorId
 
 function vp3_human_messages_v370(PDO $pdo,int $conversationId,int $userId,int $afterId=0,int $limit=120): array
 {
+    return vp3_human_message_page_v370($pdo,$conversationId,$userId,$afterId,0,$limit)['messages'];
+}
+
+/** Latest history on open, bounded chronological catch-up, and earlier history. */
+function vp3_human_message_page_v370(PDO $pdo,int $conversationId,int $userId,int $afterId=0,int $beforeId=0,int $limit=120): array
+{
     $conversation=vp3_human_conversation_v370($pdo,$conversationId);
     if(!$conversation||!vp3_human_can_access_v370($pdo,$conversation,$userId))throw new RuntimeException('Conversation is not available.');
     $limit=max(1,min(200,$limit));
+    $afterId=max(0,$afterId);$beforeId=max(0,$beforeId);
+    if($afterId>0&&$beforeId>0)throw new RuntimeException('Choose either earlier history or new messages.');
+    $direction=$afterId>0?'ASC':'DESC';
+    $boundary=$afterId>0?' AND m.id>?':($beforeId>0?' AND m.id<?':'');
+    $params=[$conversationId];if($afterId>0||$beforeId>0)$params[]=$afterId?:$beforeId;
+    $fetchLimit=$limit+1;
     $stmt=$pdo->prepare("SELECT m.id,m.conversation_id,m.sender_user_id,
         CASE WHEN m.deleted_at IS NULL THEN m.body ELSE '' END body,
         m.reply_to_message_id,m.edited_at,m.deleted_at,m.created_at,u.display_name,u.avatar_path
         FROM human_messages m
         INNER JOIN users u ON u.id=m.sender_user_id
-        WHERE m.conversation_id=? AND m.id>?
-        ORDER BY m.id ASC LIMIT {$limit}");
-    $stmt->execute([$conversationId,max(0,$afterId)]);
-    return $stmt->fetchAll()?:[];
+        WHERE m.conversation_id=?{$boundary}
+        ORDER BY m.id {$direction} LIMIT {$fetchLimit}");
+    $stmt->execute($params);
+    $rows=$stmt->fetchAll()?:[];$more=count($rows)>$limit;
+    if($more)array_pop($rows);
+    if($direction==='DESC')$rows=array_reverse($rows);
+    return ['messages'=>$rows,'has_older'=>$afterId===0&&$more,'has_more'=>$afterId>0&&$more];
 }
 
 function vp3_human_read_cursor_v370(PDO $pdo,int $conversationId,int $userId): int
@@ -486,6 +501,10 @@ function vp3_human_mark_read_v370(PDO $pdo,int $conversationId,int $userId,int $
         $stmt->execute([$conversationId]);
         $last=(int)$stmt->fetchColumn();
     }
+
+    // An empty conversation has no message to reference. Inserting 0 violates
+    // the read-cursor foreign key on MySQL and does not record a useful receipt.
+    if($last<1)return vp3_human_read_cursor_v370($pdo,$conversationId,$userId);
 
     $stmt=$pdo->prepare("INSERT INTO human_conversation_reads_v370 (conversation_id,user_id,last_read_message_id)
         VALUES (?,?,?)
@@ -568,7 +587,7 @@ function vp3_human_inbox_v370(PDO $pdo,int $userId): array
       LEFT JOIN users u ON u.id=CASE WHEN c.direct_user_low_id=? THEN c.direct_user_high_id ELSE c.direct_user_low_id END
       LEFT JOIN human_message_requests r ON r.conversation_id=c.id
       WHERE c.conversation_type IN ('direct','group')
-        AND NOT (r.status='pending' AND r.recipient_user_id=?)
+        AND (r.status IS NULL OR r.status<>'pending' OR r.recipient_user_id<>?)
         AND (r.status IS NULL OR r.status<>'declined' OR r.requester_user_id=?)
       ORDER BY COALESCE(last_message_at,c.updated_at) DESC,c.id DESC LIMIT 100");
     $stmt->execute([$userId,$userId,$userId,$userId,$userId,$userId,$userId]);

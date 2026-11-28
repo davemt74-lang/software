@@ -18,8 +18,12 @@ const knowledgeHost=document.getElementById('profileAgentKnowledge');
 const profileHost=document.getElementById('profileAgentProfileSettings');
 const analyticsHost=document.getElementById('profileAgentAnalytics');
 let state=null,radarState=null,radarFilter='all',selectedConversation=0,selectedSession=0,refreshTimer=null,requestBusy=false;
-let selectedThread=null,displayedThread=null,threadRead=0,stateRead=0,activeTab='inbox',pendingSettings=0;
-let profileAttention=null;
+let radarBusy=false,radarError='';
+let selectedThread=null,displayedThread=null,displayedConversation=null,threadRead=0,stateRead=0,activeTab='inbox',pendingSettings=0;
+let profileAttention=null,threadMessagesMarkup='',displayedKnowledgeMessages=new Map();
+const threadKnowledge=new Map();
+function clearThreadKnowledge(){for(const entry of threadKnowledge.values())entry.control?.destroy();threadKnowledge.clear();displayedKnowledgeMessages.clear();threadMessagesMarkup='';}
+function refreshThreadKnowledge(){for(const entry of threadKnowledge.values())entry.control?.refresh();}
 const drafts=new Map(),threadMutations=new Map(),replyAttempts=new Map(),boundControls=new WeakSet(),editVersions=new WeakMap();
 const conversationId=value=>Number.isSafeInteger(Number(value))&&Number(value)>0?Number(value):0;
 function prepareReply(id,message){
@@ -36,27 +40,50 @@ function renderEditable(host,render){if(host.children.length&&(host.querySelecto
 function markEdited(event){const node=event.target.closest('form,[data-policy]');if(!node||![agentHost,profileHost,knowledgeHost].some(host=>host.contains(node)))return;node.dataset.paDirty='1';editVersions.set(node,(editVersions.get(node)||0)+1);}
 app.addEventListener('input',markEdited,true);app.addEventListener('change',markEdited,true);
 const setNotice=(message='',error=false)=>{notice.textContent=message;notice.className=`profile-agent-notice${error?' error':''}`;};
+async function requestJson(url,options={},timeout=15000){
+  const controller=typeof AbortController==='function'?new AbortController():null;
+  let timer=0;
+  try{
+    return await Promise.race([
+      (async()=>{
+        const response=await fetch(url,{...options,...(controller?{signal:controller.signal}:{})});
+        const data=await response.json().catch(()=>null);
+        if(!response.ok||!data?.ok){const error=new Error(data?.error||'Profile Agent request failed.');error.status=response.status;error.code=data?.code||'';throw error;}
+        return data;
+      })(),
+      new Promise((_,reject)=>{timer=setTimeout(()=>{
+        const write=!['GET','HEAD'].includes(String(options.method||'GET').toUpperCase());
+        const error=new Error(write?'The request timed out. Refresh to check whether your change was saved before trying again.':'The request timed out. Try again.');
+        error.code='PROFILE_REQUEST_TIMEOUT';controller?.abort();reject(error);
+      },timeout);})
+    ]);
+  }finally{if(timer&&typeof clearTimeout==='function')clearTimeout(timer);}
+}
+window.VP3ProfileAgentPortalHttpV1=Object.freeze({request:requestJson});
 async function req(action,payload=null){
   const post=payload!==null;
   const options=post?{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({action,csrf_token:cfg.csrf,...payload})}:{credentials:'same-origin',cache:'no-store'};
   const url=post?cfg.endpoint:`${cfg.endpoint}?action=${encodeURIComponent(action)}`;
-  const r=await fetch(url,options),d=await r.json().catch(()=>null);
-  if(!r.ok||!d?.ok)throw new Error(d?.error||'Profile Agent request failed.');
-  return d;
+  return requestJson(url,options);
 }
 async function radarReq(){
   if(!cfg.radarEndpoint)return null;
-  const r=await fetch(cfg.radarEndpoint,{credentials:'same-origin',cache:'no-store'}),d=await r.json().catch(()=>null);
-  if(!r.ok||!d?.ok)throw new Error(d?.error||'Agent Radar request failed.');
-  return d.radar||null;
+  const d=await requestJson(cfg.radarEndpoint,{credentials:'same-origin',cache:'no-store'});
+  if(!d.radar||typeof d.radar!=='object'||Array.isArray(d.radar))throw new Error('Agent Radar could not be loaded. Try again.');
+  return d.radar;
+}
+async function refreshRadar(){
+  if(radarBusy||!cfg.radarEndpoint)return;
+  radarBusy=true;
+  try{radarState=await radarReq();radarError='';}
+  catch(error){radarError=error.message||'Agent Radar could not be refreshed.';}
+  finally{radarBusy=false;renderRadar();bindDynamic();}
 }
 async function uploadProfileMedia(mediaType,file){
   if(!file)throw new Error('Choose an image first.');
   if(file.size>5*1024*1024)throw new Error('Profile images must be 5 MB or smaller.');
   const form=new FormData();form.set('action','save_profile_media');form.set('csrf_token',cfg.csrf);form.set('media_type',mediaType);form.set('media_file',file);
-  const r=await fetch(cfg.endpoint,{method:'POST',credentials:'same-origin',body:form}),d=await r.json().catch(()=>null);
-  if(!r.ok||!d?.ok)throw new Error(d?.error||'Profile image upload failed.');
-  return d;
+  return requestJson(cfg.endpoint,{method:'POST',credentials:'same-origin',body:form},45000);
 }
 function parseDate(value){if(!value)return null;const iso=String(value).replace(' ','T');const d=new Date(iso);return Number.isNaN(d.getTime())?null:d;}
 function relative(value){const d=parseDate(value);if(!d)return String(value||'');const seconds=Math.round((Date.now()-d.getTime())/1000);if(seconds<60)return 'just now';if(seconds<3600)return `${Math.max(1,Math.round(seconds/60))}m ago`;if(seconds<86400)return `${Math.round(seconds/3600)}h ago`;if(seconds<604800)return `${Math.round(seconds/86400)}d ago`;return d.toLocaleDateString();}
@@ -70,6 +97,7 @@ function activateTab(name){
   views.forEach(v=>v.classList.toggle('active',v.dataset.paView===name));
   if(root.scrollTop>0)root.scrollTo({top:0,behavior:'auto'});
   try{localStorage.setItem('profile-agent-portal-tab',name);}catch(e){}
+  refreshThreadKnowledge();
 }
 function renderService(){
   const s=state?.public_agent_status||{};
@@ -93,10 +121,31 @@ function renderMetrics(){
 function attentionHtml(){
   return profileAttention?.view() || '<p role="status">Profile attention is unavailable. Reload to retry.</p>';
 }
+function responseFor(conversation){
+  const value=conversation?.response;
+  if(value?.contract!=='vp3.profile-response.v1'||!['user_responses','automated'].includes(value.mode)||typeof value.ready!=='boolean')return null;
+  const request=value.request;
+  if(request!==null&&(!request||request.conversation_id!==conversationId(conversation.id)
+    ||!['id','visitor_message_id','receipt_message_id','revision'].every(key=>Number.isSafeInteger(request[key])&&request[key]>0)
+    ||!Number.isSafeInteger(request.reply_message_id)||request.reply_message_id<0
+    ||!['waiting','answered','resolved','delegated'].includes(request.status)
+    ||!['user_responses','knowledge_gap','service_unavailable','quota_exhausted'].includes(request.reason)))return null;
+  return value;
+}
+function userResponseMode(conversation){return (state?.profile?.profile_agent_response_mode||responseFor(conversation)?.mode)==='user_responses';}
+function responseWaitingText(conversation){
+  const request=responseFor(conversation)?.request;
+  return request?.status==='waiting'?'Awaiting your response · '+(request.reason==='user_responses'?'Submitted directly':'The Profile Agent needs your input'):'';
+}
+function knowledgeRequests(message,cid){
+  const rows=message?.knowledge_requests;
+  if(message?.sender_type!=='owner'||!Array.isArray(rows)||rows.some(row=>!row||!['id','conversation_id','visitor_message_id','reply_message_id','revision'].every(key=>Number.isSafeInteger(row[key])&&row[key]>0)||row.conversation_id!==cid||row.reply_message_id!==Number(message.id)||typeof row.question_excerpt!=='string'))return [];
+  return rows.map(row=>({conversation_id:cid,owner_request_id:row.id,question_excerpt:row.question_excerpt}));
+}
 function renderInbox(){
   attentionHost.innerHTML=attentionHtml();
   const rows=Array.isArray(state?.conversations)?state.conversations:[];
-  conversationsHost.innerHTML=`<div class="profile-agent-subhead">Conversations</div>`+(rows.length?rows.map(c=>`<article class="profile-agent-conversation-row ${Number(c.id)===selectedConversation?'selected':''}" data-open-conversation="${Number(c.id)}"><div class="profile-agent-row-main"><strong>${esc(c.visitor_label||'Visitor')}</strong><p>${esc(c.last_summary||'Conversation')}</p><small>${relative(c.last_message_at)} · started ${relative(c.started_at)}</small></div><div class="profile-agent-row-actions"><span class="profile-agent-badge ${esc(c.status||'open')}">${esc(String(c.status||'open').replace('_',' '))}</span></div></article>`).join(''):`<div class="profile-agent-empty">No visitor conversations yet.</div>`);
+  conversationsHost.innerHTML=`<div class="profile-agent-subhead">Conversations</div>`+(rows.length?rows.map(c=>`<article class="profile-agent-conversation-row ${Number(c.id)===selectedConversation?'selected':''}" data-open-conversation="${Number(c.id)}"><div class="profile-agent-row-main"><strong>${esc(c.visitor_label||'Visitor')}</strong><p>${esc(c.last_summary||'Conversation')}</p><small>${relative(c.last_message_at)} · started ${relative(c.started_at)}</small>${responseWaitingText(c)?`<small data-response-waiting>${esc(responseWaitingText(c))}</small>`:''}</div><div class="profile-agent-row-actions"><span class="profile-agent-badge ${esc(c.status||'open')}">${esc(String(c.status||'open').replace('_',' '))}</span></div></article>`).join(''):`<div class="profile-agent-empty">No visitor conversations yet.</div>`);
 }
 function visitorAvatar(v){if(v?.identity_disclosed&&v.avatar_url)return `<img src="${esc(v.avatar_url)}" alt="">`;return `<span>${esc(String(v?.visitor_label||'Visitor').charAt(0).toUpperCase()||'?')}</span>`;}
 function visitorMeta(v){if(v?.identity_disclosed){const bits=[];if(v.username)bits.push(`@${v.username}`);if(v.role_label)bits.push(v.role_label);if(v.relationship_scope&&v.relationship_scope!=='none')bits.push(v.relationship_scope);return bits.join(' · ');}return v?.signed_in?'Signed-in member · identity private':'Guest visitor';}
@@ -152,6 +201,10 @@ function radarSessions(){
 }
 function renderRadar(){
   if(!radarHost)return;
+  if(!radarState&&cfg.radarEndpoint){
+    radarHost.innerHTML=`<div class="profile-agent-panel"><div class="profile-agent-section-head"><h2>Agent Radar</h2><button type="button" id="profileAgentRadarRefresh"${radarBusy?' disabled':''}>Refresh Radar</button></div><p role="status">${esc(radarError||'Loading Agent Radar…')}</p></div>`;
+    return;
+  }
   const radar=radarState||{},rs=radar.stats||{},humanSessions=Number(state?.analytics?.visitor_sessions||0),conversion24h=Number(state?.analytics?.conversion_intents_24h||0);
   if(radarState&&!radar.ready){radarHost.innerHTML='<div class="profile-agent-panel"><div class="profile-agent-empty">Agent Radar storage is not ready. Run the VP3 upgrade before using Radar.</div></div>';return;}
   const filters=[['all','All'],['human','Human'],['ai_user_agent','AI Agent'],['ai_search','Search'],['ai_crawler','Crawler'],['automated_unknown','Unknown']];
@@ -165,7 +218,10 @@ function agentOptions(selected){
 function renderAgentSettings(){
   const p=state?.profile||{},s=state?.public_agent_status||{};
   const selected=Number(p.profile_agent_id||s.suggested_agent_id||0);
-  agentHost.innerHTML=`<div class="profile-agent-panel-grid"><form class="profile-agent-card" id="paAgentForm"><h2>Public Profile Agent</h2><p>This is the single service control for your public-facing agent. The selected agent must be active.</p><label class="profile-agent-field"><span>Agent</span><select name="profile_agent_id">${agentOptions(selected)}</select></label><label class="profile-agent-toggle"><input type="checkbox" name="profile_agent_enabled"${Number(p.profile_agent_enabled)?' checked':''}> Accept public Profile Agent conversations</label><label class="profile-agent-field"><span>Greeting</span><textarea name="profile_agent_greeting" maxlength="500">${esc(p.profile_agent_greeting||'')}</textarea></label><label class="profile-agent-field"><span>Public agent instructions</span><textarea name="profile_agent_instructions" maxlength="4000">${esc(p.profile_agent_instructions||'')}</textarea></label><div class="profile-agent-form-actions"><button class="primary" type="submit">Save Profile Agent</button></div></form><div class="profile-agent-card"><h3>Service status</h3><p>${esc(service.textContent||'')}</p><div><strong>${s.agent_name?esc(s.agent_name):'No active service agent'}</strong></div><p>Public service requires a published profile, the public switch above, and an active selected agent. Private Agent Chat remains separate.</p>${state.profile_url?`<div class="profile-agent-form-actions"><a class="profile-agent-view-profile" href="${esc(state.profile_url)}?preview=1" target="_blank" rel="noopener">Preview profile ↗</a></div>`:''}</div></div>`;
+  const responseReady=p.profile_agent_response_ready===true;
+  const responseMode=p.profile_agent_response_mode==='user_responses'?'user_responses':'automated';
+  const responseSettings=`<label class="profile-agent-field"><span>Responses</span><select name="profile_agent_response_mode"${responseReady?'':' disabled'}><option value="user_responses"${responseMode==='user_responses'?' selected':''}>User responses</option><option value="automated"${responseMode==='automated'?' selected':''}>Automated</option></select></label><input type="hidden" name="profile_agent_response_revision" value="${Number.isSafeInteger(p.profile_agent_response_revision)?p.profile_agent_response_revision:0}"><p>User responses: Visitor questions are submitted to you. Visitors wait for your response.</p><p>Automated: The Agent answers using information you have permitted. Questions it cannot answer are submitted to you.</p>${responseReady?'':'<p role="status">Run Database Upgrade to enable response settings.</p>'}`;
+  agentHost.innerHTML=`<div class="profile-agent-panel-grid"><form class="profile-agent-card" id="paAgentForm"><h2>Public Profile Agent</h2><p>This is the single service control for your public-facing agent. The selected agent must be active.</p><label class="profile-agent-field"><span>Agent</span><select name="profile_agent_id">${agentOptions(selected)}</select></label><label class="profile-agent-toggle"><input type="checkbox" name="profile_agent_enabled"${Number(p.profile_agent_enabled)?' checked':''}> Accept public Profile Agent conversations</label>${responseSettings}<label class="profile-agent-field"><span>Greeting</span><textarea name="profile_agent_greeting" maxlength="500">${esc(p.profile_agent_greeting||'')}</textarea></label><label class="profile-agent-field"><span>Public agent instructions</span><textarea name="profile_agent_instructions" maxlength="4000">${esc(p.profile_agent_instructions||'')}</textarea></label><div class="profile-agent-form-actions"><button class="primary" type="submit">Save Profile Agent</button></div></form><div class="profile-agent-card"><h3>Service status</h3><p>${esc(service.textContent||'')}</p><div><strong>${s.agent_name?esc(s.agent_name):'No active service agent'}</strong></div><p>Public service requires a published profile, the public switch above, and an active selected agent. Private Agent Chat remains separate.</p>${state.profile_url?`<div class="profile-agent-form-actions"><a class="profile-agent-view-profile" href="${esc(state.profile_url)}?preview=1" target="_blank" rel="noopener">Preview profile ↗</a></div>`:''}</div></div>`;
 }
 function audienceOptions(value){return [['inherit','Existing visibility'],['private','Private'],['connections','Connections'],['collaborators','Collaborators'],['public','Public']].map(([v,l])=>`<option value="${v}"${v===value?' selected':''}>${l}</option>`).join('');}
 function renderKnowledge(){
@@ -186,16 +242,29 @@ function renderAnalytics(){
 function renderAll(){renderService();renderMetrics();renderInbox();renderVisitors();renderRadar();renderEditable(agentHost,renderAgentSettings);renderEditable(knowledgeHost,renderKnowledge);renderEditable(profileHost,renderProfileSettings);renderAnalytics();const unread=Number(state?.notifications?.unread||0),bell=document.getElementById('chatNotificationButton');if(bell){let badge=bell.querySelector(':scope > span');if(unread>0){if(!badge){badge=document.createElement('span');bell.appendChild(badge);}badge.textContent=unread>99?'99+':String(unread);}else badge?.remove();}bindDynamic();}
 async function refresh(silent=false){
   void profileAttention?.refresh({present:false});
+  // Radar is optional and has its own retry/error state. Its response must not
+  // gate the canonical visitor Inbox, settings or selected conversation.
+  void refreshRadar();
   if(requestBusy||threadMutations.size||pendingSettings)return;requestBusy=true;const request=++stateRead;
-  try{const [d,r]=await Promise.all([req('owner_state'),radarReq().catch(()=>null)]);if(request!==stateRead)return;state=d.state;if(r)radarState=r;renderAll();if(activeTab==='inbox'&&selectedThread)await refreshConversation(selectedThread);if(!silent)setNotice('Profile Agent workspace refreshed.');}
+  try{const d=await req('owner_state');if(request!==stateRead)return;if(!d.state||typeof d.state!=='object'||Array.isArray(d.state))throw new Error('The Profile Agent workspace could not be loaded. Try again.');state=d.state;renderAll();if(activeTab==='inbox'&&selectedThread)await refreshConversation(selectedThread);if(!silent)setNotice('Profile Agent workspace refreshed.');}
   catch(err){if(request===stateRead)setNotice(err.message,true);}finally{requestBusy=false;}
 }
 function threadNotice(binding,message='',error=false){if(!threadDisplayed(binding))return;const node=threadHost.querySelector('[data-thread-notice]');node.textContent=message;node.setAttribute('role',error?'alert':'status');}
-function updateThreadControls(binding){if(!threadDisplayed(binding))return;const busy=threadMutations.has(binding.id);threadHost.querySelectorAll('#paReplyForm input,#paReplyForm button,[data-thread-status]').forEach(node=>{node.disabled=busy;});}
+function updateThreadControls(binding){
+  if(!threadDisplayed(binding))return;
+  const busy=threadMutations.has(binding.id);
+  threadHost.querySelectorAll('#paReplyForm input,#paReplyForm button,[data-thread-status]').forEach(node=>{
+    const delegation=node.dataset.threadStatus==='open'&&userResponseMode(displayedConversation);
+    node.disabled=busy||delegation;
+    if(node.dataset.threadStatus==='open')node.title=delegation?'User responses is selected. Reply to this visitor or change the response setting.':'';
+  });
+  refreshThreadKnowledge();
+}
 function renderThread(binding,c,m){
   if(!threadSelected(binding))return;
+  displayedConversation=c;
   if(!threadDisplayed(binding)){
-    threadHost.innerHTML=`<div class="profile-agent-thread-head"><div data-thread-identity></div><div class="profile-agent-row-actions"><button type="button" data-thread-status="open">Open</button><button type="button" data-thread-status="resolved">Resolve</button></div></div><div class="profile-agent-thread-messages"></div><form class="profile-agent-reply" id="paReplyForm" data-conversation-id="${binding.id}"><input name="message" maxlength="4000" autocomplete="off" placeholder="Reply as profile owner"><button type="submit">Send Reply</button></form><p data-thread-notice role="status" aria-live="polite"></p>`;
+    threadHost.innerHTML=`<div class="profile-agent-thread-head"><div data-thread-identity></div><div class="profile-agent-row-actions"><button type="button" data-thread-status="owner_joined">Take over</button><button type="button" data-thread-status="open">Let Agent handle</button><button type="button" data-thread-status="resolved">Resolve</button></div></div><p data-thread-response role="status" aria-live="polite"></p><div class="profile-agent-thread-messages"></div><form class="profile-agent-reply" id="paReplyForm" data-conversation-id="${binding.id}"><input name="message" maxlength="4000" autocomplete="off" placeholder="Reply as profile owner"><button type="submit">Send Reply</button></form><p data-thread-notice role="status" aria-live="polite"></p>`;
     displayedThread=binding;
     const form=threadHost.querySelector('#paReplyForm');form.elements.message.value=drafts.get(binding.id)||'';
     form.elements.message.addEventListener('input',()=>drafts.set(binding.id,form.elements.message.value));
@@ -204,15 +273,26 @@ function renderThread(binding,c,m){
   const identity=threadHost.querySelector('[data-thread-identity]');
   const heading=`<strong>${esc(c.visitor_label||'Visitor')}</strong><small>${esc(String(c.status||'open').replace('_',' '))} · last message ${esc(relative(c.last_message_at))}</small>`;
   if(identity.innerHTML!==heading)identity.innerHTML=heading;
+  const responseStatus=threadHost.querySelector('[data-thread-response]'),responseText=responseWaitingText(c);
+  responseStatus.hidden=!responseText;if(responseStatus.textContent!==responseText)responseStatus.textContent=responseText;
   const messages=threadHost.querySelector('.profile-agent-thread-messages');
+  displayedKnowledgeMessages=new Map(m.filter(row=>row.sender_type==='owner'&&conversationId(row.id)).map(row=>[Number(row.id),row]));
   const html=m.map(x=>{
     const file=x.attachment?.name&&conversationId(x.id)
       ? `<br><a href="${esc(cfg.endpoint)}?action=owner_attachment&amp;conversation_id=${binding.id}&amp;message_id=${Number(x.id)}" download>Download ${esc(x.attachment.name)}</a>`:'';
     const edited=['input','result'].includes(x.image_edit?.kind)&&conversationId(x.id)
       ? `<a href="${esc(cfg.endpoint)}?action=owner_image&amp;conversation_id=${binding.id}&amp;message_id=${Number(x.id)}&amp;preview=1" target="_blank" rel="noopener"><img class="profile-agent-edit-image" src="${esc(cfg.endpoint)}?action=owner_image&amp;conversation_id=${binding.id}&amp;message_id=${Number(x.id)}&amp;preview=1" alt="${x.image_edit.kind==='result'?'Edited visitor photo':'Original visitor photo'}" loading="lazy"></a><a href="${esc(cfg.endpoint)}?action=owner_image&amp;conversation_id=${binding.id}&amp;message_id=${Number(x.id)}" download>Download ${x.image_edit.kind==='result'?'edited':'original'} photo</a>`:'';
-    return `<div class="profile-agent-message ${esc(x.sender_type)}"><small>${esc(x.sender_type==='visitor'?'Visitor':x.sender_type==='owner'?'You':'Profile Agent')}</small>${esc(x.message)}${file}${edited}</div>`;
+    const knowledge=x.sender_type==='owner'&&conversationId(x.id)?`<div data-profile-knowledge-message="${Number(x.id)}"></div>`:'';
+    return `<div class="profile-agent-message ${esc(x.sender_type)}"><small>${esc(x.sender_type==='visitor'?'Visitor':x.sender_type==='owner'?'You':x.sender_type==='system'?'Status':'Profile Agent')}</small>${esc(x.message)}${file}${edited}${knowledge}</div>`;
   }).join('')||'<div class="profile-agent-empty">No messages yet.</div>';
-  if(messages.innerHTML!==html){const top=messages.scrollTop,atEnd=messages.scrollHeight-messages.scrollTop-messages.clientHeight<40;messages.innerHTML=html;messages.scrollTop=atEnd?messages.scrollHeight:top;}
+  if(threadMessagesMarkup!==html){const top=messages.scrollTop,atEnd=messages.scrollHeight-messages.scrollTop-messages.clientHeight<40;messages.innerHTML=html;threadMessagesMarkup=html;messages.scrollTop=atEnd?messages.scrollHeight:top;}
+  for(const [id,entry] of threadKnowledge)if(!displayedKnowledgeMessages.has(id)){entry.control?.destroy();threadKnowledge.delete(id);}
+  if(window.VP3ProfileOwnerKnowledgeV1)for(const id of displayedKnowledgeMessages.keys()){
+    const host=messages.querySelector('[data-profile-knowledge-message="'+id+'"]');if(!host)continue;
+    let entry=threadKnowledge.get(id);
+    if(entry){if(host!==entry.host)host.replaceWith(entry.host);}
+    else{entry={host,control:window.VP3ProfileOwnerKnowledgeV1.attach(host,{endpoint:cfg.endpoint,csrf:cfg.csrf,sources:()=>threadDisplayed(binding)&&activeTab==='inbox'&&!threadMutations.has(binding.id)?knowledgeRequests(displayedKnowledgeMessages.get(id),binding.id):[]})};threadKnowledge.set(id,entry);}
+  }
   updateThreadControls(binding);
 }
 async function refreshConversation(binding){
@@ -221,7 +301,7 @@ async function refreshConversation(binding){
     const d=await req('conversation_messages',{conversation_id:binding.id});
     if(!threadSelected(binding)||request!==threadRead)return;
     if(conversationId(d.conversation?.id)!==binding.id||!Array.isArray(d.messages))throw new Error('The selected conversation could not be verified.');
-    renderThread(binding,d.conversation,d.messages);threadNotice(binding);return true;
+    renderThread(binding,d.response===undefined?d.conversation:{...d.conversation,response:d.response},d.messages);threadNotice(binding);return true;
   }catch(err){
     if(!threadSelected(binding)||request!==threadRead)return;
     if(threadDisplayed(binding))threadNotice(binding,err.message,true);
@@ -232,7 +312,7 @@ async function refreshConversation(binding){
 async function openConversation(id){
   id=conversationId(id);if(!id)return;
   if(selectedThread?.id===id&&threadDisplayed(selectedThread))return refreshConversation(selectedThread);
-  rememberDraft();selectedConversation=id;selectedThread=Object.freeze({id});displayedThread=null;renderInbox();
+  rememberDraft();clearThreadKnowledge();selectedConversation=id;selectedThread=Object.freeze({id});displayedThread=null;renderInbox();
   threadHost.innerHTML='<div class="profile-agent-thread-empty"><strong>Loading conversation…</strong></div>';
   return refreshConversation(selectedThread);
 }
@@ -254,13 +334,13 @@ function bindThread(binding){
   });
   threadHost.querySelectorAll('[data-thread-status]').forEach(button=>button.addEventListener('click',async()=>{
     if(!threadDisplayed(binding)||!threadHost.contains(button)||threadMutations.has(binding.id))return;
-    const status=button.dataset.threadStatus;rememberDraft();const token={};threadMutations.set(binding.id,token);threadRead++;const request=++stateRead;updateThreadControls(binding);threadNotice(binding);
+    const status=button.dataset.threadStatus;if(status==='open'&&userResponseMode(displayedConversation))return;rememberDraft();const token={};threadMutations.set(binding.id,token);threadRead++;const request=++stateRead;updateThreadControls(binding);threadNotice(binding);
     try{
       const d=await req('conversation_status',{conversation_id:binding.id,status});
       if(conversationId(d.conversation_id)!==binding.id)throw new Error('The conversation status could not be confirmed.');
       if(!threadDisplayed(binding))return;
       if(request===stateRead){stateRead++;state=d.state||state;renderAll();}
-      threadMutations.delete(binding.id);const fresh=await refreshConversation(binding);threadNotice(binding,(status==='resolved'?'Conversation resolved.':'Conversation reopened.')+(fresh?'':' The latest messages could not be loaded.'),!fresh);
+      threadMutations.delete(binding.id);const fresh=await refreshConversation(binding);const feedback=({resolved:'Conversation resolved.',owner_joined:'You took over this conversation. Agent replies are paused.',open:'Agent responses enabled for this conversation.'})[status]||'Conversation updated.';threadNotice(binding,feedback+(fresh?'':' The latest messages could not be loaded.'),!fresh);
     }catch(err){if(threadDisplayed(binding))threadNotice(binding,err.message,true);}
     finally{if(threadMutations.get(binding.id)===token)threadMutations.delete(binding.id);if(selectedThread?.id===binding.id)updateThreadControls(selectedThread);}
   }));
@@ -271,6 +351,8 @@ async function saveEditable(node,save,message){
   const button=node.querySelector('button[type=submit]');if(button)button.disabled=true;
   try{
     const d=await save();
+    const responseRevision=node.elements?.profile_agent_response_revision,nextResponseRevision=d.state?.profile?.profile_agent_response_revision;
+    if(node.id==='paAgentForm'&&responseRevision&&Number.isSafeInteger(nextResponseRevision)&&nextResponseRevision>=Number(responseRevision.value))responseRevision.value=String(nextResponseRevision);
     if((editVersions.get(node)||0)===revision)delete node.dataset.paDirty;
     if(request===stateRead){stateRead++;state=d.state||state;}
     setNotice(message);
@@ -279,10 +361,12 @@ async function saveEditable(node,save,message){
 }
 function bindDynamic(){
   profileHost.querySelectorAll('[data-profile-media-form]').forEach(form=>bindOnce(form,'submit',e=>{e.preventDefault();const file=form.querySelector('input[type=file]')?.files?.[0];return saveEditable(form,()=>uploadProfileMedia(form.dataset.profileMediaForm,file),form.dataset.profileMediaForm==='cover'?'Cover image updated.':'Profile image updated.');}));
-  bindOnce(document.getElementById('paAgentForm'),'submit',e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);return saveEditable(form,()=>req('save_profile_agent',{profile_agent_id:Number(f.get('profile_agent_id')||0),profile_agent_enabled:f.get('profile_agent_enabled')?1:0,profile_agent_greeting:f.get('profile_agent_greeting'),profile_agent_instructions:f.get('profile_agent_instructions')}),'Profile Agent settings saved.');});
+  bindOnce(document.getElementById('paAgentForm'),'submit',e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form),mode=form.elements.profile_agent_response_mode;
+    return saveEditable(form,()=>req('save_profile_agent',{profile_agent_id:Number(f.get('profile_agent_id')||0),profile_agent_enabled:f.get('profile_agent_enabled')?1:0,profile_agent_greeting:f.get('profile_agent_greeting'),profile_agent_instructions:f.get('profile_agent_instructions'),
+      ...(mode&&!mode.disabled?{profile_agent_response_mode:f.get('profile_agent_response_mode'),profile_agent_response_revision:Number(f.get('profile_agent_response_revision'))}:{})}),'Profile Agent settings saved.');});
   bindOnce(document.getElementById('paProfileForm'),'submit',e=>{e.preventDefault();const form=e.currentTarget,f=new FormData(form);return saveEditable(form,()=>req('save_profile',{username:f.get('username'),bio:f.get('bio'),website_url:f.get('website_url'),instagram_url:f.get('instagram_url'),tiktok_url:f.get('tiktok_url'),youtube_url:f.get('youtube_url'),spotify_url:f.get('spotify_url'),apple_music_url:f.get('apple_music_url'),is_public:f.get('is_public')?1:0,share_visit_identity:f.get('share_visit_identity')?1:0}),'Public profile saved.');});
   knowledgeHost.querySelectorAll('[data-policy]').forEach(row=>{const allow=row.querySelector('[data-policy-allow]'),audience=row.querySelector('[data-policy-audience]');const save=async()=>{if(row.dataset.paPending==='1'){row.dataset.paQueued='1';return;}await saveEditable(row,()=>req('save_profile_access',{resource_type:row.dataset.policy,profile_agent_allowed:allow.checked?1:0,audience_scope:audience.value}),'Knowledge access updated.');if(row.isConnected&&row.dataset.paQueued==='1'){delete row.dataset.paQueued;await save();}};bindOnce(allow,'change',save);bindOnce(audience,'change',save);});
-  bindOnce(document.getElementById('profileAgentRadarRefresh'),'click',async()=>{try{radarState=await radarReq();renderRadar();bindDynamic();setNotice('Agent Radar refreshed.');}catch(err){setNotice(err.message,true);}});
+  bindOnce(document.getElementById('profileAgentRadarRefresh'),'click',()=>refreshRadar());
 }
 app.addEventListener('click',async e=>{
   if(profileAttention?.handleClick(e))return;

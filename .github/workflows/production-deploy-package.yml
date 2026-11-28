@@ -58,6 +58,8 @@ jobs:
             "build": "vp3-cloud-main-${VP3_RELEASE_SHA:0:12}",
             "commit": "${VP3_RELEASE_SHA}",
             "cloud_phone_workspace": "twilio-browser-phone-v1",
+            "profile_phone_entry": "owner-approved-twilio-line-v1",
+            "profile_reliability_upgrade_note": "docs/PROFILE-AGENT-RELIABILITY-DEPLOY.txt",
             "phone_push_section": "PS5C.4",
             "phone_location_checkins": "location-specialist-v1",
             "phone_shell": "chat-inbox-requests-settings-v1",
@@ -248,6 +250,17 @@ jobs:
           test -f _deploy/assets/phone-pwa/icon-512.png
           python3 -m json.tool _deploy/phone-app.webmanifest >/dev/null
           test -f _deploy/docs/CLOUD-PHONE-WORKSPACE-DEPLOY.txt
+          test -f _deploy/includes/profile-phone-v1.php
+          test -f _deploy/api/profile-phone-v1.php
+          test -f _deploy/api/profile-phone-browser-v1.php
+          test -f _deploy/includes/profile-browser-phone-schema-v1.php
+          test -f _deploy/includes/profile-browser-phone-v1.php
+          test -f _deploy/includes/profile-response-analytics-v1.php
+          test -f _deploy/assets/twilio-voice-2.18.5.min.js
+          test -f _deploy/profile-phone-v1.js
+          test -f _deploy/profile-phone-settings-v1.js
+          test -f _deploy/profile-phone-v1.css
+          test -f _deploy/docs/PROFILE-AGENT-RELIABILITY-DEPLOY.txt
           python3 -m json.tool _deploy/VP3_RELEASE.json >/dev/null
           grep -Fq '"commit": "'"${VP3_RELEASE_SHA}"'"' _deploy/VP3_RELEASE.json
           test -f _deploy/includes/tracky-agent-scene-v1g3d.php

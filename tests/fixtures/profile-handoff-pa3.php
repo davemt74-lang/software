@@ -82,7 +82,8 @@ if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){
     $pdo->sqliteCreateFunction('IF',static fn($condition,$yes,$no)=>$condition?$yes:$no);
     $pdo->exec('PRAGMA busy_timeout=5000');
 }else{$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES,false);$pdo->exec("SET time_zone='+00:00'");}
-$GLOBALS['pa3ModelCalls']=[];$GLOBALS['pa3ModelHook']=null;
+$GLOBALS['pa3ModelCalls']=[];$GLOBALS['pa3ModelHook']=null;$GLOBALS['pa3ModelResult']=null;
+$GLOBALS['pa3HomeCalls']=[];$GLOBALS['pa3HomeHook']=null;$GLOBALS['pa3HomeResult']=null;
 function vp3_profile_handoff_now_pa3(): int{return $GLOBALS['pa3Now'];}
 function db(): PDO{return $GLOBALS['pdo'];}
 function table_exists(string $table): bool
@@ -118,13 +119,21 @@ function csrf_token(): string{return 'pa3-fixture-csrf';}
 function verify_csrf(): bool{return ($_POST['csrf_token']??'')===csrf_token();}
 function chat_policy_terms_v236(string $query): array{return array_values(array_filter(preg_split('/[^a-z]+/',strtolower($query)),static fn($s)=>strlen($s)>3));}
 function homeserver_shared_v210_exchange(int $owner,string $query): array{return ['datasets'=>['knowledge'=>[['key'=>'hours','title'=>'Home hours','content'=>'Home hours are Tuesday']]]];}
-function homeserver_profile_v235_answer(int $owner,string $query,array $history,array $context): ?array{return null;}
+function homeserver_profile_v235_answer(int $owner,string $query,array $history,array $context,bool $structured=false): ?array
+{
+    $GLOBALS['pa3HomeCalls'][]=compact('owner','query','history','context','structured');
+    if($log=getenv('VP3_PA3_HOME_LOG'))file_put_contents($log,json_encode(['owner'=>$owner,'structured'=>$structured])."\n",FILE_APPEND|LOCK_EX);
+    if($hook=$GLOBALS['pa3HomeHook'])$hook();
+    return $GLOBALS['pa3HomeResult'];
+}
 function ai_generate_chat_response(string $query,array $history,array $context,?array $user=null,?string $scope=null,?array $control=null): array
 {
     $GLOBALS['pa3ModelCalls'][]=compact('query','history','context','user','scope','control');
     if($hook=$GLOBALS['pa3ModelHook'])$hook();
     if($log=getenv('VP3_PA3_INFERENCE_LOG'))file_put_contents($log,json_encode(['query'=>$query,'scope'=>$scope,'session_active'=>session_status()===PHP_SESSION_ACTIVE])."\n",FILE_APPEND|LOCK_EX);
-    return ['ok'=>true,'answer'=>'PA3 approved public answer'];
+    return $GLOBALS['pa3ModelResult']??['ok'=>true,'answer'=>$scope==='profile_agent'
+        ?json_encode(['disposition'=>'answered','answer'=>'PA3 approved public answer'],JSON_THROW_ON_ERROR)
+        :'PA3 approved public answer'];
 }
 require_once $pa3Root.'/includes/auth.php';
 require_once $pa3Root.'/includes/notifications.php';
@@ -155,7 +164,9 @@ function pa3_context(int $visitor=0,string $browser='b'): array
 function pa3_reset(): void
 {
     $p=db();if($p->inTransaction())$p->rollBack();$p->beforeSql=null;$p->afterSql=null;$p->failSql='';
-    $GLOBALS['pa3ModelCalls']=[];$GLOBALS['pa3ModelHook']=null;$GLOBALS['pa3Now']=(int)floor(microtime(true)*1000);$GLOBALS['pa3Settings']=[];
+    $GLOBALS['pa3ModelCalls']=[];$GLOBALS['pa3ModelHook']=null;$GLOBALS['pa3ModelResult']=null;
+    $GLOBALS['pa3HomeCalls']=[];$GLOBALS['pa3HomeHook']=null;$GLOBALS['pa3HomeResult']=null;
+    $GLOBALS['pa3Now']=(int)floor(microtime(true)*1000);$GLOBALS['pa3Settings']=[];
     foreach(['profile_agent_handoff_operations_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_owners_pa3','agent_workflow_receipts','agent_workflow_action_dependencies','agent_workflow_events','agent_workflow_actions','agent_workflow_runs','chat_messages','chat_conversations','team_user_presence'] as $table)if(table_exists($table))$p->exec('DELETE FROM '.$table);
     if($p->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'&&!table_exists('users'))$p->exec('CREATE TABLE users(id INT UNSIGNED PRIMARY KEY,display_name VARCHAR(190),email VARCHAR(190),role VARCHAR(40),is_active INTEGER,avatar_path VARCHAR(255),password_hash VARCHAR(255),last_login_at DATETIME)');
     profile_public_authority_fixture_pa1($p);

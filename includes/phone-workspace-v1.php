@@ -205,6 +205,7 @@ function vp3_phone_workspace_state_v1(PDO $pdo,array $user,array $input=[]): arr
 {
     require_once __DIR__.'/phone-browser-v1.php';
     $scope=vp3_phone_workspace_scope_v1($pdo,$user,$input);$numbers=vp3_phone_workspace_numbers_v1($pdo,$scope);$contacts=vp3_phone_workspace_contacts_v1($pdo,$scope['owner_user_id']);
+    vp3_profile_browser_phone_reconcile_owner_v1($pdo,(int)$scope['owner_user_id']);
     $parentState=table_exists('phone_voice_calls_v130')?
         "(SELECT v.state FROM phone_voice_calls_v130 v WHERE v.id=b.voice_call_id AND v.owner_user_id=b.owner_user_id AND v.provider_call_sid=b.provider_call_sid)":'NULL';
     $sql="SELECT b.*, $parentState AS parent_voice_state FROM phone_browser_calls_v1 b WHERE b.owner_user_id=?";$args=[$scope['owner_user_id']];if($scope['agent_id']>0){$sql.=' AND b.agent_id=?';$args[]=$scope['agent_id'];}

@@ -14,6 +14,10 @@ if(($argv[1]??'')==='cleanup'){
 putenv('VP3_PA3_CONFIG='.$config);
 require __DIR__.'/profile-handoff-pa3.php';
 if(($argv[1]??'')==='init'){
+    // This fixture also backs suites that reset the same database repeatedly.
+    // Clear its Knowledge additions before recreating the canonical seed rows.
+    foreach(['profile_agent_knowledge_saves_v1','shared_knowledge_index','artist_transcript_folders_v177'] as $table)
+        if(table_exists($table))$pdo->exec('DELETE FROM '.$table);
     pa3_reset();
     // The owner inbox reply returns the real dashboard aggregate as well as its
     // receipt. Extend this HTTP fixture's agent rows for that existing read.
@@ -26,11 +30,30 @@ if(($argv[1]??'')==='init'){
         'voice_enabled'=>'INTEGER NOT NULL DEFAULT 0',
         'created_at'=>'DATETIME', 'updated_at'=>'DATETIME',
     ] as $column=>$definition)if(!column_exists('user_agents',$column))$pdo->exec('ALTER TABLE user_agents ADD COLUMN '.$column.' '.$definition);
+    // Exercise real owner Knowledge preview/save on the same answered request.
+    // Install only the canonical storage needed by the ordinary note writer.
+    require_once dirname(__DIR__,2).'/includes/profile-agent-knowledge-v1.php';
+    foreach([
+        'track_id'=>'INTEGER NULL','folder_id'=>'INTEGER NULL',
+        'knowledge_scope'=>"VARCHAR(20) NOT NULL DEFAULT 'personal'",
+        'file_name'=>"VARCHAR(255) NOT NULL DEFAULT ''",'file_path'=>"VARCHAR(500) NOT NULL DEFAULT ''",
+        'file_type'=>"VARCHAR(40) NOT NULL DEFAULT 'personal_note'",'mime_type'=>"VARCHAR(100) NOT NULL DEFAULT 'text/plain'",
+        'file_size'=>'INTEGER NOT NULL DEFAULT 0',
+    ] as $column=>$definition)if(!column_exists('knowledge_items',$column))$pdo->exec('ALTER TABLE knowledge_items ADD COLUMN '.$column.' '.$definition);
+    $mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
+    // Convert the initial fixture IDs once, before the canonical index adds its FK.
+    if($mysql&&!table_exists('shared_knowledge_index')){$pdo->exec('ALTER TABLE knowledge_items MODIFY id INT UNSIGNED NOT NULL AUTO_INCREMENT');$pdo->exec('ALTER TABLE knowledge_chunks MODIFY id INT UNSIGNED NOT NULL AUTO_INCREMENT');}
+    $auto=$mysql?'INT UNSIGNED AUTO_INCREMENT PRIMARY KEY':'INTEGER PRIMARY KEY AUTOINCREMENT';
+    $pdo->exec("CREATE TABLE IF NOT EXISTS artist_transcript_folders_v177(id $auto,created_by_user_id INTEGER NOT NULL,folder_name VARCHAR(80),sort_order INTEGER NOT NULL DEFAULT 0,created_at DATETIME DEFAULT CURRENT_TIMESTAMP,updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)");
+    $pdo->exec("INSERT INTO artist_transcript_folders_v177(id,created_by_user_id,folder_name) VALUES(10,1,'Owner answers'),(20,4,'Foreign private folder')");
+    $pdo->exec("INSERT INTO role_permissions VALUES('member','personal_knowledge.access'),('member','personal_knowledge.manage')");
+    shared_knowledge_index_ensure_schema_v236($pdo);
+    vp3_profile_knowledge_install_v1($pdo);
     echo $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);exit;
 }
 if(($argv[1]??'')==='state'){
     $out=[];
-    foreach(['profile_agent_conversations','profile_agent_messages','agent_attention_items','notifications','profile_agent_handoff_turns_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_operations_pa3','agent_workflow_runs','agent_workflow_receipts','chat_messages'] as $table)$out[$table]=$pdo->query('SELECT * FROM '.$table)->fetchAll();
+    foreach(['profile_agent_conversations','profile_agent_messages','agent_attention_items','notifications','profile_agent_handoff_turns_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_operations_pa3','profile_agent_response_settings_v1','profile_agent_owner_requests_v1','agent_workflow_runs','agent_workflow_receipts','chat_messages','knowledge_items','knowledge_chunks','profile_agent_knowledge_saves_v1','user_data_policies','user_agent_data_rules','role_permissions'] as $table)$out[$table]=$pdo->query('SELECT * FROM '.$table)->fetchAll();
     echo json_encode($out,JSON_THROW_ON_ERROR);exit;
 }
 throw new RuntimeException('Unsupported fixture command.');

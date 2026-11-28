@@ -7,7 +7,7 @@ require_once dirname(__DIR__).'/includes/browser-share-media-v2040.php';
 header('Cache-Control: no-store');
 header('X-Content-Type-Options: nosniff');
 vp3_extension_apply_cors_v2001();
-header('Access-Control-Allow-Headers: Authorization, Content-Type, X-VP3-Extension-Version, X-VP3-Contract-Version, X-VP3-Media-Kind, X-VP3-Media-Name, X-VP3-Media-Metadata');
+header('Access-Control-Allow-Headers: Authorization, Content-Type, X-VP3-Extension-Version, X-VP3-Contract-Version, X-VP3-Media-Kind, X-VP3-Media-Name, X-VP3-Media-Metadata, X-VP3-Messages-User');
 header('Access-Control-Allow-Methods: GET, POST, OPTIONS');
 
 function vp3_browser_share_media_json_v2040(int $status,array $payload=[]): never
@@ -81,6 +81,13 @@ try{
     $pdo=vp3_browser_share_media_require_ready_v2040(db());
     $auth=vp3_browser_share_media_auth_v2040($pdo,$method==='POST');
     $userId=(int)$auth['user_id'];
+    // A Messages card belongs to the account that rendered its page. Keep the
+    // header optional so existing Companion and public-media callers still use
+    // the established object-level authorization below.
+    if(isset($_SERVER['HTTP_X_VP3_MESSAGES_USER'])){
+        if($userId<1)throw new VP3BrowserShareMediaExceptionV2040('login_required',401,'Sign in again, then reload Messages.');
+        if(!hash_equals((string)$userId,(string)$_SERVER['HTTP_X_VP3_MESSAGES_USER']))throw new VP3BrowserShareMediaExceptionV2040('account_changed',403,'Your account changed. Reload Messages.');
+    }
 
     if($method==='GET'){
         $mediaId=trim((string)($_GET['media_id']??''));

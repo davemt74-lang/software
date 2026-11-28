@@ -275,6 +275,8 @@ function vp3_phone_assign_v100(PDO $pdo, int $numberId, int $userId, int $agentI
         // never a permanent grant attached to the carrier number itself.
         if (table_exists('phone_browser_numbers_v1'))
             $pdo->prepare('DELETE FROM phone_browser_numbers_v1 WHERE phone_number_id=?')->execute([$numberId]);
+        require_once __DIR__.'/profile-phone-v1.php';
+        vp3_profile_phone_revoke_line_v1($pdo,$numberId);
         require_once __DIR__.'/agent-operator-auto-call-schema-v1.php';
         vp3_operator_auto_call_revoke_line_v1($pdo,$numberId);
         require_once __DIR__.'/agent-operator-live-schema-v1.php';

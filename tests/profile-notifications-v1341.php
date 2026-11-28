@@ -29,7 +29,7 @@ function vp3_cognitive_attention_mark_delivered_v2410(PDO $pdo,array $user,strin
 
 require dirname(__DIR__).'/includes/notifications.php';
 require dirname(__DIR__).'/includes/profile-agent.php';
-require dirname(__DIR__).'/includes/profile-agent-boundary-v390.php';
+require_once dirname(__DIR__).'/includes/profile-agent-boundary-v390.php';
 require dirname(__DIR__).'/includes/profile-visitor-crm-v243.php';
 require dirname(__DIR__).'/includes/profile-agent-public-service-v110.php';
 // Load the actual API service functions without executing its HTTP dispatcher.

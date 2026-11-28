@@ -252,8 +252,8 @@ function vp3_coordination_profile_conversation_v1(PDO $pdo,array $scope,int $id,
             vp3_coordination_profile_changed_v1();
     }
     $state=(string)($turn['state']??'none');
-    if(!in_array($state,['none','awaiting_delivery','awaiting_owner','owner_claimed','agent_ready','agent_running','replied','blocked','cancelled'],true))vp3_coordination_profile_changed_v1();
-    $semanticState=in_array($state,['awaiting_delivery','awaiting_owner'],true)?'waiting':$state;
+    if(!in_array($state,['none','awaiting_delivery','awaiting_owner','owner_requested','owner_claimed','agent_ready','agent_running','replied','blocked','cancelled'],true))vp3_coordination_profile_changed_v1();
+    $semanticState=in_array($state,['awaiting_delivery','awaiting_owner','owner_requested'],true)?'waiting':$state;
     $activeTurn=in_array($semanticState,['waiting','owner_claimed','agent_ready','agent_running'],true);
     $canonicalNeedsOwner=$attention!==null&&!$attention['suppressed']&&($attention['source']['event_type']??'')==='needs_owner';
     $settled=$conversation['status']==='resolved'||($message&&in_array($source['sender_type'],['owner','agent'],true)&&!$activeTurn&&!$canonicalNeedsOwner);
