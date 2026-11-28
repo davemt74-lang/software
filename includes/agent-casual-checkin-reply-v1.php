@@ -79,7 +79,9 @@ function vp3_casual_checkin_reply_target_v1(PDO $pdo,array $user,int $agent,int 
     if(!is_string($ref)||(!in_array($ref,['casual:media','casual:music','casual:youtube','casual:youtube_history','casual:email','casual:today','casual:resume'],true)
         &&vp3_casual_starter_specialist_v1($ref)===null))return null;
     if($intent==='defer'&&!in_array($ref,['casual:media','casual:music','casual:youtube','casual:youtube_history'],true))$intent='decline';
-    if($youtubeAcceptance&&$ref==='casual:youtube_history')$intent='accept';
+    $namedPlayback=$ref==='casual:youtube'&&($output['invitation']['kind']??null)==='youtube'
+        ||$ref==='casual:music'&&($output['invitation']['kind']??null)==='music'&&preg_match('/\bplay\b/iu',$text)===1;
+    if($youtubeAcceptance&&($ref==='casual:youtube_history'||$namedPlayback))$intent='accept';
     elseif($intent==='clarify'&&$explicit===null)return null;
     if($ref==='casual:media'){
         if(in_array($intent,['accept','play'],true))$intent=($output['invitation']['kind']??null)==='music'?'music':'clarify';

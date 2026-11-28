@@ -146,6 +146,19 @@ try{
     try{$raceBlocked=$read()['state']==='blocked';}
     catch(RuntimeException $error){if($error instanceof PDOException||$error->getCode()!==409)throw $error;$raceBlocked=true;}
     invitation_check($raceBlocked,'a grant revoked during the actual projection cannot release old draft metadata');
+    foreach([
+        ['music','music','Play that one.','accept'],['youtube','youtube','Play that one.','accept'],
+        ['music','music','Watch that one.','clarify'],['media','media','Yes.','clarify'],['youtube',null,'Play that one.','clarify'],
+    ] as [$kind,$presentation,$reply,$expected]){
+        $output=['type'=>'initiative_coordination','state'=>'needs_owner','evidence_revisions'=>['casual:'.$kind=>str_repeat('a',64)]];
+        if($presentation!==null)$output['invitation']=['kind'=>$presentation];
+        $context=['source'=>'agent_initiative','initiative_output'=>$output,
+            'initiative_followthrough_state'=>['state'=>'open','revision'=>1,'reply_ref'=>str_repeat('f',32)]];
+        $pdo->prepare("INSERT INTO chat_messages(conversation_id,user_id,role,message,context_json) VALUES(11,NULL,'assistant','A saved invitation.',?)")
+            ->execute([json_encode($context,JSON_THROW_ON_ERROR)]);$mid=(int)$pdo->lastInsertId();
+        $target=vp3_casual_checkin_reply_target_v1($pdo,$user,7,11,$reply,['message_id'=>$mid,'reply_ref'=>str_repeat('f',32),'revision'=>1]);
+        invitation_check(($target['intent']??null)===$expected,'exact named playback and ambiguous legacy choices retain their own intent: '.$kind.' '.$reply);
+    }
     $pdo->exec('UPDATE users SET is_active=0 WHERE id=1');
     invitation_reject(static fn()=>$read(),'inactive owner cannot project private invitation data');
     echo 'PASS specialist invitation native acceptance ('.$invitation_checks.' checks)'.PHP_EOL;
