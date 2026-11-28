@@ -81,6 +81,9 @@ try{
     $binding=['enabled'=>true,'conversation_id'=>11,'agent_id'=>7,'revision'=>str_repeat('f',64)];
     $read=static fn(?array $pin=null):array=>vp3_specialist_invitation_email_v1($pdo,$scope,$binding,$pin);
     invitation_check($read()['state']==='empty','verified empty queue permits the existing generic compose fallback');
+    $orphan=invitation_seed(['subject'=>'MISSING_REQUEST']);
+    $pdo->prepare('UPDATE agent_connection_email_drafts_v1 SET user_message_id=999999 WHERE id=?')->execute([$orphan['id']]);
+    invitation_check($read()['state']==='blocked','an orphaned pending draft is unavailable rather than a verified empty queue');
     $normal=invitation_seed(['subject'=>'Contract renewal']);
     $due=invitation_seed(['subject'=>'Workshop planning','deadline'=>gmdate('Y-m-d',time()+86400)]);
     $urgent=invitation_seed(['chat'=>12,'subject'=>'Supplier confirmation','priority'=>'high']);
@@ -97,7 +100,7 @@ try{
     invitation_check($choice['state']==='ready'&&count($e['email_draft_targets'])===3,'bounded invitation lists three actually reviewable saved drafts');
     invitation_check($pin['drafts'][0]['id']===$urgent['id']&&$pin['drafts'][1]['id']===$due['id'],'high priority and saved deadline outrank newer generic drafts');
     invitation_check(str_contains($text,'high priority')&&str_contains($text,'saved deadline'),'each ranking reason states the saved evidence');
-    foreach(['BLOCKED_','CORRUPT','REVOKED_GRANT','AUTOMATIC','EXPIRED','OTHER_AGENT','SYSTEM_AGENT','OTHER_OWNER','PRIVATE_BODY_NEVER_INVITATION','review_token','authorization_key','access_token'] as $sentinel)
+    foreach(['BLOCKED_','CORRUPT','MISSING_REQUEST','REVOKED_GRANT','AUTOMATIC','EXPIRED','OTHER_AGENT','SYSTEM_AGENT','OTHER_OWNER','PRIVATE_BODY_NEVER_INVITATION','review_token','authorization_key','access_token'] as $sentinel)
         invitation_check(!str_contains($text,$sentinel),'private invitation excludes '.$sentinel);
     invitation_check(invitation_state()===$before,'building invitations writes no draft, approval, Chat, send, watch or preference');
     invitation_check($read($pin)===$choice,'exact pinned reread returns the same choices');
@@ -158,6 +161,15 @@ try{
             ->execute([json_encode($context,JSON_THROW_ON_ERROR)]);$mid=(int)$pdo->lastInsertId();
         $target=vp3_casual_checkin_reply_target_v1($pdo,$user,7,11,$reply,['message_id'=>$mid,'reply_ref'=>str_repeat('f',32),'revision'=>1]);
         invitation_check(($target['intent']??null)===$expected,'exact named playback and ambiguous legacy choices retain their own intent: '.$kind.' '.$reply);
+    }
+    require_once dirname(__DIR__).'/includes/agent-casual-checkin-v1.php';
+    foreach(['media','youtube'] as $kind){
+        agent_commerce_atomic_pa2($pdo,static fn()=>vp3_casual_checkin_record_v1($pdo,1,$kind,11,$mid,
+            ['agent_id'=>7,'history_pin'=>['kind'=>'search','message_id'=>$mid],
+                'invitation_pin'=>['selection'=>['kind'=>'search','message_id'=>$mid],'context_key'=>null]]));
+        $q=$pdo->prepare('SELECT setting_value FROM settings WHERE setting_key=?');$q->execute(['media_next_offer_owner_1']);
+        invitation_check((int)$q->fetchColumn()>=time()+4*3600-3&&!vp3_media_cooldown_ready_v1($pdo,1),
+            'named YouTube history keeps the existing four-hour spacing through the '.$kind.' invitation');
     }
     $pdo->exec('UPDATE users SET is_active=0 WHERE id=1');
     invitation_reject(static fn()=>$read(),'inactive owner cannot project private invitation data');

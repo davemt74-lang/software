@@ -41,6 +41,9 @@ track alongside finding something new on YouTube; it does not invent a video.
 Bare assent to two possible paths asks which path. Exact music or video replies
 reuse the existing native Player or saved YouTube action.
 
+Named YouTube history retains its existing four-hour offer spacing in every
+invitation path; an already posted exact choice can still be answered.
+
 No invitation starts audio, creates a listen, runs a provider search or grants
 permission. Expired provider results retain only an allowed original search
 topic, and a further owner action uses the existing search workflow. This

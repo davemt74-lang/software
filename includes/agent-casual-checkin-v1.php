@@ -195,7 +195,7 @@ function vp3_casual_checkin_record_v1(PDO $pdo,int $owner,string $kind,int $cid,
         $lastMedia=vp3_casual_checkin_last_message_v1($pdo,$owner,$prior);
     }
     if($lastMedia>0)$state['media_offer_message_id']=$lastMedia;
-    if($kind==='youtube_history'&&is_array($evidence['history_pin']??null)){
+    if(in_array($kind,['youtube_history','youtube','media'],true)&&is_array($evidence['history_pin']??null)){
         $state['history_pin']=$evidence['history_pin'];
         $state['last_history_offer']=array_intersect_key($state,array_flip(['kind','message_id','conversation_id','agent_id','offer_seed','history_pin']));
         $seen=(array)($prior['history_shown']??[]);
@@ -371,7 +371,7 @@ function vp3_casual_checkin_media_v1(PDO $pdo,array $scope,?int $trackId,?array 
     return ['title'=>'Music or a video','summary'=>'Named choices from your current permitted Media sources.',
         'question'=>$savedVideo?'Would you like to listen to the track or watch the saved video?':'Want to hear this track, or find something new on YouTube?',
         'identity'=>[$music['identity'],$savedVideo?$video['identity']:$youtube['identity']],
-        'evidence'=>array_replace($music['evidence'],$savedVideo?array_intersect_key($video['evidence'],array_flip(['history_playback','history_topic'])):[],
+        'evidence'=>array_replace($music['evidence'],$savedVideo?array_intersect_key($video['evidence'],array_flip(['history_pin','history_playback','history_topic'])):[],
             ['invitation'=>$presentation,'invitation_pin'=>['music'=>$music['evidence']['invitation_pin'],'youtube'=>$savedVideo?$video['evidence']['invitation_pin']:null],
                 'invitation_default'=>$savedVideo?null:'music'])];
 }
@@ -413,6 +413,8 @@ function vp3_casual_checkin_youtube_choice_v1(PDO $pdo,array $scope,?array $pin=
     $choice=vp3_idle_media_history_choice_v1($pdo,$scope,time(),$pin,null);
     if($pin!==null&&$choice===null)return null;
     if($choice===null)return $available;
+    $gate=vp3_casual_checkin_history_gate_v1($pdo,$scope['user'],$scope['agent_id']);
+    if(in_array($gate,['disabled','report_only'],true)||($pin===null&&$gate!=='ready'))return null;
     $choice['evidence']['invitation_pin']=$choice['evidence']['history_pin'];
     $choice['evidence']['invitation']=['kind'=>'youtube','items'=>[['title'=>vp3_specialist_invitation_text_v1($choice['title'],100),
         'detail'=>vp3_specialist_invitation_text_v1($choice['summary'],180)]],'context'=>''];

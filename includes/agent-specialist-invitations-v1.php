@@ -107,7 +107,7 @@ function vp3_specialist_invitation_email_v1(PDO $pdo,array $scope,array $binding
     $exact=$pinned?' AND d.id IN ('.implode(',',array_fill(0,count($ids),'?')).')':'';
     $q=$pdo->prepare('SELECT d.*,c.title AS conversation_title,m.id AS request_message_id,m.created_at AS request_created_at
         FROM agent_connection_email_drafts_v1 d JOIN chat_conversations c ON c.id=d.conversation_id AND c.user_id=d.owner_user_id
-        JOIN chat_messages m ON m.id=d.user_message_id AND m.conversation_id=d.conversation_id AND m.user_id=d.owner_user_id AND m.role=\'user\'
+        LEFT JOIN chat_messages m ON m.id=d.user_message_id AND m.conversation_id=d.conversation_id AND m.user_id=d.owner_user_id AND m.role=\'user\'
         WHERE d.owner_user_id=? AND d.agent_id=? AND '.$agentWhere.$exact.
         " AND d.status NOT IN ('sent','discarded','answered') ORDER BY d.user_message_id DESC,d.id DESC LIMIT 50");
     $q->execute([$owner,$agent,...($agent>0?[$agent]:[]),...$ids]);$rows=$q->fetchAll(PDO::FETCH_ASSOC);
