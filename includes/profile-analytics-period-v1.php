@@ -5,6 +5,7 @@ require_once __DIR__.'/profile-analytics-period-ref-v1.php';
 require_once __DIR__.'/profile-analytics-authority-v1.php';
 require_once __DIR__.'/profile-agent-boundary-v390.php';
 require_once __DIR__.'/profile-image-analytics-v1.php';
+require_once __DIR__.'/profile-response-analytics-v1.php';
 
 function vp3_profile_analytics_json_v1(mixed $value): ?array
 {
@@ -715,7 +716,7 @@ function vp3_profile_analytics_backlog_v1(PDO $pdo,int $owner,int $now,?array $h
     $pending=null;$pendingCoverage='unavailable';$pendingReason='storage_unconfigured';
     try{
         if($history!==null&&vp3_profile_analytics_table_v1($pdo,'profile_agent_handoff_turns_pa3')){
-            $rows=vp3_profile_analytics_rows_v1($pdo,"SELECT * FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND state IN ('awaiting_delivery','awaiting_owner','owner_claimed','agent_ready','agent_running') ORDER BY id",[$owner],true);
+            $rows=vp3_profile_analytics_rows_v1($pdo,"SELECT * FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND state IN ('awaiting_delivery','awaiting_owner','owner_requested','owner_claimed','agent_ready','agent_running') ORDER BY id",[$owner],true);
             $pending=0;$pendingCoverage='complete';$pendingReason='complete';
             foreach($rows as $row){
                 if(!vp3_profile_analytics_turn_valid_v1($row,$history,$owner)){$pendingCoverage='partial';$pendingReason='source_proof_incomplete';continue;}
@@ -772,6 +773,9 @@ function vp3_profile_analytics_period_v1(PDO $pdo,array $scope,array $selection=
         catch(Throwable $error){$commerce=vp3_profile_analytics_group_error_v1($error,$commerceKeys);}
         try{if($historyError)throw $historyError;$images=vp3_profile_image_analytics_v1($pdo,$owner,$window,$history);}
         catch(Throwable $error){if(vp3_profile_analytics_retryable_v1($error))throw $error;$images=vp3_profile_image_analytics_empty_v1($error->getCode()===424?'storage_unconfigured':'storage_unavailable');}
+        $observed=$now->getTimestamp()*1000+(int)$now->format('v');
+        try{if($historyError)throw $historyError;$responses=vp3_profile_response_analytics_v1($pdo,$owner,$window,$history,$observed);}
+        catch(Throwable $error){if(vp3_profile_analytics_retryable_v1($error))throw $error;$responses=vp3_profile_response_analytics_empty_v1($error->getCode()===424?'storage_unconfigured':'storage_unavailable');}
         $points=$events['points']+$conversations['points']+$calls['points']+$commerce['points']+$images['points'];$metrics=[];
         foreach($catalog as $key=>[$group,$label,$unit,$definition])$metrics[]=vp3_profile_analytics_metric_v1($key,$group,$label,$unit,$definition,$points[$key]['current'],$points[$key]['previous']);
         $groups=[];foreach(['events'=>$events,'conversations'=>$conversations,'calls'=>$calls,'commerce'=>$commerce,'images'=>$images] as $key=>$value)
@@ -786,26 +790,49 @@ function vp3_profile_analytics_period_v1(PDO $pdo,array $scope,array $selection=
             $usable=$usable||$point['coverage']==='complete'||($point['coverage']==='partial'&&$point['observed_value']!==null);
             $complete=$complete&&$point['coverage']==='complete';$hasUnavailable=$hasUnavailable||$point['reason']==='storage_unavailable';}
         $coverage=$complete?'ready':($usable?'limited':($hasUnavailable?'unavailable':'unconfigured'));
-        $evidence=array_merge($events['evidence'],$conversations['evidence'],$calls['evidence'],$commerce['evidence'],$images['evidence']);
+        if(in_array($coverage,['unavailable','unconfigured'],true))foreach($responses['activity']['metrics'] as $metric){
+            foreach(['current','previous'] as $side){$point=$metric[$side];$value=$point['coverage']==='complete'?$point['value']:$point['observed_value'];
+                if($value!==null&&$value>0){$coverage='limited';break 2;}}
+        }
+        $evidence=array_merge($events['evidence'],$conversations['evidence'],$calls['evidence'],$commerce['evidence'],$images['evidence'],$responses['evidence']);
         usort($evidence,static fn(array $a,array $b):int=>strcmp(json_encode($a,JSON_THROW_ON_ERROR),json_encode($b,JSON_THROW_ON_ERROR)));
         $money=$commerce['money']??[];$cohorts=$conversations['cohorts'];$breakdowns=$calls['breakdowns'];
         $revision=vp3_profile_analytics_hash_v1([VP3_PROFILE_ANALYTICS_PERIOD_V1,$owner,$scope['agent_id'],$scope['conversation_id'],$period['ref'],
-            $coverage,$metrics,$groups,$money,$cohorts,$breakdowns,$images['usage'],$evidence]);
-        $observed=$now->getTimestamp()*1000+(int)$now->format('v');$backlog=vp3_profile_analytics_backlog_v1($pdo,$owner,$observed,$history);
+            $coverage,$metrics,$groups,$money,$cohorts,$breakdowns,$images['usage'],$responses['activity'],$evidence]);
+        $backlog=vp3_profile_analytics_backlog_v1($pdo,$owner,$observed,$history);
         $backlog['image_allowance']=vp3_profile_image_analytics_allowance_v1($pdo,$owner,$observed);
         $backlog['image_failures']=$images['failures'];
-        $backlog['revision']=vp3_profile_analytics_hash_v1([$backlog['revision'],$backlog['image_allowance'],$backlog['image_failures']]);
+        $backlogBaseRevision=$backlog['revision'];
+        $backlog['owner_requests']=$responses['backlog'];
+        try{$backlog['owner_requests']=vp3_profile_response_analytics_suggestions_v1($pdo,$scope,$backlog['owner_requests']);}
+        catch(Throwable $error){if(vp3_profile_analytics_retryable_v1($error))throw $error;
+            $backlog['owner_requests']['knowledge']=['coverage'=>'unavailable','reason'=>'storage_unavailable','candidates_truncated'=>false];}
+        $knowledgePermissions=in_array($backlog['owner_requests']['knowledge']['coverage'],['complete','partial'],true)?['personal_knowledge.access']:[];
+        $backlog['revision']=vp3_profile_analytics_hash_v1([$backlogBaseRevision,$backlog['image_allowance'],$backlog['image_failures'],$backlog['owner_requests']]);
         if($backlog['coverage']==='ready'&&($backlog['image_allowance']['coverage']!=='complete'||$backlog['image_failures']['coverage']!=='complete'))$backlog['coverage']='limited';
-        $scope=vp3_profile_analytics_authority_current_v1($pdo,$scope);
+        $scope=vp3_profile_analytics_authority_current_v1($pdo,$scope,true,$knowledgePermissions);
         $result=['contract'=>VP3_PROFILE_ANALYTICS_PERIOD_V1,'ref'=>$period['ref'],'revision'=>$revision,'coverage'=>$coverage,'observed_at_utc_ms'=>$observed,
             'window'=>$window,'period_options'=>$period['period_options'],'metrics'=>$metrics,'groups'=>$groups,
-            'first_reply_cohorts'=>$cohorts,'call_breakdowns'=>$breakdowns,'money'=>$money,'image_usage'=>$images['usage'],'backlog'=>$backlog];
+            'first_reply_cohorts'=>$cohorts,'call_breakdowns'=>$breakdowns,'money'=>$money,'image_usage'=>$images['usage'],
+            'response_activity'=>$responses['activity'],'backlog'=>$backlog];
         if($owns){
             $pdo->commit();
             // This is a new current authority read after the aggregate snapshot,
             // not another ordinary read from its old repeatable-read view.
             if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql')$pdo->exec('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
-            $pdo->beginTransaction();vp3_profile_analytics_authority_current_v1($pdo,$scope);$pdo->commit();
+            $pdo->beginTransaction();$scope=vp3_profile_analytics_authority_current_v1($pdo,$scope,true,$knowledgePermissions);
+            // Suggestions include mutable private note titles. Re-read their
+            // current permission and source after closing the aggregate view,
+            // just as account authority is rechecked above. Never return an
+            // obsolete note grant from the prior repeatable-read snapshot.
+            if($knowledgePermissions){
+                try{$currentNotes=vp3_profile_response_analytics_suggestions_v1($pdo,$scope,$responses['backlog']);}
+                catch(Throwable $error){if(vp3_profile_analytics_retryable_v1($error))throw $error;$currentNotes=$responses['backlog'];
+                    $currentNotes['knowledge']=['coverage'=>'unavailable','reason'=>'storage_unavailable','candidates_truncated'=>false];}
+                $result['backlog']['owner_requests']=$currentNotes;
+                $result['backlog']['revision']=vp3_profile_analytics_hash_v1([$backlogBaseRevision,$backlog['image_allowance'],$backlog['image_failures'],$currentNotes]);
+            }
+            $pdo->commit();
         }
         // The workspace endpoint reopens its real session and reauthorizes after
         // this owned transaction. A coordinator caller keeps the locks until its

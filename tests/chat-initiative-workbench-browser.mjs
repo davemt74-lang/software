@@ -1054,16 +1054,36 @@ try {
   assert.deepEqual(productPicker.uploads,[]);
   pass('Replacing a candidate while validation is in flight discards the old response and only Use image commits the replacement');
 
+  const immediateReset = await pickerPage.evaluate(() => {
+    const dialog = document.getElementById('vp3InitiativeWorkbench');
+    const panel = dialog.querySelector('[data-workbench-selected-image]');
+    window.dispatchEvent(new Event('stonefellow:chat-context-changing'));
+    const cleared = {open:dialog.open,hidden:panel.hidden,src:panel.querySelector('img').getAttribute('src'),
+      alt:panel.querySelector('img').getAttribute('alt'),caption:panel.querySelector('figcaption').textContent};
+    const reopened = window.VP3InitiativeWorkbench.openMarketingImage({id:160,title:'New selection after context reset',
+      available:true,media_type:'photo',mime_type:'image/png',url:'/media-library-file-v86.php?id=160'},
+    {ownerKey:'12',agentId:7,conversationId:42,isCurrent:() => true});
+    return {cleared,reopened};
+  });
+  assert.deepEqual(immediateReset,{cleared:{open:false,hidden:true,src:null,alt:null,caption:''},reopened:true});
+  await productPicker.flush();
+  assert.equal(await productPicker.dialog.evaluate(node => node.open),true);
+  assert.equal(await productPicker.control('selected-image').locator('img').getAttribute('src'),root + '/media-library-file-v86.php?id=160');
+  assert.equal(await productPicker.control('selected-image').locator('figcaption').textContent(),'New selection after context reset');
+  pass('Context invalidation clears private image metadata synchronously and a queued close event preserves an immediately reopened selection');
+
   for (const contextChange of ['account','agent','conversation','participant','historical participant','binding']) {
     await pickerPage.evaluate(() => {
       window.STONEFELLOW_CHAT = {userId:12,agentId:7,workingAttentionBinding:'fixture-session'};
       window.fixtureChatId = 42;
       delete window.VP3ParticipantContinuity;
       window.dispatchEvent(new CustomEvent('vp3:participant-task-context',{detail:{participant_id:0}}));
-      window.VP3InitiativeWorkbench.open('product','description');
+      window.VP3InitiativeWorkbench.open('product','159');
     });
-    await productPicker.control('source').locator('option[value="description"]').waitFor({state:'attached'});
-    await productPicker.control('product-description').fill(typedDescription);
+    await productPicker.control('source').locator('option[value="159"]').waitFor({state:'attached'});
+    await productPicker.button('Review source').click();
+    await productPicker.button('Create private draft').waitFor();
+    assert.equal(await productPicker.control('selected-image').locator('img').getAttribute('src'),root + '/media-library-file-v86.php?id=159');
     await productPicker.button('Choose from Media Library').click();
     await picker(productPicker.dialog).locator('[data-media-picker-asset="160"]').click();
     let release;
@@ -1091,6 +1111,8 @@ try {
     await productPicker.dialog.waitFor({state:'hidden'});
     assert.equal(await pickerPage.getByText('Late private source',{exact:true}).count(),0);
     assert.equal(await productPicker.control('selected-image').locator('img').getAttribute('src'),null);
+    assert.equal(await productPicker.control('selected-image').locator('img').getAttribute('alt'),null);
+    assert.equal(await productPicker.control('selected-image').locator('figcaption').textContent(),'');
     assert.equal(productPicker.calls.some(call => call.action === 'create'),false);
   }
   assert.deepEqual(productPicker.errors,[]);

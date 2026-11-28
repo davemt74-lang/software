@@ -322,7 +322,7 @@ for(const live_status of ['expired','unavailable','ended']){
 {
  const f=await fixture({cards:[ownerCard(101,{state:'owner_claimed',responder:'owner',chat:chatChoice({live_status:'accepted',live_text_available:false,can_end_live_chat:true})})]});
  const card=f.card(101);
- check(card.querySelector('[data-doorbell-action="claim"]').disabled&&card.querySelector('textarea').disabled&&!card.querySelector('[data-doorbell-action="delegate"]').disabled&&card.textContent.includes('availability prevent replying'),'unavailable accepted chat blocks human replies while retaining the End action');f.stop();
+ check(card.querySelector('[data-doorbell-action="claim"]').disabled&&card.querySelector('textarea').disabled&&!card.querySelector('[data-doorbell-action="delegate"]').disabled&&card.textContent.includes('Live text chat is unavailable'),'unavailable accepted chat blocks human replies without claiming an active live chat and retains the End action');f.stop();
 }
 {
  const f=await fixture({cards:[ownerCard(101,{state:'agent_ready',responder:'agent',execution_paused:true,can_reply:false,chat:chatChoice({live_status:'declined'})})]});

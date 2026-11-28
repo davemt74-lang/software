@@ -27,7 +27,7 @@ function ai_decrypt_secret(string $value): string{if(!str_starts_with($value,'fi
 function ai_encrypted_secret_state(string $value): string{try{return ai_decrypt_secret($value)!==''?'ready':'empty';}catch(Throwable){return 'invalid';}}
 function url(string $path): string{return 'https://cloud.example'.$path;}
 // An external DSN is an explicitly dedicated disposable test database, like the existing phone assignment fixture.
-if($mysql)foreach(['phone_browser_contexts_v1','phone_voicemail_deletions_v1','phone_voicemail_greeting_tokens_v1','phone_voicemail_receipts_v1','phone_voicemail_settings_v1','phone_native_dialthrough_v1','phone_managed_recording_consent_v1','phone_managed_callback_controls_v1','phone_managed_callback_dispatch_v1','phone_managed_callback_requests_v1','vp3_paired_phone_threads_v1','vp3_phone_communication_profiles_v1','vp3_phone_devices_v1','phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
+if($mysql)foreach(['profile_browser_phone_cancellations_v1','profile_browser_phone_calls_v1','phone_browser_contexts_v1','phone_voicemail_deletions_v1','phone_voicemail_greeting_tokens_v1','phone_voicemail_receipts_v1','phone_voicemail_settings_v1','phone_native_dialthrough_v1','phone_managed_recording_consent_v1','phone_managed_callback_controls_v1','phone_managed_callback_dispatch_v1','phone_managed_callback_requests_v1','vp3_paired_phone_threads_v1','vp3_phone_communication_profiles_v1','vp3_phone_devices_v1','phone_operator_owner_preferences_v1','phone_operator_live_sessions_v1','user_calendar_events','agent_scheduling_bookings','phone_operator_contact_policies_v1','artist_transcript_segments_v172','artist_transcript_sessions_v172','phone_recording_legacy_reads_v1','phone_recording_jobs_v1','phone_recording_policies_v1','phone_browser_deliveries_v1','phone_browser_presence_v1','phone_browser_numbers_v1','phone_browser_favorites_v1','phone_browser_preferences_v1','phone_browser_calls_v1','phone_voice_recordings_v130','phone_voice_calls_v130','crm_contact_phones','crm_contacts','chat_messages','chat_conversations','phone_sms_assignment_migrations_v111','phone_sms_threads_v110','phone_cloud_numbers_v100','user_agents','users'] as $table)$pdo->exec('DROP TABLE IF EXISTS '.$table);
 ddl('CREATE TABLE users(id '.($mysql?'INT UNSIGNED':'INTEGER').' PRIMARY KEY,is_active INTEGER,plan INTEGER,denied INTEGER DEFAULT 0)');
 ddl('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name TEXT)');
 ddl('CREATE TABLE phone_cloud_numbers_v100(id INTEGER PRIMARY KEY,provider VARCHAR(24),provider_sid VARCHAR(40),phone_e164 VARCHAR(20),owner_user_id INTEGER,agent_id INTEGER,status VARCHAR(24),voice_enabled INTEGER)');
@@ -166,7 +166,26 @@ denies(fn()=>action('token',['number_id'=>2]),404,'foreign assigned caller ID de
 denies(fn()=>action('prepare_call',['number_id'=>1,'to_number'=>'+16025550999','conversation_id'=>0]),409,'outgoing requires canonical private Chat');
 bad(fn()=>action('prepare_call',['number_id'=>1,'to_number'=>'911']),'destination requires international E164');
 denies(fn()=>action('prepare_call',['number_id'=>1,'to_number'=>'+16025550999','recording_enabled'=>'true']),422,'recording requires explicit JSON boolean');
+// A visitor reservation shares the same owner lock and busy boundary as owner dialing.
+// Installing this optional fixture is explicit; ordinary Phone reads above never did so.
+c(!table_exists('profile_browser_phone_calls_v1'),'legacy Phone reads do not install public Profile calling storage');
+vp3_profile_browser_phone_install_v1($pdo);
+$profileReservation=[
+    'public_id'=>str_repeat('7',32),'owner_user_id'=>1,'profile_agent_id'=>7,'phone_agent_id'=>7,
+    'phone_number_id'=>1,'phone_e164'=>'+16025550101','phone_revision'=>1,'profile_session_id'=>91,
+    'visitor_user_id'=>0,'conversation_id'=>92,'credential_hash'=>str_repeat('1',64),
+    'session_fingerprint'=>str_repeat('2',64),'client_request_id'=>str_repeat('3',32),
+    'identity'=>'vp3_profile_'.str_repeat('4',32),'intent_hash'=>str_repeat('5',64),
+    'config_fingerprint'=>str_repeat('6',64),'response_twiml'=>'','state'=>'prepared','created_ms'=>(int)floor(microtime(true)*1000),
+    'expires_ms'=>(int)floor(microtime(true)*1000)+60000,'updated_ms'=>(int)floor(microtime(true)*1000),
+];
+$pdo->prepare('INSERT INTO profile_browser_phone_calls_v1('.implode(',',array_keys($profileReservation)).') VALUES ('.implode(',',array_fill(0,count($profileReservation),'?')).')')->execute(array_values($profileReservation));
+denies(fn()=>prepare(),409,'an unconsumed public Profile reservation blocks a competing owner call');
+c((int)$pdo->query('SELECT COUNT(*) FROM phone_browser_calls_v1')->fetchColumn()===0,'blocked owner dialing leaves no competing canonical call intent');
+$pdo->prepare('UPDATE profile_browser_phone_calls_v1 SET expires_ms=? WHERE public_id=?')->execute([$profileReservation['created_ms']-1,$profileReservation['public_id']]);
 $first=prepare();$public=$first['call']['public_id'];c($first['call']['agent_id']===7&&$first['call']['conversation_id']===11,'number Agent7 can place call in owner MAIN agent0');
+c(!vp3_profile_browser_phone_active_v1($pdo,1),'an expired public reservation releases owner dialing without changing its historical row');
+$pdo->prepare('DELETE FROM profile_browser_phone_calls_v1 WHERE public_id=?')->execute([$profileReservation['public_id']]);
 c(!str_contains(json_encode($first['call']),'intent')&&!str_contains(json_encode($first['call']),'provider_call_sid'),'public call does not disclose carrier handles or intent hash');
 c(readcall($public)['intent_hash']===hash('sha256',$first['connect_params']['call_intent']),'only hashed short-lived intent persisted');
 c(vp3_operator_call_status_v1($pdo,user(),0,11,time())['state']==='idle','Operator never claims an unconsumed dial intent is a live call');

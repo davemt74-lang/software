@@ -115,7 +115,8 @@ function vp3_profile_attention_native_source_pa4b(PDO $pdo,array $proof,array $e
 function vp3_profile_attention_accepted_source_pa4b(PDO $pdo,array $event,?array $profile,?array $agent,?array $session,?array $binding,int $cid,int $mid): ?bool
 {
     if($cid<1||!function_exists('vp3_profile_handoff_schema_ready_pa3')||!vp3_profile_handoff_schema_ready_pa3($pdo))return null;
-    $filter=$event['event_type']==='message_received'?' AND visitor_message_id=?':($mid>0?' AND visitor_message_id<?':'');
+    $exact=in_array($event['event_type'],['message_received','needs_owner'],true)&&$mid>0;
+    $filter=$exact?' AND visitor_message_id=?':($mid>0?' AND visitor_message_id<?':'');
     $q=$pdo->prepare('SELECT * FROM profile_agent_handoff_turns_pa3 WHERE owner_user_id=? AND conversation_id=?'.$filter.' ORDER BY visitor_message_id DESC LIMIT 1');$params=[(int)$event['owner_user_id'],$cid];if($filter!=='')$params[]=$mid;$q->execute($params);$turn=$q->fetch(PDO::FETCH_ASSOC);if(!$turn)return null;
     foreach(['owner_user_id','profile_agent_id','profile_session_id','visitor_user_id'] as $field)if((int)$turn[$field]!== (int)($event[$field]??0))return false;
     if(!$profile||!$agent||!$session||!$binding||$turn['transport']!=='native'||!hash_equals((string)$turn['credential_hash'],(string)($binding['credential_hash']??'')))return false;
@@ -208,10 +209,22 @@ function vp3_profile_attention_source_pa4b(PDO $pdo,array $user,int $notificatio
     return $source+['notification'=>$note,'attention'=>$attention];
 }
 /** Called only by the canonical reply/resolve transaction after its conversation lock. */
-function vp3_profile_attention_settle_conversation_pa4b(PDO $pdo,int $owner,int $cid,?string $attentionType=null): void
+function vp3_profile_attention_settle_conversation_pa4b(PDO $pdo,int $owner,int $cid,?string $attentionType=null,int $throughMessageId=0): void
 {
     if(!$pdo->inTransaction())throw new RuntimeException('Attention settlement requires the canonical conversation transaction.');
     $versioned=vp3_profile_attention_has_column_pa4b($pdo,'agent_attention_items','state_revision');$extra=$versioned?',state_revision=state_revision+1,state_changed_at_ms=?':'';$params=$versioned?[vp3_profile_attention_now_pa4b(),$owner,$cid]:[$owner,$cid];$filter='';if($attentionType!==null){$filter=' AND attention_type=?';$params[]=$attentionType;}
+    if($throughMessageId>0){
+        $q=$pdo->prepare("SELECT a.id,a.attention_type,e.metadata_json FROM agent_attention_items a LEFT JOIN profile_events e ON e.id=a.source_event_id AND e.owner_user_id=a.owner_user_id WHERE a.owner_user_id=? AND a.source_conversation_id=? AND a.status IN ('pending','seen','snoozed')");$q->execute([$owner,$cid]);$ids=[];
+        foreach($q->fetchAll(PDO::FETCH_ASSOC) as $item){
+            $meta=json_decode((string)($item['metadata_json']??''),true);$messageId=(int)($meta['message_id']??0);
+            if($messageId>$throughMessageId)continue;
+            // An old unbound assistance event cannot erase a newer exact request.
+            if($messageId===0&&$item['attention_type']==='needs_owner'&&function_exists('vp3_profile_owner_request_pending_v1')&&vp3_profile_owner_request_pending_v1($pdo,$owner,$cid))continue;
+            $ids[]=(int)$item['id'];
+        }
+        if(!$ids)return;
+        $filter.=' AND id IN ('.implode(',',array_fill(0,count($ids),'?')).')';array_push($params,...$ids);
+    }
     $pdo->prepare("UPDATE agent_attention_items SET status='handled',snoozed_until=NULL".$extra." WHERE owner_user_id=? AND source_conversation_id=? AND status IN ('pending','seen','snoozed')".$filter)->execute($params);
 }
 function vp3_profile_attention_message_sent_pa4b(PDO $pdo,array $conversation,int $messageId): ?array

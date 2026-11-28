@@ -8,7 +8,7 @@ const jobId='11111111-2222-3333-4444-555555555555';
 const validRef={username:'dave',catalog_id:11,catalog_revision:4,image_id:201,title:'Vacation Brain',
   preview_url:origin+'/api/profile-agent.php?action=reference_image&username=dave&catalog_id=11&image_id=201&catalog_revision=4'};
 fs.mkdirSync('artifacts/profile-owner-image',{recursive:true});
-const browser=await chromium.launch({headless:true});
+const browser=await chromium.launch({headless:true,executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH||undefined});
 try{
   for(const viewport of [{width:1280,height:800},{width:390,height:760}]){
     const requests=[];

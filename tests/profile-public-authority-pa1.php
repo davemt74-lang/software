@@ -44,7 +44,7 @@ $pdo=new PA1PublicPDO($dsn,$dbUser,$dbPass,[PDO::ATTR_ERRMODE=>PDO::ERRMODE_EXCE
 $pdo->setAttribute(PDO::ATTR_STATEMENT_CLASS,[PA1PublicStatement::class,[$pdo]]);
 if($mysqlDsn)$pdo->setAttribute(PDO::ATTR_EMULATE_PREPARES,false);
 else{$pdo->sqliteCreateFunction('NOW',fn()=>gmdate('Y-m-d H:i:s'));$pdo->sqliteCreateFunction('UTC_TIMESTAMP',fn()=>gmdate('Y-m-d H:i:s'));}
-$checks=0;$modelCalls=[];$modelHook=null;$homeHook=null;$homeAnswer=null;$caps=[];$seeded=false;
+$checks=0;$modelCalls=[];$modelHook=null;$modelResult=null;$homeCalls=[];$homeHook=null;$homeAnswer=null;$caps=[];$seeded=false;
 function db(): PDO{return $GLOBALS['pdo'];}
 function table_exists(string $table): bool{
     $p=db();$q=$p->prepare($p->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql'?'SELECT 1 FROM information_schema.tables WHERE table_schema=DATABASE() AND table_name=?':"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?");$q->execute([$table]);return(bool)$q->fetchColumn();
@@ -59,12 +59,15 @@ function personal_capability_seeded_v242(): bool{return $GLOBALS['seeded'];}
 function user_roles_for_user(array $user): array{return [(string)$user['role']];}
 function chat_policy_terms_v236(string $query): array{return array_values(array_filter(preg_split('/[^a-z]+/',strtolower($query)),fn($s)=>strlen($s)>3));}
 function homeserver_shared_v210_exchange(int $owner,string $query): array{return ['datasets'=>['knowledge'=>[['key'=>'hours','title'=>'Home hours','content'=>'Home hours are Tuesday']]]];}
-function homeserver_profile_v235_answer(int $owner,string $query,array $history,array $context): ?array{
+function homeserver_profile_v235_answer(int $owner,string $query,array $history,array $context,bool $structured=false): ?array{
+    $GLOBALS['homeCalls'][]=compact('owner','query','history','context','structured');
     if($GLOBALS['homeHook'])($GLOBALS['homeHook'])();return $GLOBALS['homeAnswer'];
 }
 function ai_generate_chat_response(string $query,array $history,array $context,?array $user=null,?string $scope=null,?array $control=null): array{
     $GLOBALS['modelCalls'][]=compact('query','history','context','user','scope','control');
-    if($GLOBALS['modelHook'])($GLOBALS['modelHook'])();return ['ok'=>true,'answer'=>'Fixture approved answer'];
+    if($GLOBALS['modelHook'])($GLOBALS['modelHook'])();return $GLOBALS['modelResult']??['ok'=>true,'answer'=>$scope==='profile_agent'
+        ?json_encode(['disposition'=>'answered','answer'=>'Fixture approved answer'],JSON_THROW_ON_ERROR)
+        :'Fixture approved answer'];
 }
 require dirname(__DIR__).'/includes/auth.php';
 require dirname(__DIR__).'/includes/notifications.php';
@@ -73,7 +76,7 @@ require dirname(__DIR__).'/includes/shared-knowledge-index-v236.php';
 require dirname(__DIR__).'/includes/profile-agent.php';
 require dirname(__DIR__).'/includes/profile-agent-runtime.php';
 require dirname(__DIR__).'/includes/profile-visitor-crm-v243.php';
-require dirname(__DIR__).'/includes/profile-agent-boundary-v390.php';
+require_once dirname(__DIR__).'/includes/profile-agent-boundary-v390.php';
 require dirname(__DIR__).'/includes/profile-agent-public-service-v110.php';
 require dirname(__DIR__).'/includes/profile-webmcp-analytics-v130.php';
 require dirname(__DIR__).'/includes/agent-radar-external.php';
@@ -94,7 +97,7 @@ function loginVisitor(int $id): void{
 }
 function resetPublic(): void{
     $p=db();$p->afterSql=null;$p->failSql='';if($p->inTransaction())$p->rollBack();
-    $GLOBALS['modelCalls']=[];$GLOBALS['modelHook']=null;$GLOBALS['homeHook']=null;$GLOBALS['homeAnswer']=null;$GLOBALS['seeded']=false;
+    $GLOBALS['modelCalls']=[];$GLOBALS['modelHook']=null;$GLOBALS['modelResult']=null;$GLOBALS['homeCalls']=[];$GLOBALS['homeHook']=null;$GLOBALS['homeAnswer']=null;$GLOBALS['seeded']=false;
     $GLOBALS['caps']=['profile_agent.access'=>true,'profile_chat.access'=>true,'agent_brain.access'=>true];
     profile_public_authority_fixture_pa1($p);$_COOKIE=['sf_profile_visitor'=>str_repeat('a',64),'sf_profile_conversation'=>str_repeat('b',64)];loginVisitor(0);
     vp3_profile_webmcp_verified_chat_grant_v1(null,true);

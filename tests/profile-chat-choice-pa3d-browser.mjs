@@ -34,13 +34,20 @@ const server=http.createServer((request,response)=>{
 });
 await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve));
 let browser,checks=0;const check=(value,label)=>{assert.ok(value,label);checks++;console.log('PASS '+label);};
-async function fixture({available=true,ownerName='Dave',loseFirst=false,staleSession=false,preview=false,attachmentMaxBytes=2097152,viewport={width:390,height:740}}={}){
+async function fixture({available=true,ownerName='Dave',loseFirst=false,staleSession=false,preview=false,responseMode='automated',knowledgeGap=false,virtualClock=false,attachmentMaxBytes=2097152,viewport={width:390,height:740}}={}){
  const context=await browser.newContext({viewport}),page=await context.newPage();
+ if(virtualClock)await page.clock.install();
  const requests=[],callRequests=[],fileChoosers=[],messages=[],saved=new Map(),errors=[];
- const state={chat:chatChoice({live_text_available:available,owner_name:ownerName}),handoff:null,conversation:null};let id=100,turn=500;
+ const state={chat:chatChoice({live_text_available:available,owner_name:ownerName}),handoff:null,conversation:null,response:{contract:'vp3.profile-response.v1',mode:responseMode,ready:true,request:null}};let id=100,turn=500;
+ const requestOwner=(visitorMessage,reason)=>{
+  const receiptMessage=++id;
+  messages.push({id:receiptMessage,sender_type:'system',message:`Submitted to ${ownerName}. Waiting for a response.`});
+  state.response.request={id:visitorMessage,conversation_id:31,visitor_message_id:visitorMessage,status:'waiting',reason,receipt_message_id:receiptMessage,reply_message_id:0,revision:1};
+  state.handoff={...state.handoff,state:'owner_requested',dispatch_state:'owner_requested',pickup_deadline_ms:null,revision:state.handoff.revision+1};
+ };
  page.on('pageerror',e=>errors.push(e.message));
  page.on('filechooser',chooser=>fileChoosers.push(chooser));
- const snapshot=(after=0)=>({agent:{name:'Profile Guide',greeting:''},chat:state.chat,conversation:state.conversation,handoff:state.handoff&&{...state.handoff,server_now_ms:Date.now()},messages:messages.filter(m=>m.id>Number(after)),attachment_max_bytes:attachmentMaxBytes});
+ const snapshot=(after=0)=>({agent:{name:'Profile Guide',greeting:''},chat:state.chat,response:state.response,conversation:state.conversation,handoff:state.handoff&&{...state.handoff,server_now_ms:Date.now()},messages:messages.filter(m=>m.id>Number(after)),attachment_max_bytes:attachmentMaxBytes});
  await page.route('**/api/profile-calls-pa3c.php*',route=>{
   callRequests.push({method:route.request().method(),url:route.request().url()});
   return route.fulfill({status:200,json:{ok:true,contract:'vp3.profile-call.v1',calls:[],can_offer:available,reason:''}});
@@ -75,12 +82,14 @@ async function fixture({available=true,ownerName='Dave',loseFirst=false,staleSes
     state.handoff={turn_id:++turn,revision:1,conversation_id:31,state:phase,dispatch_turn_id:turn,dispatch_state:phase,pickup_deadline_ms:waiting?Date.now()+15000:null};
     messages.push({id:++id,sender_type:'visitor',message:body.message,...(attachment?{attachment}:{})});
     receipt={accepted:true,conversation_id:31,visitor_message_id:id,client_request_id:body.client_request_id,...(attachment?{attachment}:{})};saved.set(body.client_request_id,receipt);
+    if(responseMode==='user_responses'&&!live)requestOwner(receipt.visitor_message_id,'user_responses');
    }
    if(loseFirst){loseFirst=false;return route.abort('failed');}
    return reply({...snapshot(),...receipt});
   }
   if(body.action==='dispatch'){
-   messages.push({id:++id,sender_type:'agent',message:'Browser Agent response'});state.handoff={...state.handoff,state:'replied',dispatch_state:'none',revision:state.handoff.revision+1};
+   if(knowledgeGap)requestOwner(messages.findLast(message=>message.sender_type==='visitor').id,'knowledge_gap');
+   else{messages.push({id:++id,sender_type:'agent',message:'Browser Agent response'});state.handoff={...state.handoff,state:'replied',dispatch_state:'none',revision:state.handoff.revision+1};}
    return reply({conversation_id:31,turn_id:body.turn_id,dispatch_checked:true});
   }
   if(body.action==='end_live_chat'){
@@ -97,12 +106,32 @@ async function fixture({available=true,ownerName='Dave',loseFirst=false,staleSes
  return {page,requests,callRequests,fileChoosers,saved,state,launch,settings,presence,checkbox,end,status,textarea,
   async openSettings(){if(await settings.getAttribute('aria-expanded')==='false')await settings.click();},
   accept(){state.chat={...state.chat,live_status:'accepted',can_end_live_chat:true};state.conversation.status='owner_joined';state.handoff={...state.handoff,state:'owner_claimed',dispatch_state:'owner_claimed',pickup_deadline_ms:null,revision:state.handoff.revision+1};messages.push({id:++id,sender_type:'owner',message:'Direct owner answer'});},
+  answer(){const reply=++id;messages.push({id:reply,sender_type:'owner',message:'Owner answered your submitted question'});state.response.request={...state.response.request,status:'answered',reply_message_id:reply,revision:state.response.request.revision+1};state.conversation.status='owner_joined';state.chat={...state.chat,mode:'auto',live_status:'none',live_text_available:false};state.handoff={...state.handoff,state:'owner_claimed',dispatch_state:'owner_claimed',revision:state.handoff.revision+1};},
   async send(value){await textarea.fill(value);await page.getByRole('button',{name:/^(Send|Retry message)$/}).click();},
   async close(){check(!errors.length,'actual widget emitted no script errors'+(errors.length?': '+errors.join('; '):''));await context.close();}
  };
 }
 try{
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
+ for(const responseMode of ['user_responses','automated']){
+  const f=await fixture({available:false,responseMode,knowledgeGap:responseMode==='automated',virtualClock:true});
+  await f.send('A question requiring the owner');
+  await f.page.waitForFunction(()=>document.querySelector('[data-profile-agent-status]')?.textContent==='Submitted to Dave. Waiting for a response.');
+  const expectedDispatch=responseMode==='automated'?1:0;
+  check(f.requests.filter(item=>item.body.action==='dispatch').length===expectedDispatch&&await f.page.locator('.profile-agent-message.agent').count()===0,responseMode+' reaches saved owner waiting without inventing an Agent answer');
+  await f.page.locator('.profile-agent-message.system').waitFor();
+  check(await f.page.locator('.profile-agent-message.system .profile-agent-message-speaker').innerText()==='Status'&&(await f.presence.innerText()).includes('Waiting for a response'),responseMode+' labels the saved submission as status and identifies the pending owner response');
+  await f.page.clock.fastForward(60000);
+  check(f.requests.filter(item=>item.body.action==='dispatch').length===expectedDispatch&&!(await f.status.innerText()).includes('seconds'),responseMode+' remains waiting beyond live pickup expiry without another dispatch');
+  await f.page.reload();await f.launch.click();
+  await f.page.waitForFunction(()=>document.querySelector('[data-profile-agent-status]')?.textContent.includes('Waiting for a response'));
+  check(f.saved.size===1&&await f.page.locator('.profile-agent-message.system').count()===1,responseMode+' reload restores one question and one durable submission receipt');
+  f.answer();await f.page.evaluate(()=>window.dispatchEvent(new Event('vp3:profile-agent-open')));
+  await f.page.getByText('Owner answered your submitted question',{exact:true}).waitFor();
+  check(!(await f.status.innerText()).includes('Waiting for a response')&&!(await f.presence.innerText()).includes('Live with')&&await f.presence.getAttribute('data-state')==='offline',responseMode+' verified owner answer clears waiting without claiming the manually handling owner is live');
+  check(!(await f.page.locator('[data-profile-agent-disclosure]').innerText()).includes('chatting live'),responseMode+' manual handling disclosure makes no live-presence claim');
+  await f.close();
+ }
  {
   const f=await fixture();await f.page.waitForFunction(()=>!document.querySelector('[data-profile-live-chat]').disabled);
   check(!await f.checkbox.isChecked()&&!(await f.checkbox.isVisible())&&(await f.presence.textContent())==='Dave online for live chat','available mobile widget defaults to Agent chat and keeps permissions in Settings');

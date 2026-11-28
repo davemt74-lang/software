@@ -14,6 +14,7 @@ function vp3_browser_share_api_json_v2020(array $payload,int $status=200): never
 
 $user=current_user();
 if(!$user)vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'login_required'],401);
+if(isset($_SERVER['HTTP_X_VP3_MESSAGES_USER'])&&!hash_equals((string)$user['id'],(string)$_SERVER['HTTP_X_VP3_MESSAGES_USER']))vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'account_changed'],403);
 $pdo=db();
 if(!$pdo)vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'database_unavailable'],503);
 try{vp3_browser_share_chat_feed_require_ready_v2020($pdo);}catch(Throwable $e){vp3_browser_share_api_json_v2020(['ok'=>false,'error'=>'upgrade_required','message'=>$e->getMessage()],503);}

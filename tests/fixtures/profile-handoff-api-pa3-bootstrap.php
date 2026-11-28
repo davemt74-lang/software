@@ -1,7 +1,10 @@
 <?php
 declare(strict_types=1);
 require (string)getenv('VP3_PA3_ROOT').'/tests/fixtures/profile-handoff-pa3.php';
-if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite')$pdo->sqliteCreateFunction('GREATEST',static fn(...$values)=>max($values));
+if($pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='sqlite'){
+    $pdo->sqliteCreateFunction('GREATEST',static fn(...$values)=>max($values));
+    $pdo->sqliteCreateFunction('REPEAT',static fn($text,$count)=>str_repeat((string)$text,(int)$count));
+}
 session_start();
 $fixtureUser=(int)($_SERVER['HTTP_X_FIXTURE_USER']??0);
 if($fixtureUser>0){$row=pa3_owner($fixtureUser);$_SESSION['user_id']=$fixtureUser;$_SESSION['auth_password_fingerprint']=auth_password_fingerprint($fixtureUser,(string)$row['password_hash']);}

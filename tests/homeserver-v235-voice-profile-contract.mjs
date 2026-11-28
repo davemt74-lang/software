@@ -8,6 +8,7 @@ const voice=read('includes/homeserver-voice-v234.php');
 const profile=read('includes/homeserver-profile-agent-v235.php');
 const profileApi=read('api/profile-agent.php');
 const profileService=read('includes/profile-agent-public-service-v110.php');
+const profileAnswer=read('includes/profile-agent-answer-v1.php');
 const voiceApi=read('api/homeserver-voice-v234.php');
 const agentVoice=read('api/agent-voice-v117.php');
 const bootstrap=read('includes/bootstrap.php');
@@ -16,6 +17,8 @@ const workflow=read('.github/workflows/homeserver-runtime-journey.yml');
 const warmStart=agentVoice.indexOf("if ($action === 'warm') {");
 const warmEnd=agentVoice.indexOf("if (!in_array($action, ['ticket', 'speak'], true))",warmStart);
 const warmBlock=warmStart>=0&&warmEnd>warmStart?agentVoice.slice(warmStart,warmEnd):'';
+const homeInference=profileAnswer.indexOf('homeserver_profile_v235_answer($owner,$query,$history,$context,true)');
+const cloudInference=profileAnswer.indexOf("ai_generate_chat_response($query,$history,$context,$ctx['owner_user'],'profile_agent',$control)");
 
 const checks=[
  ['Section 5 helpers load after governed actions',bootstrap.indexOf('homeserver-governed-actions-v233.php')<bootstrap.indexOf('homeserver-voice-v234.php')&&bootstrap.indexOf('homeserver-voice-v234.php')<bootstrap.indexOf('homeserver-profile-agent-v235.php')],
@@ -30,7 +33,10 @@ const checks=[
  ['Profile Agent helper uses only stateless agent.infer.local',/agent\.infer\.local/.test(profile)&&!/'agent\.chat'/.test(profile)],
  ['Profile Agent helper requires advertised privacy-safe capability flags',/caller_supplied_context_only/.test(profile)&&/tools_enabled/.test(profile)&&/local_only/.test(profile)],
  ['Profile Agent local prompt is built only from approved context argument',/approvedContext/.test(profile)&&/Approved source/.test(profile)],
- ['public Profile Agent tries HomeServer before owner-quota Cloud inference',profileService.indexOf('homeserver_profile_v235_answer')>=0&&profileService.indexOf('ai_generate_chat_response')>profileService.indexOf('homeserver_profile_v235_answer')],
+ ['public Profile Agent loads and delegates to the shared answer helper',/require_once __DIR__\.'\/profile-agent-answer-v1\.php'/.test(profileService)&&/vp3_profile_answer_generate_v1\(\$pdo,\$ctx,\$query,\$history,\$context,\$guard\)/.test(profileService)],
+ ['public Profile Agent passes live source authority checks into shared inference',/\$guard=static function\(\)use\(\$pdo,\$ctx,\$context,\$historySources\):void\{\s*if\(!vp3_profile_agent_public_sources_current_v1\(\$pdo,\$ctx,\$context,\$historySources\)\)vp3_profile_agent_public_unavailable_v1\(\);\s*vp3_profile_agent_public_live_v1\(\$pdo,\$ctx\);\s*\};\s*\$generation=vp3_profile_answer_generate_v1/.test(profileService)],
+ ['public Profile Agent tries HomeServer before owner-quota Cloud inference',homeInference>=0&&cloudInference>homeInference],
+ ['shared Profile Agent rechecks authority before HomeServer and Cloud inference',profileAnswer.indexOf('$guard();')>=0&&profileAnswer.indexOf('$guard();')<homeInference&&profileAnswer.slice(homeInference,cloudInference).includes('$guard();')],
  ['public Profile Agent stores sanitized HomeServer compute metadata',/homeserver_compute/.test(profileService)&&/failure_class/.test(profileService)&&/execution/.test(profileService)],
  ['public Profile Agent API delegates to canonical shared service',/profile-agent-public-service-v110\.php/.test(profileApi)&&/vp3_profile_agent_public_message_service_v110/.test(profileApi)],
  ['Agent voice warm path can select HomeServer local voice',/homeserver_local/.test(agentVoice)&&/homeserver-speech-status/.test(agentVoice)],

@@ -23,6 +23,8 @@ require_once __DIR__ . '/includes/profile-canvases-v1.php';
 require_once __DIR__ . '/includes/media-collections-v1.php';
 require_once __DIR__ . '/includes/profile-image-catalog-v1.php';
 require_once __DIR__ . '/includes/profile-image-edit-v1.php';
+require_once __DIR__ . '/includes/profile-agent-knowledge-v1.php';
+require_once __DIR__ . '/includes/profile-browser-phone-schema-v1.php';
 require_once __DIR__.'/includes/social-feed-v1.php';
 require_once __DIR__ . '/includes/cognitive-memory-v570.php';
 require_once __DIR__ . '/includes/homeserver-account-pairing-v1210.php';
@@ -321,6 +323,10 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_music_preferences_ready_v1($schemaConnection)
         && vp3_phone_sms_assignment_schema_ready_v111($schemaConnection)
         && vp3_phone_workspace_schema_ready_v1($schemaConnection)
+        && vp3_profile_phone_ready_v1($schemaConnection)
+        && vp3_profile_responses_ready_v1($schemaConnection)
+        && vp3_profile_knowledge_ready_v1($schemaConnection)
+        && vp3_profile_browser_phone_ready_v1($schemaConnection)
         && vp3_agent_phone_shell_ready_v1($schemaConnection)
         && vp3_managed_control_ready_v1($schemaConnection)
         && vp3_managed_recording_ready_v1($schemaConnection)
@@ -513,6 +519,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             vp3_operator_auto_call_ensure_schema_v1($pdo);
             vp3_operator_live_ensure_schema_v1($pdo);
             VP3OperatorOwnerPhoneV1::install($pdo);
+            vp3_profile_phone_install_v1($pdo);
             agent_voice_preferences_schema($pdo);
             vp3_user_agent_lifecycle_ensure_schema_v390();
             vp3_agent_memory_scope_ensure_schema_v410();
@@ -579,6 +586,9 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             user_data_usage_ensure_schema_v236();
             shared_knowledge_index_ensure_schema_v236();
             profile_agent_ensure_schema();
+            vp3_profile_responses_install_v1($pdo);
+            vp3_profile_knowledge_install_v1($pdo);
+            vp3_profile_browser_phone_install_v1($pdo);
             vp3_profile_event_clock_install_v1($pdo);
             vp3_profile_handoff_ensure_schema_pa3($pdo);
             vp3_profile_image_edit_install_v1($pdo);

@@ -3,6 +3,8 @@ declare(strict_types=1);
 
 $GLOBALS['v235_ops']=[];
 $GLOBALS['v235_fail']=false;
+$GLOBALS['v235_profile_structured']=false;
+$GLOBALS['v235_profile_disposition']='answered';
 
 function homeserver_execution_v220_can_route(int $userId,string $operation): bool
 {
@@ -54,7 +56,12 @@ function homeserver_execution_v230_execute(int $userId,string $operation,array $
         assert(($messages[0]['role']??'')==='system');
         assert(str_contains((string)$messages[0]['content'],'Approved source'));
         assert(!str_contains((string)$messages[0]['content'],'PRIVATE-SENTINEL-NOT-APPROVED'));
-        return ['ok'=>true,'result'=>['reply'=>'Local profile answer','provider'=>'ollama','model'=>'llama-test','compute_source'=>'homeserver_local','stateless'=>true,'tools_enabled'=>false],'execution'=>$execution];
+        $reply='Local profile answer';
+        if($GLOBALS['v235_profile_structured']){
+            assert(str_contains($messages[0]['content'],'disposition')&&str_contains($messages[0]['content'],'needs_owner'));
+            $reply=json_encode(['disposition'=>$GLOBALS['v235_profile_disposition'],'answer'=>$reply],JSON_THROW_ON_ERROR);
+        }
+        return ['ok'=>true,'result'=>['reply'=>$reply,'provider'=>'ollama','model'=>'llama-test','compute_source'=>'homeserver_local','stateless'=>true,'tools_enabled'=>false],'execution'=>$execution];
     }
     throw new RuntimeException('unexpected v230 operation');
 }
@@ -96,6 +103,14 @@ assert($answer['provider']==='ollama');
 assert(($answer['execution']['operation']??'')==='agent.infer.local');
 $last=homeserver_profile_v235_last();
 assert($last['attempted']===true&&$last['success']===true);
+
+$GLOBALS['v235_profile_structured']=true;
+foreach(['answered','needs_owner'] as $disposition){
+    $GLOBALS['v235_profile_disposition']=$disposition;
+    $answer=homeserver_profile_v235_answer(7,'What is the public plan?',$history,$context,true);
+    assert(is_array($answer)&&json_decode($answer['answer'],true,512,JSON_THROW_ON_ERROR)===['disposition'=>$disposition,'answer'=>'Local profile answer']);
+    assert(($answer['execution']['operation']??'')==='agent.infer.local');
+}
 
 $GLOBALS['v235_fail']=true;
 $failed=homeserver_profile_v235_answer(7,'What is the public plan?',$history,$context);

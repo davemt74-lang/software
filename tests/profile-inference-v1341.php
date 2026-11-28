@@ -50,6 +50,7 @@ function curl_exec(object $handle): string|bool {
     if($handle->status!==200)return json_encode(['error'=>['message'=>'authentication failed']]);
     $reply='Hello from the configured provider.';
     if(!$GLOBALS['wrongTestReply']&&preg_match('/VP3 connection test [a-f0-9]{16}/',json_encode($payload),$match))$reply=$match[0];
+    elseif(str_contains((string)($payload['instructions']??$payload['system']??''),'disposition'))$reply=json_encode(['disposition'=>'answered','answer'=>$reply],JSON_THROW_ON_ERROR);
     $openai=str_contains($handle->endpoint,'openai.com');
     if(empty($payload['stream']))return json_encode($openai
         ?['output'=>[['content'=>[['type'=>'output_text','text'=>$reply]]]],'usage'=>['input_tokens'=>10,'output_tokens'=>7]]
@@ -80,7 +81,7 @@ try{
     foreach(['openai'=>'gpt-5.4-mini','anthropic'=>'claude-haiku-4-5'] as $provider=>$model){
         $requests=[];$settings=['ai_chat_requests_per_minute'=>'120','ai_active_provider'=>$provider,'ai_'.$provider.'_enabled'=>'1','ai_'.$provider.'_model'=>$model];
         $key='fixture-profile-not-a-real-key';$settings['ai_'.$provider.'_api_key']=ai_encrypt_secret($key);
-        $control=['surface'=>'profile_agent','profile_owner_user_id'=>7,'profile_agent_id'=>9,'profile_agent_name'=>'Public Guide','profile_owner_name'=>'Profile Owner','profile_instructions'=>'Be welcoming.'];
+        $control=['surface'=>'profile_agent','profile_owner_user_id'=>7,'profile_agent_id'=>9,'profile_agent_name'=>'Public Guide','profile_owner_name'=>'Profile Owner','profile_instructions'=>'Be welcoming.','profile_answer_contract'=>'vp3.profile-answer.v1'];
         $context=[['source'=>'profile:identity','title'=>'Profile Owner','text'=>'Public biography'],['source'=>'knowledge:1','title'=>'Published hours','text'=>'Open on Mondays']];
         $_SERVER['REQUEST_URI']='/api/profile-webmcp-external-v120.php';
         $result=ai_generate_chat_response('Can we chat?',[],$context,['id'=>7],'profile_agent',$control);
@@ -94,6 +95,8 @@ try{
         $prompt=$payload[$provider==='openai'?'instructions':'system'];
         check(str_contains($prompt,'Public Guide')&&str_contains($prompt,'Profile Owner'),'Provider prompt identifies the correct public representative');
         check(str_contains($prompt,'approved public context')&&!str_contains($prompt,'SERVER-AUTHORIZED TOOL CATALOG'),'Public model receives public boundaries without a private tool catalog');
+        check(str_contains($prompt,'disposition')&&str_contains($prompt,'needs_owner')&&str_contains($prompt,'Return ONLY one JSON object'),'Actual provider prompt carries the answer-or-owner structured contract');
+        check(json_decode($result['answer'],true,512,JSON_THROW_ON_ERROR)===['disposition'=>'answered','answer'=>'Hello from the configured provider.'],'Actual provider adapter preserves the structured answer for the public service parser');
         check(str_contains(json_encode($payload),'Open on Mondays'),'Owner-approved public knowledge reaches the actual request');
         $before=count($requests);$quotaClosed=true;
         $blocked=ai_generate_chat_response('More questions',[],$context,['id'=>7],'profile_agent',$control);

@@ -24,7 +24,7 @@ require dirname(__DIR__).'/includes/notifications.php';
 require dirname(__DIR__).'/includes/user-agent-system-v236.php';
 require dirname(__DIR__).'/includes/shared-knowledge-index-v236.php';
 require dirname(__DIR__).'/includes/profile-agent.php';
-require dirname(__DIR__).'/includes/profile-agent-boundary-v390.php';
+require_once dirname(__DIR__).'/includes/profile-agent-boundary-v390.php';
 require dirname(__DIR__).'/includes/profile-visitor-crm-v243.php';
 require dirname(__DIR__).'/includes/profile-agent-public-service-v110.php';
 $pdo->exec("CREATE TABLE users(id INTEGER PRIMARY KEY,display_name TEXT,email TEXT,role TEXT,is_active INTEGER,avatar_path TEXT)");
@@ -54,6 +54,8 @@ $pdo->exec("CREATE TABLE user_relationships(owner_user_id INTEGER,related_user_i
 // Real current authority and hidden binding for the retained public-service cases.
 $pdo->exec("CREATE TABLE user_profiles(user_id INTEGER PRIMARY KEY,username TEXT,bio TEXT,is_public INTEGER,profile_agent_enabled INTEGER,profile_agent_id INTEGER,profile_agent_greeting TEXT,profile_agent_instructions TEXT)");
 $pdo->exec("INSERT INTO user_profiles VALUES(1,'owner','',1,1,7,'','Welcome visitors')");
+require_once dirname(__DIR__).'/includes/profile-agent-responses-v1.php';
+vp3_profile_responses_install_v1($pdo);
 $pdo->exec("ALTER TABLE profile_visit_sessions ADD COLUMN session_key TEXT DEFAULT ''");
 $pdo->exec("UPDATE profile_visit_sessions SET session_key='fixture-session-key' WHERE id=10");
 $_COOKIE['sf_profile_conversation']=str_repeat('b',64);
@@ -68,9 +70,9 @@ function profileFixturePublicMessage(PDO $pdo,array $ctx,string $message,int $ci
 }
 $cloud=[];$home=[];$homeReady=false;$quotaClosed=false;$checks=0;
 function homeserver_shared_v210_exchange(int $owner,string $query):array{return ['datasets'=>['knowledge'=>[['key'=>'public','title'=>'Approved Home hours','content'=>'Approved Home hours are Tuesday']],'contacts'=>[['key'=>'secret','title'=>'Private contacts','content'=>'Secret contacts hours']]]];}
-function homeserver_profile_v235_answer(int $owner,string $query,array $history,array $context):?array{$GLOBALS['home'][]=compact('owner','query','history','context');return $GLOBALS['homeReady']?['answer'=>'HomeServer model answer']:null;}
+function homeserver_profile_v235_answer(int $owner,string $query,array $history,array $context,bool $structured=false):?array{$GLOBALS['home'][]=compact('owner','query','history','context','structured');return $GLOBALS['homeReady']?['answer'=>$structured?json_encode(['disposition'=>'answered','answer'=>'HomeServer model answer'],JSON_THROW_ON_ERROR):'HomeServer model answer']:null;}
 function homeserver_profile_v235_last():array{return ['attempted'=>$GLOBALS['homeReady'],'success'=>$GLOBALS['homeReady']];}
-function ai_generate_chat_response(string $query,array $history,array $context,?array $user=null,?string $scope=null,?array $control=null):array{$GLOBALS['cloud'][]=compact('query','history','context','user','scope','control');return $GLOBALS['quotaClosed']?['ok'=>false,'quota_exhausted'=>true]:['ok'=>true,'answer'=>'Cloud model answer'];}
+function ai_generate_chat_response(string $query,array $history,array $context,?array $user=null,?string $scope=null,?array $control=null):array{$GLOBALS['cloud'][]=compact('query','history','context','user','scope','control');return $GLOBALS['quotaClosed']?['ok'=>false,'quota_exhausted'=>true]:['ok'=>true,'answer'=>json_encode(['disposition'=>'answered','answer'=>'Cloud model answer'],JSON_THROW_ON_ERROR)];}
 function check(bool $ok,string $message):void{$GLOBALS['checks']++;if(!$ok)throw new RuntimeException($message);}
 function turn(string $query):array{
     $pdo=db();$pdo->exec("UPDATE profile_agent_messages SET created_at=datetime('now','-5 minutes')");
@@ -95,6 +97,7 @@ $homeReady=true;$before=count($cloud);$local=turn('Can we talk?');
 check($local['answer']==='HomeServer model answer'&&count($cloud)===$before,'Existing HomeServer route can converse without a knowledge match and avoids Cloud billing');
 check(end($home)['owner']===1&&$local['answer_mode']==='homeserver_model','Local compute remains owner-bound and records its route');
 $homeReady=false;$quotaClosed=true;$limited=turn('One more question');
-check($limited['answer_mode']==='quota_handoff'&&str_contains($limited['answer'],'usage allowance'),'Exhausted owner allowance produces an explicit handoff, not a simulated model answer');
+check($limited['answer_mode']==='quota_handoff'&&$limited['answer']===''&&($limited['response']['request']['status']??'')==='waiting','Exhausted owner allowance creates a durable waiting request without a simulated model answer');
 check((int)$pdo->query("SELECT count(*) FROM profile_events WHERE event_type='needs_owner'")->fetchColumn()===1,'Quota handoff actually notifies the owner');
+check((int)$pdo->query("SELECT count(*) FROM profile_agent_messages WHERE sender_type='receipt'")->fetchColumn()===1,'Quota handoff stores one submission receipt separately from Agent answers');
 echo 'PROFILE_INFERENCE_SERVICE_V1341='.$checks." assertions PASS (inference transports mocked)\n";

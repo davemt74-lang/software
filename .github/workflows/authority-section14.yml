@@ -158,10 +158,41 @@ jobs:
           php -l api/profile-image-settings-v1.php
           php tests/profile-image-catalog-v1.php
           php tests/profile-image-edit-v1.php
+          php tests/profile-image-allowance-v1.php
           php tests/agent-image-transport-v1.php
           node tests/profile-image-settings-api-v1.mjs
           node tests/profile-image-edit-api-v1.mjs
           node tests/profile-image-edits-v1.mjs
+      - name: Profile arrival identity, Radar recovery and Messages history
+        run: |
+          php tests/profile-visit-entry-reliability-v1.php
+          php tests/human-messaging-recovery-v1.php
+          node tests/messages-account-binding-api-v1.mjs
+          node tests/profile-radar-api-v1.mjs
+          node tests/profile-radar-clients-v1.mjs
+      - name: Owner-approved Profile Twilio line and private settings authority
+        run: |
+          php -l includes/profile-phone-v1.php
+          php -l api/profile-phone-v1.php
+          php tests/profile-phone-v1.php
+          node --check profile-phone-v1.js
+          node --check profile-phone-settings-v1.js
+          node tests/profile-phone-api-v1.mjs
+      - name: Profile browser Phone authority, recovery and carrier callbacks
+        run: |
+          php -l includes/profile-browser-phone-schema-v1.php
+          php -l includes/profile-browser-phone-v1.php
+          php -l api/profile-phone-browser-v1.php
+          php tests/profile-browser-phone-v1.php
+          node tests/profile-browser-phone-api-v1.mjs
+      - name: Profile browser Phone on native MySQL
+        env:
+          VP3_TEST_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=profile_authority_ci;charset=utf8mb4
+          VP3_TEST_MYSQL_USER: root
+          VP3_TEST_MYSQL_PASS: pa1-fixture
+        run: |
+          php tests/profile-browser-phone-v1.php
+          node tests/profile-browser-phone-api-v1.mjs
       - name: Profile owner image reference authority, private job and composer contract
         run: |
           php -l includes/profile-image-owner-generation-v1.php
@@ -204,6 +235,7 @@ jobs:
         run: |
           php tests/profile-image-catalog-v1.php
           php tests/profile-image-edit-v1.php
+          php tests/profile-image-allowance-v1.php
       - name: Profile analytics complete windows and unavailable reads
         run: |
           php tests/profile-analytics-reliability-v1.php
@@ -219,6 +251,7 @@ jobs:
           php tests/profile-analytics-period-ref-v1.php
           php tests/profile-event-clock-v1.php
           php tests/profile-analytics-period-v1.php
+          php tests/profile-response-analytics-v1.php
           php tests/profile-analytics-authority-v1.php
           php tests/profile-analytics-briefings-v1.php
           node tests/profile-specialist-analytics-period-v1.mjs
@@ -233,6 +266,7 @@ jobs:
         run: |
           php tests/profile-event-clock-v1.php
           php tests/profile-analytics-period-v1.php
+          php tests/profile-response-analytics-v1.php
           php tests/profile-analytics-authority-v1.php
           php tests/profile-analytics-briefings-v1.php
       - name: Shared Profile specialist source, report and delivery
@@ -325,7 +359,12 @@ jobs:
       - name: Profile Agent PA1 SQLite and HTTP authority
         run: |
           php tests/profile-public-authority-pa1.php
+          php tests/profile-response-public-v1.php
+          php tests/profile-inference-service-v1341.php
+          php tests/profile-inference-v1341.php
+          php -d zend.assertions=1 -d assert.exception=1 tests/homeserver-v235-voice-profile-unit.php
           php tests/profile-owner-reply-v1.php
+          php tests/profile-owner-knowledge-v1.php
           php tests/agent-message-authority-pa1.php
           node tests/agent-message-api-pa1.mjs
           node tests/profile-owner-api-pa1.mjs
@@ -339,12 +378,15 @@ jobs:
           VP3_TEST_MYSQL_PASS: pa1-fixture
         run: |
           php tests/profile-public-authority-pa1.php
+          php tests/profile-response-public-v1.php
           php tests/profile-owner-reply-v1.php
+          php tests/profile-owner-knowledge-v1.php
           php tests/agent-message-authority-pa1.php
           node tests/profile-owner-api-pa1.mjs
       - name: Profile Agent PA3 handoff and recovery on SQLite
         run: |
           php tests/profile-handoff-pa3.php
+          php tests/profile-response-modes-v1.php
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php
           php tests/profile-live-text-pa3d.php
@@ -385,6 +427,7 @@ jobs:
           VP3_TEST_MYSQL_PASS: pa1-fixture
         run: |
           php tests/profile-handoff-pa3.php
+          php tests/profile-response-modes-v1.php
           php tests/profile-handoff-binding-pa3.php
           php tests/profile-handoff-recovery-pa3.php
           php tests/profile-live-text-pa3d.php
@@ -471,6 +514,22 @@ jobs:
           if-no-files-found: ignore
       - name: Profile owner thread selection, drafts and refresh
         run: node tests/profile-owner-threads-pa1-browser.mjs
+      - name: Reviewed owner answers saved to permitted Knowledge
+        run: node tests/profile-owner-knowledge-browser-v1.mjs
+      - name: Messages live delivery, exact drafts, history and mobile recovery
+        run: node tests/messages-recovery-browser-v1.mjs
+      - name: Profile chat storage, history restoration and startup recovery
+        run: node tests/profile-chat-recovery-browser-v1.mjs
+      - name: Profile public phone approval and stalled image settings recovery
+        run: node tests/profile-phone-browser-v1.mjs
+      - name: Profile in-widget Phone microphone, call state and session recovery
+        run: node tests/profile-phone-call-browser-v1.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-reliability-browser-evidence
+          path: artifacts/profile-reliability/
+          if-no-files-found: ignore
       - name: Profile checkout review, retry and accurate status
         run: node tests/profile-checkout-review-pa2-browser.mjs
       - name: Public Profile conversation checkout, confirmation, return and mobile
@@ -529,6 +588,14 @@ jobs:
         run: node tests/profile-specialist-workspace-browser.mjs
       - name: Completed Profile analytics periods, fixed briefing links and compact layout
         run: node tests/profile-analytics-period-browser.mjs
+      - name: Profile owner response and Knowledge review reports
+        run: node tests/profile-response-analytics-browser-v1.mjs
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: profile-response-analytics-evidence
+          path: artifacts/profile-response-analytics/
+          if-no-files-found: ignore
       - name: Create Merchant content and sidebar desktop-mobile acceptance
         run: node tests/campaigns-merchant-layout-browser-v1.mjs
       - uses: actions/upload-artifact@v4

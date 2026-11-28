@@ -244,7 +244,7 @@
     productCreated = tool === 'product' && typeof options?.productCreated === 'function' ? options.productCreated : null;
     stopPending();
     clearReview();
-    selectedImage = null;
+    clearSelectedImage();
     scope = currentScope();
     lane.value = tool;
     source.replaceChildren();
@@ -306,7 +306,7 @@
     listingHandoff = false;
     closeImagePicker('stale');
     marketingHandoff = null;
-    selectedImage = null;
+    clearSelectedImage();
     stopPending();
     clearReview();
     scope = null;
@@ -458,6 +458,14 @@
     selectedImagePreview.src = imageUrl;
     selectedImagePreview.alt = preview.source_title;
     selectedImageTitle.textContent = preview.source_title;
+  }
+
+  function clearSelectedImage() {
+    selectedImage = null;
+    selectedImagePreview.removeAttribute('src');
+    selectedImagePreview.removeAttribute('alt');
+    selectedImageTitle.textContent = '';
+    selectedImagePanel.hidden = true;
   }
 
   function exactImageUrl(preview) {
@@ -836,9 +844,7 @@
     productCreated = null;
     closeImagePicker('destroyed');
     marketingHandoff = null;
-    selectedImage = null;
-    selectedImagePreview.removeAttribute('src');
-    selectedImageTitle.textContent = '';
+    clearSelectedImage();
     stopPending();
     clearReview();
     source.replaceChildren();

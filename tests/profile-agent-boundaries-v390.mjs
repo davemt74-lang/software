@@ -7,6 +7,7 @@ const lifecycle=read('includes/user-agent-lifecycle-v390.php');
 const profileApi=read('api/profile-agent.php');
 const ownerReplies=read('includes/profile-owner-reply-v1.php');
 const publicService=read('includes/profile-agent-public-service-v110.php');
+const publicAnswer=read('includes/profile-agent-answer-v1.php');
 const agentApi=read('api/user-agent-system-v236.php');
 const publicUi=read('profile-agent.js');
 const accountUi=read('account-agent-settings-v236.js');
@@ -46,7 +47,7 @@ assert.match(boundary,/status==='resolved'/);
 assert.match(boundary,/SET status='open'/);
 assert.match(boundary,/function vp3_profile_agent_agent_may_reply_v390/);
 assert.match(boundary,/==='open'/);
-assert.match(publicService,/if\(!vp3_profile_agent_agent_may_reply_v390\(\$conversation\)\)/);
+assert.match(publicService,/if\(\$submitted\|\|!vp3_profile_agent_agent_may_reply_v390\(\$conversation\)\)/,'submitted owner requests and owner takeover both bypass Agent inference');
 assert.match(publicService,/'awaiting_owner'=>true/);
 assert.match(profileApi,/owner_reply[\s\S]*vp3_profile_agent_owner_conversation_v390\(\$pdo,\$cid,\$uid,true\)/);
 assert.match(profileApi,/owner_reply[\s\S]*require_once[^;]*profile-owner-reply-v1\.php/,'owner reply loads the shared legacy writer');
@@ -62,7 +63,8 @@ assert.match(publicService,/hash_equals\(\$responseToken,vp3_profile_agent_respo
 const messageService=publicService.split('function vp3_profile_agent_public_message_service_v110')[1].split('function vp3_profile_agent_public_poll_service_v110')[0];
 assert.match(messageService,/\$pdo->beginTransaction\(\);[\s\S]*vp3_profile_agent_public_bound_conversation_v1\(\$pdo,\$ctx,\$cid,true\)[\s\S]*INSERT INTO profile_agent_messages/);
 assert.match(messageService,/\$pdo->commit\(\);[\s\S]*\$history=/);
-assert.match(messageService,/ai_generate_chat_response[\s\S]*\$pdo->beginTransaction\(\);[\s\S]*\$current=vp3_profile_agent_public_bound_conversation_v1[\s\S]*INSERT INTO profile_agent_messages \(conversation_id,sender_type,sender_user_id,message,context_json\)/);
+assert.match(messageService,/vp3_profile_answer_generate_v1\(\$pdo,\$ctx,\$query,\$history,\$context,\$guard\)[\s\S]*\$pdo->beginTransaction\(\);[\s\S]*\$current=vp3_profile_agent_public_bound_conversation_v1[\s\S]*INSERT INTO profile_agent_messages \(conversation_id,sender_type,sender_user_id,message,context_json\)/,'shared answer generation remains outside the final locked authority check and saved Agent message');
+assert.match(publicAnswer,/ai_generate_chat_response\(\$query,\$history,\$context,\$ctx\['owner_user'\],'profile_agent',\$control\)/,'the shared generator retains the public Profile inference scope');
 assert.match(messageService,/vp3_profile_agent_public_admit_v1[\s\S]*vp3_profile_agent_public_create_bound_v1/,'rate admission precedes new conversation allocation');
 
 // Public browser continuity recovers safely when the owner changes Profile Agent.
@@ -75,7 +77,7 @@ assert.match(publicUi,/request\('poll',\{after_id:lastMessageId\},'GET'\)/,'nati
 assert.match(publicUi,/data\.messages\|\|\[\]\)\.forEach\(m=>appendMessage/,'canonical saved visitor, owner and Agent messages are rendered by ID');
 assert.doesNotMatch(publicUi,/if\(data\.answer\)appendMessage/,'an admission/dispatch response cannot directly publish a competing answer');
 assert.match(publicUi,/owner_joined/);
-assert.match(publicUi,/The profile owner has joined this conversation/);
+assert.match(publicUi,/The profile owner is handling this conversation\. Replies will appear here when sent\./,'owner takeover promises only saved replies, without implying a live connection');
 
 // Retiring a user Agent preserves its durable identity row and all Agent Chat / Profile
 // Agent history instead of deleting history or converting it into the system namespace.

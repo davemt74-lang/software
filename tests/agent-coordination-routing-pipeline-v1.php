@@ -739,9 +739,16 @@ putenv('VP3_GMAIL_REDIRECT_URI=https://example.test/connection-oauth.php');
 $pdo->exec("ALTER TABLE agent_connections_v1 ADD COLUMN send_enabled INTEGER NOT NULL DEFAULT 1;");
 $pdo->exec("ALTER TABLE agent_connections_v1 ADD COLUMN followups_enabled INTEGER NOT NULL DEFAULT 0;");
 $pdo->exec("ALTER TABLE agent_connections_v1 ADD COLUMN account_email VARCHAR(254) NOT NULL DEFAULT 'sample@example.test';");
-$pdo->exec('CREATE TABLE agent_connection_email_drafts_v1(authorization_key CHAR(64));');
+// The contextual fallback must prove that the real draft queue is empty. A
+// one-column readiness placeholder cannot establish that after grounded offers.
+if ($mysql) $pdo->exec('ALTER TABLE chat_conversations MODIFY id BIGINT UNSIGNED NOT NULL');
+if (!column_exists('chat_conversations','title')) $pdo->exec("ALTER TABLE chat_conversations ADD COLUMN title VARCHAR(190) DEFAULT ''");
+agent_connection_email_draft_schema_v1($pdo);
 $pdo->exec('CREATE TABLE agent_connection_email_followups_v1(claim_key CHAR(64));');
 $pdo->exec('CREATE TABLE agent_connection_sends_v1(operation_key VARCHAR(64));');
+$contextualScope=vp3_agent_activity_scope_v1($pdo,$owner,$agentId,$starterChat);
+canvas_pipeline_check(vp3_specialist_invitation_email_v1($pdo,$contextualScope,$starterBinding)['state']==='empty',
+    'the native draft queue proves an empty mailbox before a generic contextual compose invitation');
 $emailCount = count(coordination_fixture_runs('coordination.review','casual:email'));
 $starterTurn();
 $tickStarter();

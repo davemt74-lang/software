@@ -1,7 +1,7 @@
 <?php
 declare(strict_types=1);
 
-/** Canonical existing Profile tables; no production schema changes are needed. */
+/** Canonical Profile tables plus the explicit response-mode installer. */
 function profile_public_authority_fixture_pa1(PDO $pdo): void
 {
     $mysql=$pdo->getAttribute(PDO::ATTR_DRIVER_NAME)==='mysql';
@@ -28,6 +28,9 @@ function profile_public_authority_fixture_pa1(PDO $pdo): void
         'vp3_radar_properties'=>"id INTEGER PRIMARY KEY,owner_user_id INTEGER,property_type VARCHAR(20),label VARCHAR(190),domain VARCHAR(190),public_key VARCHAR(40),secret_hash VARCHAR(64),verification_token VARCHAR(64),verified_at DATETIME,is_active INTEGER,created_at DATETIME,updated_at DATETIME",
     ];
     foreach($schemas as $table=>$columns)$pdo->exec('CREATE TABLE IF NOT EXISTS '.$table.' ('.$columns.')');
+    require_once dirname(__DIR__,2).'/includes/profile-agent-responses-v1.php';
+    vp3_profile_responses_install_v1($pdo);
+    foreach(['profile_agent_owner_requests_v1','profile_agent_response_settings_v1'] as $table)$pdo->exec('DELETE FROM '.$table);
     foreach(array_reverse(array_keys($schemas)) as $table)$pdo->exec('DELETE FROM '.$table);
     $pdo->exec("INSERT INTO users(id,display_name,email,role,is_active,avatar_path,password_hash) VALUES(1,'Fixture Owner','owner@example.test','member',1,'','owner-password'),(2,'Visitor A','a@example.test','member',1,'','visitor-a-password'),(3,'Visitor B','b@example.test','member',1,'','visitor-b-password'),(4,'Other Owner','other@example.test','member',1,'','other-password')");
     $pdo->exec("INSERT INTO user_agents(id,owner_user_id,display_name,is_active) VALUES(7,1,'Fixture Public Guide',1),(8,1,'Other Guide',1),(9,4,'Foreign Guide',1)");

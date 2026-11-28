@@ -2,6 +2,7 @@
 declare(strict_types=1);
 
 require_once __DIR__.'/profile-event-clock-v1.php';
+require_once __DIR__.'/profile-agent-responses-v1.php';
 const VP3_PROFILE_EVENT_CREATE_CLOCK_CONTRACT_V1 = 'vp3.profile-event-clock.v1';
 
 const STONEFELLOW_PROFILE_AGENT_BUILD = 'profile-agent-attention-20260903';
@@ -259,16 +260,32 @@ function profile_active_agent(PDO $pdo, array $profile): ?array
 
 function profile_configure_agent(PDO $pdo, array $user, array $input): array
 {
-    $uid=(int)$user['id'];$profile=profile_for_user($pdo,$uid,true)?:throw new RuntimeException('Profile could not be loaded.');
-    $agentId=max(0,(int)($input['profile_agent_id']??0));$enabled=!empty($input['profile_agent_enabled']);
-    if($enabled&&$agentId<1)throw new RuntimeException('Choose one of your agents before enabling the Profile Agent.');
-    if($agentId>0){$agent=user_agent_get_v236($pdo,$uid,$agentId);if(!$agent||empty($agent['is_active']))throw new RuntimeException('That agent is not available.');}
-    $pdo->prepare('UPDATE user_agents SET is_profile_agent=0 WHERE owner_user_id=?')->execute([$uid]);
-    if($agentId>0)$pdo->prepare('UPDATE user_agents SET is_profile_agent=1 WHERE id=? AND owner_user_id=?')->execute([$agentId,$uid]);
-    $greeting=mb_strimwidth(trim((string)($input['profile_agent_greeting']??'')),0,500,'…');
-    $instructions=mb_strimwidth(trim((string)($input['profile_agent_instructions']??'')),0,4000,'…');
-    $pdo->prepare('UPDATE user_profiles SET profile_agent_id=?,profile_agent_enabled=?,profile_agent_greeting=?,profile_agent_instructions=? WHERE user_id=?')->execute([$agentId?:null,$enabled?1:0,$greeting,$instructions,$uid]);
-    return profile_for_user($pdo,$uid,false)?:throw new RuntimeException('Profile Agent settings could not be saved.');
+    $uid=(int)$user['id'];$changeMode=array_key_exists('profile_agent_response_mode',$input);
+    if($changeMode&&(!is_string($input['profile_agent_response_mode'])||!in_array($input['profile_agent_response_mode'],['automated','user_responses'],true)
+        ||!is_int($input['profile_agent_response_revision']??null)||$input['profile_agent_response_revision']<0))throw new VP3ProfileResponseException('PROFILE_RESPONSE_SETTINGS_INVALID','Choose Automated or User responses and reload the current settings before saving.',422);
+    return vp3_profile_responses_atomic_v1($pdo,function()use($pdo,$uid,$input,$changeMode){
+        // Serialize the entire configuration, including a first response-policy
+        // save, and roll every field back if the revision or any write fails.
+        if($changeMode)vp3_profile_responses_require_v1($pdo);
+        vp3_profile_responses_owner_lock_v1($pdo,$uid);
+        profile_for_user($pdo,$uid,true)?:throw new RuntimeException('Profile could not be loaded.');
+        $q=$pdo->prepare('SELECT user_id FROM user_profiles WHERE user_id=?'.vp3_profile_responses_lock_v1($pdo));$q->execute([$uid]);$q->fetchColumn();
+        $agentId=max(0,(int)($input['profile_agent_id']??0));$enabled=!empty($input['profile_agent_enabled']);
+        if($enabled&&$agentId<1)throw new RuntimeException('Choose one of your agents before enabling the Profile Agent.');
+        if($agentId>0){
+            $q=$pdo->prepare('SELECT id,is_active FROM user_agents WHERE id=? AND owner_user_id=?'.vp3_profile_responses_lock_v1($pdo));$q->execute([$agentId,$uid]);$agent=$q->fetch(PDO::FETCH_ASSOC);
+            if(!$agent||empty($agent['is_active']))throw new RuntimeException('That agent is not available.');
+        }
+        if($changeMode)vp3_profile_response_settings_save_v1($pdo,$uid,$input['profile_agent_response_mode'],$input['profile_agent_response_revision']);
+        $pdo->prepare('UPDATE user_agents SET is_profile_agent=0 WHERE owner_user_id=?')->execute([$uid]);
+        if($agentId>0)$pdo->prepare('UPDATE user_agents SET is_profile_agent=1 WHERE id=? AND owner_user_id=?')->execute([$agentId,$uid]);
+        $greeting=mb_strimwidth(trim((string)($input['profile_agent_greeting']??'')),0,500,'…');
+        $instructions=mb_strimwidth(trim((string)($input['profile_agent_instructions']??'')),0,4000,'…');
+        $pdo->prepare('UPDATE user_profiles SET profile_agent_id=?,profile_agent_enabled=?,profile_agent_greeting=?,profile_agent_instructions=? WHERE user_id=?')->execute([$agentId?:null,$enabled?1:0,$greeting,$instructions,$uid]);
+        $profile=profile_for_user($pdo,$uid,false)?:throw new RuntimeException('Profile Agent settings could not be saved.');
+        $responses=vp3_profile_response_settings_v1($pdo,$uid);
+        return $profile+['profile_agent_response_mode'=>$responses['mode'],'profile_agent_response_revision'=>$responses['revision'],'profile_agent_response_ready'=>$responses['ready']];
+    });
 }
 
 function profile_session_token(int $ownerUserId): string
@@ -496,7 +513,7 @@ function profile_agent_conversation_started_pa4b(PDO $pdo,array $profile,array $
 
 function profile_agent_messages(PDO $pdo,int $conversationId,int $limit=120): array
 {
-    $limit=max(1,min(200,$limit));$stmt=$pdo->prepare("SELECT id,sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? AND sender_type IN ('visitor','agent','owner') ORDER BY id DESC LIMIT ".$limit);$stmt->execute([$conversationId]);return array_reverse($stmt->fetchAll()?:[]);
+    $limit=max(1,min(200,$limit));$stmt=$pdo->prepare("SELECT id,CASE WHEN sender_type='receipt' THEN 'system' ELSE sender_type END AS sender_type,message,created_at FROM profile_agent_messages WHERE conversation_id=? AND sender_type IN ('visitor','agent','owner','receipt') ORDER BY id DESC LIMIT ".$limit);$stmt->execute([$conversationId]);return array_reverse($stmt->fetchAll()?:[]);
 }
 
 function profile_agent_rate_check(PDO $pdo,int $conversationId): void
@@ -506,11 +523,34 @@ function profile_agent_rate_check(PDO $pdo,int $conversationId): void
     if(!empty($row['last_at'])&&time()-strtotime((string)$row['last_at'])<2)throw new RuntimeException('Please wait a moment before sending another message.');
 }
 
-function profile_agent_needs_owner(PDO $pdo,array $profile,array $agent,array $session,array $conversation,string $question): void
+function profile_agent_needs_owner(PDO $pdo,array $profile,array $agent,array $session,array $conversation,string $question,int $visitorMessageId=0): void
 {
+    $owner=(int)$profile['user_id'];$cid=(int)$conversation['id'];$metadata=['conversation_id'=>$cid];
+    if($visitorMessageId>0){
+        if(!$pdo->inTransaction())throw new RuntimeException('An exact owner request requires the conversation transaction.');
+        $q=$pdo->prepare("SELECT m.message,m.sender_user_id,c.owner_user_id,c.profile_agent_id,c.profile_session_id,c.visitor_user_id FROM profile_agent_messages m INNER JOIN profile_agent_conversations c ON c.id=m.conversation_id WHERE m.id=? AND m.conversation_id=? AND m.sender_type='visitor'");$q->execute([$visitorMessageId,$cid]);$source=$q->fetch(PDO::FETCH_ASSOC);
+        if(!$source||(int)$source['owner_user_id']!==$owner||(int)$source['profile_agent_id']!==(int)$agent['id']||(int)$source['profile_session_id']!==(int)$session['id']
+            ||(int)($source['visitor_user_id']??0)!==(int)($session['visitor_user_id']??0)||(int)($source['sender_user_id']??0)!==(int)($source['visitor_user_id']??0)
+            ||(int)($source['visitor_user_id']??0)===$owner)throw new VP3ProfileResponseException('PROFILE_OWNER_REQUEST_UNAVAILABLE','This message could not be submitted for a response.',409);
+        $question=(string)$source['message'];$metadata['message_id']=$visitorMessageId;
+    }
     $summary='Visitor asked: “'.mb_strimwidth(trim($question),0,420,'…').'”';
-    $event=profile_event_create($pdo,(int)$profile['user_id'],$session,'needs_owner',90,(int)$agent['id'],['conversation_id'=>(int)$conversation['id']],hash('sha256','needs_owner|'.(int)$conversation['id'].'|'.sha1(mb_strtolower(trim($question)))));
-    if($event)profile_attention_from_event($pdo,$event,$session,$agent,(int)$conversation['id'],$summary);
+    $dedupe=hash('sha256',$visitorMessageId>0?'needs_owner|'.$owner.'|message|'.$visitorMessageId:'needs_owner|'.$cid.'|'.sha1(mb_strtolower(trim($question))));
+    $event=null;
+    if($visitorMessageId>0){
+        $q=$pdo->prepare("SELECT * FROM profile_events WHERE dedupe_key=? AND owner_user_id=? AND event_type='needs_owner'");$q->execute([$dedupe,$owner]);$event=$q->fetch(PDO::FETCH_ASSOC)?:null;
+        if($event){
+            $saved=json_decode((string)$event['metadata_json'],true);
+            if((int)$event['profile_session_id']!==(int)$session['id']||(int)($event['visitor_user_id']??0)!==(int)($session['visitor_user_id']??0)||(int)$event['profile_agent_id']!==(int)$agent['id']
+                ||($saved['conversation_id']??null)!==$cid||($saved['message_id']??null)!==$visitorMessageId)throw new VP3ProfileResponseException('PROFILE_OWNER_REQUEST_UNAVAILABLE','This message could not be submitted for a response.',409);
+        }
+    }
+    if(!$event)$event=profile_event_create($pdo,$owner,$session,'needs_owner',90,(int)$agent['id'],$metadata,$dedupe);
+    if($event)profile_attention_from_event($pdo,$event,$session,$agent,$cid,$summary);
+    if($visitorMessageId>0){
+        $q=$pdo->prepare("SELECT id FROM agent_attention_items WHERE owner_user_id=? AND source_event_id=? AND source_conversation_id=? AND profile_agent_id=? AND attention_type='needs_owner'");$q->execute([$owner,(int)($event['id']??0),$cid,(int)$agent['id']]);
+        if(!$q->fetchColumn())throw new VP3ProfileResponseException('PROFILE_OWNER_REQUEST_UNAVAILABLE','This message could not be submitted for a response.',503);
+    }
 }
 
 function profile_attention_list(PDO $pdo,int $ownerUserId,int $limit=20): array

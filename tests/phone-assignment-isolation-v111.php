@@ -5,6 +5,7 @@ declare(strict_types=1);
 require dirname(__DIR__).'/includes/phone-cloud-v100.php';
 require dirname(__DIR__).'/includes/phone-sms-v110.php';
 require dirname(__DIR__).'/includes/phone-sms-outbound-v120.php';
+require_once dirname(__DIR__).'/includes/profile-phone-v1.php';
 
 final class AssignmentSQLite extends PDO {
     public function prepare(string $query,array $options=[]): PDOStatement|false {
@@ -30,6 +31,9 @@ $checks=0;
 function assignment_check(bool $ok,string $message): void {if(!$ok)throw new RuntimeException($message);$GLOBALS['checks']++;}
 function fixture(bool $legacy): void {
     $pdo=db();$id=$GLOBALS['mysql']?'BIGINT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY':'INTEGER PRIMARY KEY AUTOINCREMENT';
+    $pdo->exec('DROP TABLE IF EXISTS profile_phone_settings_v1');
+    vp3_profile_phone_install_v1($pdo);
+    $pdo->exec("INSERT INTO profile_phone_settings_v1 VALUES(1,1,7,'+16025550101',1,1)");
     foreach (['phone_browser_numbers_v1','phone_sms_assignment_migrations_v111','phone_sms_outbox_v120','phone_sms_messages_v110','phone_sms_contacts_v110','phone_sms_threads_v110','phone_cloud_requests_v100','phone_cloud_numbers_v100','user_agents','users'] as $table) $pdo->exec('DROP TABLE IF EXISTS '.$table);
     $pdo->exec('CREATE TABLE users(id INTEGER PRIMARY KEY)');
     $pdo->exec('CREATE TABLE user_agents(id INTEGER PRIMARY KEY,owner_user_id INTEGER,is_active INTEGER,display_name VARCHAR(80))');
@@ -58,6 +62,7 @@ function assign(int $owner,int $agent): void {
     vp3_phone_assign_v100(db(),1,$owner,$agent);
     assignment_check((int)db()->query('SELECT sms_enabled FROM phone_cloud_numbers_v100 WHERE id=1')->fetchColumn()===0,'Assignment must revoke SMS until explicitly reactivated');
     assignment_check((int)db()->query('SELECT COUNT(*) FROM phone_browser_numbers_v1')->fetchColumn()===0,'Assignment revokes the former browser-answering and recording approvals');
+    assignment_check((int)db()->query('SELECT enabled FROM profile_phone_settings_v1 WHERE owner_user_id=1')->fetchColumn()===0,'Assignment and returning assignments cannot restore an old public Profile line approval');
     // Local fixture activation only. No carrier API is contacted by this test.
     db()->exec('UPDATE phone_cloud_numbers_v100 SET sms_enabled=1 WHERE id=1');
 }

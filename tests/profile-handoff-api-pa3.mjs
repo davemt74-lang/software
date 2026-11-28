@@ -16,7 +16,7 @@ for(const name of ['profile-agent.php','chat-notifications-brain-v240.php'])fs.c
 fs.copyFileSync('tests/fixtures/profile-handoff-api-pa3-bootstrap.php',path.join(tmp,'includes/bootstrap.php'));
 fs.writeFileSync(path.join(tmp,'boot.php'),`<?php require __DIR__.'/includes/bootstrap.php'; header('Content-Type: application/json'); $ctx=vp3_profile_agent_public_context_v110(db(),profile_by_username(db(),'fixture-owner'),current_user()); echo json_encode(['token'=>profile_chat_token(1),'namespace'=>hash('sha256','profile-widget-v1|'.$ctx['conversation_authority']['credential_hash'])],JSON_THROW_ON_ERROR);`);
 const reservation=net.createServer();await new Promise(r=>reservation.listen(0,'127.0.0.1',r));const port=reservation.address().port;await new Promise(r=>reservation.close(r));
-const child=spawn(php,['-d','display_errors=0','-S',`127.0.0.1:${port}`,'-t',tmp],{env:{...process.env,VP3_PA3_ROOT:root,VP3_PA3_CONFIG:config,VP3_PA3_INFERENCE_LOG:path.join(tmp,'model.log')},stdio:['ignore','ignore','pipe']});
+const child=spawn(php,['-d','display_errors=0','-S',`127.0.0.1:${port}`,'-t',tmp],{env:{...process.env,VP3_PA3_ROOT:root,VP3_PA3_CONFIG:config,VP3_PA3_INFERENCE_LOG:path.join(tmp,'model.log'),VP3_PA3_HOME_LOG:path.join(tmp,'home.log')},stdio:['ignore','ignore','pipe']});
 let logs='',checks=0,now=Date.now();child.stderr.on('data',v=>logs+=v);
 const base=`http://127.0.0.1:${port}`,csrf='pa3-fixture-csrf';
 const check=(ok,label)=>{assert.ok(ok,label);checks++;console.log('PASS '+label);};
@@ -32,6 +32,7 @@ const state=()=>JSON.parse(invoke('state'));
 const profile=(method,fields,who=visitor,extra={})=>request('profile-agent.php',method,fields,who,extra);
 const chat=(method,fields,who=owner,extra={})=>request('chat-notifications-brain-v240.php',method,fields,who,extra);
 const modelCalls=()=>fs.existsSync(path.join(tmp,'model.log'))?fs.readFileSync(path.join(tmp,'model.log'),'utf8').trim().split('\n').filter(Boolean).length:0;
+const homeCalls=()=>fs.existsSync(path.join(tmp,'home.log'))?fs.readFileSync(path.join(tmp,'home.log'),'utf8').trim().split('\n').filter(Boolean).length:0;
 try{
   let ready=false;for(let i=0;i<80;i++){try{const r=await fetch(base+'/boot.php',{headers:headers(visitor)});if(r.status===200){ready=true;break;}}catch{}await new Promise(r=>setTimeout(r,25));}assert.ok(ready,logs);
   const boot=await (await fetch(base+'/boot.php',{headers:headers(visitor)})).json();
@@ -124,6 +125,85 @@ try{
   check(r.status===409&&r.data.code==='OWNER_REPLY_CONFLICT','legacy operation request cannot be moved to a different owned visitor thread');
   r=await profile('POST',legacyReply,otherOwner);
   check(r.status===404&&JSON.stringify(state())===afterLegacy,'current conversation ownership is still required to recover a saved reply');
+
+  const responseSettings={action:'save_profile_agent',csrf_token:csrf,profile_agent_id:7,profile_agent_enabled:1,profile_agent_greeting:'',profile_agent_instructions:'Use approved facts',profile_agent_response_mode:'user_responses',profile_agent_response_revision:0};
+  r=await profile('POST',responseSettings,owner);
+  check(r.status===200&&r.data.state.profile.profile_agent_response_mode==='user_responses'&&r.data.state.profile.profile_agent_response_revision===1,'actual owner HTTP saves and returns the selected response mode ('+r.status+' '+(r.data.error||'')+')');
+  const selectedMode=JSON.stringify(state());
+  r=await profile('POST',{...responseSettings,profile_agent_response_mode:'automated'},owner);
+  check(r.status===409&&JSON.stringify(state())===selectedMode,'stale settings revision cannot overwrite mode through HTTP');
+  r=await profile('POST',{...responseSettings,profile_agent_response_mode:'invalid',profile_agent_response_revision:1},owner);
+  check(r.status===422&&JSON.stringify(state())===selectedMode,'invalid HTTP mode leaves all saved Profile and response settings unchanged');
+
+  const waitingVisitor=actor(0,'e','waiting'),waitingBoot=await(await fetch(base+'/boot.php',{headers:headers(waitingVisitor)})).json();
+  const waitingBase={username:'fixture-owner',profile_token:waitingBoot.token,conversation_namespace:waitingBoot.namespace};
+  const waitingMessage={...waitingBase,action:'message',client_request_id:'7'.repeat(32),message:'Please ask the owner to confirm the opening time.',chat_mode:'agent'};
+  const providersBefore=[modelCalls(),homeCalls()];
+  r=await profile('POST',waitingMessage,waitingVisitor);
+  check(r.status===200&&r.data.accepted&&r.data.handoff.state==='owner_requested'&&r.data.answer===''&&r.data.response.request.status==='waiting','User responses HTTP admission overrides stale Agent choice and returns a durable submitted request');
+  const waiting=r.data,waitingRequest=waiting.response.request;
+  check(Number.isInteger(waitingRequest.id)&&waitingRequest.receipt_message_id>0&&waitingRequest.reply_message_id===0,'waiting HTTP receipt exposes exact integer identity without claiming an owner answer');
+  let responseRows=state();
+  check(responseRows.profile_agent_owner_requests_v1.length===1&&responseRows.profile_agent_messages.filter(m=>m.conversation_id==waiting.conversation_id&&m.sender_type==='receipt').length===1,'actual User responses POST stores one owner request and one system-receipt row');
+  r=await profile('POST',waitingMessage,waitingVisitor);
+  check(r.status===200&&r.data.duplicate&&r.data.response.request.id===waitingRequest.id&&state().profile_agent_owner_requests_v1.length===1,'lost submission response retries the same HTTP owner request');
+  now+=60000;
+  r=await profile('POST',{...waitingBase,action:'dispatch',conversation_id:waiting.conversation_id,turn_id:waiting.handoff.turn_id},waitingVisitor);
+  check(r.status===200&&JSON.stringify([modelCalls(),homeCalls()])===JSON.stringify(providersBefore),'expired pickup interval and explicit HTTP dispatch start neither Cloud nor HomeServer inference');
+  r=await profile('GET',{...waitingBase,action:'poll',conversation_id:waiting.conversation_id},waitingVisitor);
+  check(r.status===200&&r.data.response.request.status==='waiting'&&r.data.handoff.state==='owner_requested'&&r.data.messages.filter(m=>m.sender_type==='system'&&m.id===waitingRequest.receipt_message_id).length===1&&r.data.messages.every(m=>m.sender_type!=='agent'),'fresh HTTP poll preserves waiting status and the submission receipt without an Agent answer');
+  const ownerResponse={action:'owner_reply',csrf_token:csrf,conversation_id:waiting.conversation_id,request_id:'8'.repeat(32),message:'The opening time is 9am, confirmed by the owner.'};
+  r=await profile('POST',ownerResponse,owner);
+  check(r.status===200&&r.data.message_id>0,'owner HTTP reply completes the selected waiting conversation');
+  const answeredMessage=r.data.message_id;
+  r=await profile('GET',{...waitingBase,action:'poll',conversation_id:waiting.conversation_id},waitingVisitor);
+  check(r.status===200&&r.data.response.request.status==='answered'&&r.data.response.request.reply_message_id===answeredMessage&&r.data.messages.filter(m=>m.sender_type==='owner'&&m.id===answeredMessage).length===1,'fresh visitor HTTP poll distinguishes the owner answer from the retained submission receipt');
+  responseRows=state();r=await profile('POST',ownerResponse,owner);
+  check(r.status===200&&r.data.duplicate&&JSON.stringify(state())===JSON.stringify(responseRows)&&JSON.stringify([modelCalls(),homeCalls()])===JSON.stringify(providersBefore),'owner HTTP reply retry preserves exact settlement and never dispatches competing inference');
+
+  const knowledgeSource={conversation_id:waiting.conversation_id,owner_request_id:waitingRequest.id};
+  const beforeKnowledge=state();
+  const accessSnapshot=rows=>JSON.stringify({policies:rows.user_data_policies,rules:rows.user_agent_data_rules,capabilities:rows.role_permissions});
+  r=await profile('GET',{action:'owner_knowledge_preview',...knowledgeSource},owner);
+  check(r.status===200&&r.data.preview.contract==='vp3.profile-knowledge.v1'
+    &&r.data.preview.visitor_message_id===waitingRequest.visitor_message_id&&r.data.preview.reply_message_id===answeredMessage
+    &&r.data.preview.question===waitingMessage.message&&r.data.preview.reply===ownerResponse.message
+    &&/^[a-f0-9]{64}$/.test(r.data.preview.source_revision),'actual owner GET preview binds the exact saved visitor question and owner reply');
+  const preview=r.data.preview;
+  check(JSON.stringify(preview.folders)===JSON.stringify([{id:10,name:'Owner answers'}])&&preview.saved===null
+    &&JSON.stringify(state())===JSON.stringify(beforeKnowledge),'actual preview lists only owner folders and performs no note, policy or other stored mutation');
+  const knowledgeSave={action:'owner_knowledge_save',csrf_token:csrf,...knowledgeSource,source_revision:preview.source_revision,
+    title:'Reviewed opening time',content:'The opening time is 9am on weekdays, confirmed by the owner.',folder_id:10,approve_content:true};
+  r=await profile('GET',{action:'owner_knowledge_save',...knowledgeSource},owner);
+  check(r.status===405,'GET cannot file an owner answer into Knowledge');
+  r=await profile('POST',{...knowledgeSave,csrf_token:'wrong'},owner);
+  check(r.status===419,'actual Knowledge save requires owner body CSRF');
+  r=await profile('GET',{action:'owner_knowledge_preview',...knowledgeSource},otherOwner);
+  check(r.status===404&&!r.raw.includes(ownerResponse.message),'a different owner cannot preview this answered request');
+  r=await profile('POST',{...knowledgeSave,approve_profile_use:true,audience_scope:'public'},owner);
+  check(r.status===422&&JSON.stringify(state())===JSON.stringify(beforeKnowledge),'save rejects parallel sharing fields and denied HTTP requests leave all stored state unchanged');
+  r=await profile('POST',knowledgeSave,owner);
+  check(r.status===200&&r.data.created===true&&Number.isInteger(r.data.saved.knowledge_id)&&r.data.saved.knowledge_id>0
+    &&r.data.saved.folder_id===10&&r.data.saved.folder_name==='Owner answers','actual owner POST files the reviewed answer in the selected existing Knowledge folder');
+  const knowledgeId=r.data.saved.knowledge_id,afterKnowledge=state(),savedNote=afterKnowledge.knowledge_items.find(item=>Number(item.id)===knowledgeId);
+  check(savedNote?.created_by_user_id==1&&savedNote.folder_id==10&&savedNote.title===knowledgeSave.title&&savedNote.content_text===knowledgeSave.content
+    &&savedNote.knowledge_scope==='personal'&&savedNote.file_type==='personal_note'&&savedNote.visibility==='private'&&Number(savedNote.is_published)===0
+    &&afterKnowledge.knowledge_chunks.some(chunk=>Number(chunk.knowledge_id)===knowledgeId),'real HTTP storage creates an ordinary owner note and searchable chunks with the reviewed content');
+  const filing=afterKnowledge.profile_agent_knowledge_saves_v1;
+  check(filing.length===1&&Number(filing[0].owner_request_id)===waitingRequest.id&&Number(filing[0].reply_message_id)===answeredMessage
+    &&Number(filing[0].knowledge_id)===knowledgeId&&filing[0].source_revision===preview.source_revision,'actual save retains exact answered-request provenance');
+  check(accessSnapshot(afterKnowledge)===accessSnapshot(beforeKnowledge),'actual save preserves every data policy, Agent rule and capability grant without creating item sharing overrides');
+  r=await profile('GET',{action:'conversation_messages',conversation_id:waiting.conversation_id},owner);
+  check(r.status===200&&r.data.messages.find(message=>message.id===answeredMessage)?.knowledge_requests?.some(request=>request.id===waitingRequest.id),'real owner history decorates the exact answer with its reviewable Knowledge request');
+  r=await profile('GET',{...waitingBase,action:'poll',conversation_id:waiting.conversation_id},waitingVisitor);
+  check(r.status===200&&r.data.messages.every(message=>!('knowledge_requests' in message))&&!r.raw.includes(knowledgeSave.title),'public visitor history receives no owner Knowledge filing metadata');
+  const afterHistory=state();
+  r=await profile('POST',knowledgeSave,owner);
+  check(r.status===200&&r.data.created===false&&r.data.saved.knowledge_id===knowledgeId&&JSON.stringify(state())===JSON.stringify(afterHistory),'lost Knowledge save acknowledgment retries the same note without duplicate storage or permission changes');
+  r=await profile('GET',{action:'owner_knowledge_preview',...knowledgeSource},owner);
+  check(r.status===200&&r.data.preview.saved.knowledge_id===knowledgeId&&r.data.preview.saved.view_url.includes('edit='+knowledgeId),'fresh HTTP preview links back to the existing saved Knowledge note');
+  r=await profile('POST',{...knowledgeSave,content:'Replace an already filed answer'},owner);
+  check(r.status===409&&JSON.stringify(state())===JSON.stringify(afterHistory)&&JSON.stringify([modelCalls(),homeCalls()])===JSON.stringify(providersBefore),'a changed HTTP retry cannot overwrite the note, alter permissions or invoke inference');
   console.log(`PROFILE_HANDOFF_API_PA3=PASS (${checks} checks; ${driver})`);
 }finally{
   child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));invoke('cleanup');fs.rmSync(tmp,{recursive:true,force:true});

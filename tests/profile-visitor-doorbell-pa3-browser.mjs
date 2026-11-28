@@ -10,7 +10,7 @@ const files = {
   '/chat.js':read('chat.js'), '/voice.js':read('chat-voice.js'), '/lease.js':read('voice-lease-v122.js'),
   '/doorbell.js':read('profile-visitor-doorbell-pa3.js'), '/chat.css':read('chat.css'), '/doorbell.css':read('profile-visitor-doorbell-pa3.css'),
   '/settings.js':read('chat-settings-v237.js'), '/settings.css':read('chat-settings-v237.css'),
-  '/rail.js':read('chat-rail-controls-v132.js'), '/rail.css':read('chat-rail-controls-v132.css'), '/team.css':read('team-chat-v109.css')
+  '/rail.js':read('chat-rail-controls-v132.js'), '/rail.css':read('chat-rail-controls-v132.css'), '/team.css':read('team-chat-v109.css'), '/knowledge.js':read('profile-owner-knowledge-v1.js')
 };
 const fixtureStyle='html,body{margin:0;height:100%;overflow:hidden}.chat-app{height:100dvh}.chat-sidebar{display:none}.chat-main{height:100dvh;display:flex;flex-direction:column;min-width:0}.chat-topbar-actions{display:flex;padding:10px;flex-shrink:0}.chat-thread{overflow:auto;flex:1;min-height:0;padding:12px}.chat-thread .message{max-width:100%;box-sizing:border-box}.message-body{min-width:0;max-width:100%}#chatComposerShell{flex-shrink:0;padding:8px}#chatForm{display:flex;gap:8px}#chatInput{min-width:0;flex:1}';
 const server=http.createServer((req,res)=>{
@@ -28,7 +28,7 @@ const server=http.createServer((req,res)=>{
      <script src="/chat.js"></script><script src="/settings.js"></script>
      <script data-voice-capture-scope="fixture-user" src="/lease.js"></script><script src="/voice.js"></script>
      <script>window.VP3_PROFILE_DOORBELL_PA3={endpoint:'/api/chat-notifications-brain-v240.php',ownerEndpoint:'/api/profile-agent.php',csrf:'fixture',userId:1};</script>
-     <script src="/doorbell.js"></script>
+     <script src="/knowledge.js"></script><script src="/doorbell.js"></script>
      <aside id="sfOnlineRailV109" class="sf-online-rail-v109"><div class="sf-online-users-v109"></div></aside>
      <div id="sfTeamChatWindowsV109"></div><script src="/rail.js"></script></body>`));
 });
@@ -47,7 +47,7 @@ async function fixture(viewport={width:1200,height:1000}){
  const turns=new Map([[101,ownerCard(101,{server_now_ms:clock})]]),messages=new Map([[42,[]],[55,[]]]),deliveries=new Map(),tabs=new Map(),operations=new Map(),operationInputs=new Map();
  const putMessage=(cid,id,text,context={})=>{if(!messages.has(cid))messages.set(cid,[]);messages.get(cid).push({id,role:'assistant',message:text,context_json:JSON.stringify(context)});};
  await page.route('**/api/**',async route=>{
-  const request=route.request(),url=new URL(request.url()),input=request.postDataJSON()||{action:url.searchParams.get('action')},path=url.pathname;calls.push({path,...input});let payload={ok:true};
+  const request=route.request(),url=new URL(request.url()),input=request.postDataJSON()||Object.fromEntries(url.searchParams),path=url.pathname;calls.push({path,...input});let payload={ok:true};
   if(path==='/api/chat-settings-v237.php'){
    if(input.action==='save_chat') for(const name of ['presence_mode','social_chat_enabled','sound_enabled']) chatSettings[name]=input[name];
    if(input.action==='save_profile_agent') Object.assign(profileSettings.profile, {
@@ -63,6 +63,9 @@ async function fixture(viewport={width:1200,height:1000}){
     const id=input.conversation_id||42,userId=++nextMessage,assistantId=++nextMessage;putMessage(id,assistantId,'Private Chat response.');
     Object.assign(payload,{conversation_id:id,user_message_id:userId,assistant_message_id:assistantId,answer:'Private Chat response.'});
    }else Object.assign(payload,{conversations:[...messages.keys()].map(id=>({id,title:'Private Chat '+id,updated_at:'2026-11-03 12:00:00'})),updates:[],items:[],tracks:[]});
+  }else if(input.action==='owner_knowledge_preview'){
+   const turn=[...turns.values()].find(turn=>turn.conversation_id===Number(input.conversation_id)&&turn.history.some(row=>row.knowledge_requests?.some(request=>request.id===Number(input.owner_request_id)))),source=turn.history.flatMap(row=>row.knowledge_requests||[]).find(row=>row.id===Number(input.owner_request_id));
+   payload.preview={contract:'vp3.profile-knowledge.v1',conversation_id:Number(input.conversation_id),owner_request_id:Number(input.owner_request_id),visitor_message_id:source.visitor_message_id,reply_message_id:source.reply_message_id,source_revision:'a'.repeat(64),question:source.question_excerpt,reply:turn.history.find(row=>row.id===source.reply_message_id).message,title:'Reviewed visitor question',content:'Question and reviewed answer',folders:[{id:5,name:'Customer questions'}],saved:null};
   }else if(input.action==='doorbell_list')Object.assign(payload,{contract,availability,reachable:true,server_now_ms:clock,turns:input.chat_conversation_id>0?[...turns.values()].filter(t=>!['replied','blocked','cancelled'].includes(t.state)||deliveries.has(t.turn_id+':'+input.chat_conversation_id)).map(t=>({...copy(t),server_now_ms:clock,chat_conversation_id:input.chat_conversation_id,chat_agent_id:input.chat_agent_id,chat_message_id:0})):[]});
   else if(input.action==='doorbell_presence'){
    if (Object.hasOwn(input, 'availability') && failAvailability) {
@@ -88,6 +91,7 @@ async function fixture(viewport={width:1200,height:1000}){
    else{
     const turn=turns.get(input.turn_id);turn.revision++;turn.state=({doorbell_claim:'owner_claimed',doorbell_reply:'replied',doorbell_delegate:'agent_ready',doorbell_resolve:'cancelled'})[input.action];turn.responder=input.action==='doorbell_delegate'?'agent':input.action==='doorbell_resolve'?'none':'owner';
     if(input.action==='doorbell_reply')turn.history.push({id:++nextMessage,sender_type:'owner',message:input.message,created_at:'2026-11-03 12:00:01'});
+    if(turn.response?.request&&['doorbell_reply','doorbell_delegate','doorbell_resolve'].includes(input.action)){turn.response.request={...turn.response.request,status:({doorbell_reply:'answered',doorbell_delegate:'delegated',doorbell_resolve:'resolved'})[input.action],reply_message_id:input.action==='doorbell_reply'?nextMessage:0,revision:turn.response.request.revision+1};if(input.action==='doorbell_reply'){const source=turn.response.request;turn.history.at(-1).knowledge_requests=[{id:source.id,conversation_id:turn.conversation_id,visitor_message_id:source.visitor_message_id,reply_message_id:nextMessage,revision:source.revision,question_excerpt:turn.visitor_message}];}}
     if(turn.chat){
      const accepted=turn.chat.live_status==='accepted';
      if(['doorbell_claim','doorbell_reply'].includes(input.action)&&turn.chat.mode==='live'){turn.chat.live_status='accepted';turn.chat.can_end_live_chat=true;turn.can_claim=false;}
@@ -110,6 +114,32 @@ async function fixture(viewport={width:1200,height:1000}){
 }
 try{
  browser=await chromium.launch({headless:true,...(process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH?{executablePath:process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH}:{})});
+ {
+  const f=await fixture({width:390,height:900}),card=ownerCard(101,{state:'owner_requested',responder:'waiting',server_now_ms:Date.now(),chat:chatChoice({mode:'agent',live_status:'none',live_text_available:false}),
+    response:{contract:'vp3.profile-response.v1',mode:'user_responses',ready:true,request:{id:51,conversation_id:1101,visitor_message_id:2101,status:'waiting',reason:'user_responses',receipt_message_id:2102,reply_message_id:0,revision:1}}});
+  card.history.push({id:2102,sender_type:'system',message:'Submitted to Dave. Waiting for a response.',created_at:'2026-11-03 12:00:00'});f.turns.set(101,card);
+  await f.boot();
+  check((await f.card(101).locator('.profile-doorbell-status').innerText()).startsWith('Awaiting your response')&&await f.card(101).locator('.profile-doorbell-countdown').isHidden(),'Main Chat shows durable owner waiting without a live pickup countdown');
+  check(await f.card(101).locator('[data-doorbell-action="delegate"]').isDisabled()&&await f.card(101).locator('[data-doorbell-action="claim"]').isEnabled()&&await f.card(101).locator('[data-doorbell-action="reply"]').isEnabled()&&await f.card(101).locator('[data-doorbell-action="resolve"]').isEnabled(),'User responses retains claim, reply and resolve while disabling Agent delegation');
+  await f.card(101).locator('summary').click();
+  check(await f.card(101).locator('.profile-doorbell-history-system strong').innerText()==='Status','Main Chat history identifies the submission receipt separately from the Agent');
+  f.advance(60000);await f.refresh();
+  check(!f.calls.some(call=>call.action==='doorbell_ack')&&f.turns.get(101).state==='owner_requested','durable owner request is not acknowledged into a timed live-pickup turn');
+  await f.card(101).locator('textarea').fill('Here is the requested owner answer');await f.card(101).locator('button[type="submit"]').click();
+  await f.page.waitForFunction(()=>document.querySelector('[data-profile-doorbell-turn="101"] .profile-doorbell-status')?.textContent.includes('Your reply was sent'));
+  check(f.turns.get(101).response.request.status==='answered'&&!(await f.card(101).locator('.profile-doorbell-status').innerText()).includes('Live text chat'),'owner reply settles the submitted request without claiming live presence');
+  await f.card(101).locator('[data-profile-knowledge-open]').click();await f.page.locator('[data-profile-knowledge-form]').waitFor();
+  check(f.calls.find(call=>call.action==='owner_knowledge_preview')?.owner_request_id==='51'&&await f.page.locator('[name="approve_profile_use"]').count()===0&&await f.page.getByRole('link',{name:'Open Knowledge Access (new tab)',exact:true}).getAttribute('href')===base+'/profile-agent.php?tab=knowledge','Main Chat opens the reviewed Knowledge editor and uses the existing Knowledge Access control');
+  check(await f.page.getByRole('dialog').evaluate(dialog=>{const box=dialog.getBoundingClientRect();return box.left>=0&&box.right<=innerWidth&&box.bottom<=innerHeight;}),'Knowledge review editor stays inside the mobile viewport');
+  await f.page.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}).click();
+  const old=f.turns.get(101),answered=old.history.find(row=>row.sender_type==='owner');answered.knowledge_requests.push({id:52,conversation_id:1101,visitor_message_id:2100,reply_message_id:answered.id,revision:2,question_excerpt:'Earlier question about delivery.'});
+  const next=ownerCard(102,{conversation_id:1101,visitor_message_id:3101,state:'owner_requested',responder:'waiting',server_now_ms:f.clock,chat:chatChoice({mode:'agent',live_status:'none',live_text_available:false}),history:[...copy(old.history),{id:3101,sender_type:'visitor',message:'New question still waiting',created_at:'2026-11-03 12:02:00'}],response:{contract:'vp3.profile-response.v1',mode:'user_responses',ready:true,request:{id:53,conversation_id:1101,visitor_message_id:3101,status:'waiting',reason:'user_responses',receipt_message_id:3102,reply_message_id:0,revision:1}}});
+  f.turns.set(102,next);await f.refresh();await f.card(102).waitFor();await f.card(102).locator('summary').click();
+  check(await f.card(102).locator('[data-profile-knowledge-open]:visible').count()===1&&await f.card(102).locator('[data-profile-knowledge-question] option').count()===2,'a newer Main Chat request retains one action on the earlier owner answer with both answered questions');
+  await f.card(102).locator('[data-profile-knowledge-question]').selectOption('52');await f.card(102).locator('[data-profile-knowledge-open]:visible').click();await f.page.locator('[data-profile-knowledge-form]').waitFor();
+  check(f.calls.filter(call=>call.action==='owner_knowledge_preview').at(-1).owner_request_id==='52'&&(await f.page.getByRole('dialog').locator('details').textContent()).includes('Earlier question about delivery.'),'Main Chat’s per-answer selector opens the exact earlier answered request');
+  await f.page.getByRole('dialog').getByRole('button',{name:'Cancel',exact:true}).click();await f.close();
+ }
  {
   const f=await fixture(),ackHold=f.hold('doorbell_ack');await f.boot();const ack=await ackHold;
   check(await f.page.evaluate(()=>STONEFELLOW_CHAT_VOICE.directOwner===true&&STONEFELLOW_CHAT_CONTINUITY!==STONEFELLOW_CHAT_CONTINUITY_V87&&typeof STONEFELLOW_CHAT_CONTINUITY.pendingVoiceSubmit==='function'&&STONEFELLOW_CHAT_VOICE.starts===0),'real Chat and voice scripts execute in production order before doorbell without capture');

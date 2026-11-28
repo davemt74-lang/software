@@ -281,7 +281,7 @@ function vp3_radar_native_notify(PDO $pdo, array $profile, array $contact, ?arra
     $class = (string)$contact['visitor_class'];
     $name = trim((string)$contact['display_name']) ?: 'Automated agent';
     $operator = trim((string)$contact['operator_name']);
-    $target = url('/profile-agent.php?tab=visitors');
+    $target = url('/profile-agent.php?tab=radar');
     $sourceId = (int)$event['id'];
 
     if (!empty($session['is_new']) || $risk >= 70) vp3_radar_sync_agent_memory($pdo,$owner,$contact,$event);
@@ -319,6 +319,7 @@ function vp3_radar_native_notify(PDO $pdo, array $profile, array $contact, ?arra
 function vp3_radar_record_native_profile_request(PDO $pdo, array $profile, ?array $viewer=null): bool
 {
     $owner = (int)($profile['user_id'] ?? 0);
+    if ($owner > 0 && (int)($viewer['id'] ?? 0) === $owner) return false;
     $userAgent = vp3_radar_request_user_agent();
     $looksAutomated = vp3_radar_looks_automated($userAgent);
     if ($owner < 1 || !$looksAutomated) return false;
