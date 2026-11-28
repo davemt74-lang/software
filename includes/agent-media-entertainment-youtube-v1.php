@@ -44,17 +44,32 @@ function vp3_media_youtube_saved_searches_v1(PDO $pdo,int $owner,int $agent,int 
 {
     $items=[];
     $records=agent_connection_youtube_result_records_v1($pdo,$owner,$agent,$chat,$ids===null?8:count($ids),$ids??[]);
+    $settings=vp3_youtube_picks_ready_v1($pdo)?vp3_youtube_picks_settings_v1($pdo,$owner):[];
+    $proactive=(int)($settings['proactive']??0)===1;
+    $taste=vp3_agent_activity_text_v1($settings['taste']??'',120);
+    require_once __DIR__.'/agent-media-preferences-v1.php';
+    $preferences=['ready'=>false];
+    $historyAllowed=true;
+    if(vp3_media_preferences_ready_v1($pdo)){
+        require_once __DIR__.'/agent-media-playback-v1.php';
+        [$live,$principal]=vp3_media_playback_user_v1($pdo,['id'=>$owner],$agent,$chat);
+        $historyAllowed=vp3_media_playback_history_allowed_v1($pdo,$live,$principal);
+        $candidates=[];
+        foreach($records as $record){
+            if($record['expires_at']<=$now)continue;
+            array_push($candidates,...vp3_media_preferences_candidates_v1(
+                agent_connection_youtube_ordered_videos_v1($record['results']['videos']),'youtube'));
+        }
+        if($historyAllowed&&$candidates)$preferences=vp3_media_preferences_read_v1($pdo,$live,$agent,$chat,$candidates);
+    }
     $seen=$playedSources=[];
-    if(vp3_youtube_playback_ready_v1($pdo)&&vp3_youtube_capture_key_v1($pdo,$owner)!==''){
+    if($historyAllowed&&vp3_youtube_playback_ready_v1($pdo)&&vp3_youtube_capture_key_v1($pdo,$owner)!==''){
         foreach(vp3_youtube_history_recent_v1($pdo,$owner,$agent,limit:120) as $play){
             if($play['played_at']>$now)continue;
             $seen[$play['video_id']]=true;
             $playedSources[$play['message_id']]=true;
         }
     }
-    $settings=vp3_youtube_picks_ready_v1($pdo)?vp3_youtube_picks_settings_v1($pdo,$owner):[];
-    $proactive=(int)($settings['proactive']??0)===1;
-    $taste=vp3_agent_activity_text_v1($settings['taste']??'',120);
     foreach($records as $record){
         $result=$record['results'];
         $created=$record['created_at_epoch'];
@@ -80,8 +95,16 @@ function vp3_media_youtube_saved_searches_v1(PDO $pdo,int $owner,int $agent,int 
             $similar=vp3_media_similar_artist_results_v1($subject,$videos);
             if($similar)$videos=array_column($similar,'video');
         }
+        $relevance=[];
+        if($music)foreach($videos as $video)$relevance[$video['video_id']]=(int)(($video['music_category']??false)===true);
+        $videos=vp3_media_preferences_rank_v1($videos,$preferences,'youtube',$relevance);
+        if(!$videos)continue;
+        if($similar){
+            $available=array_fill_keys(array_column($videos,'video_id'),true);
+            $similar=array_values(array_filter($similar,static fn(array $row):bool=>isset($available[$row['video']['video_id']])));
+        }
         $unplayed=array_values(array_filter($videos,static fn(array $video):bool=>!isset($seen[$video['video_id']])));
-        $selected=$unplayed[0]??$videos[0];
+        $selected=($preferences['ready']??false)===true?$videos[0]:($unplayed[0]??$videos[0]);
         $title=vp3_agent_activity_text_v1($selected['title'],160);
         $channel=vp3_agent_activity_text_v1($selected['channel_title']??'',90);
         $playlist=$suggestion==='playlist'&&count($videos)>=2;

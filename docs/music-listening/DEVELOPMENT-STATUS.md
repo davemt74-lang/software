@@ -2,13 +2,24 @@
 
 ## Current state
 
+**MC3 preferences, suggestions and shared Agent context is the active build.**
+MC2 completed in [PR #962](https://github.com/davemt74-lang/software/pull/962),
+merged as `d8dae0a9024c93f431f3366b96bbd81608cd5e1b`, with all 20 applicable
+PR and main workflows successful and its original official full Cloud ZIP
+verified. MC3 starts from `8e9f23fe4ed1006191fe0c61b2e671e8e60aa804`, preserving
+the subsequent Gmail capture release. [The MC3 contract](MC3-MUSIC-PREFERENCES.md)
+owns its exact private choices, bounded factual evidence, deliberate Next,
+shared recommendation/context behavior, authority/replay rules and ten scored
+criteria. Its implementation PR owns final release qualification; local tests
+alone are not a 10/10 release score.
+
 **MC2 personal history and Agent recall is implemented in [PR #962](https://github.com/davemt74-lang/software/pull/962).** The user approved it after MC1 completed in [PR #957](https://github.com/davemt74-lang/software/pull/957), merged as ab313e01beae3433fcc9e27dd1f239df33801335 with all 21 applicable PR and 20 main workflows green, exact merged-tree verification, and a fully verified official Cloud ZIP. MC2 starts from main 8f39d8e2c31620567b8fe68c0a0a97157c92eb60, including Phone/Inbox, Canvas editor and fixture follow-ups. [The MC2 implementation contract](MC2-MUSIC-HISTORY.md) defines its shared retained-history reader, exact selection actions, coverage/authority limits and ten acceptance criteria. PR #962 owns the exact candidate, final score, workflow results, merged source and official Cloud ZIP. Code written or local fixtures passing alone do not complete that qualification.
 
 **MC1 music Chat and private playlists builds on the released ML3A totals.** [PR #957](https://github.com/davemt74-lang/software/pull/957) is the authoritative implementation and release record for MC1. VP3 [PR #951](https://github.com/davemt74-lang/software/pull/951) merged all-time listening totals as `98cccd1e8a56a182a19e8007601915757840889a`. All 16 applicable final candidate workflows and all 16 post-merge workflows passed, and its full Cloud archive was verified against the merged source and manifest. Stoneward remains compatible at v1.3.333; this follow-up requires no Stoneward code update.
 
 MC1 starts from refreshed VP3 main `bd8a62229164f03d13966a3fef0496ab7395fa40` (including Canvas recovery/editor PR #954). It makes the Media/Entertainment specialist's two audio sources explicit: VP3 and YouTube. One song means one result across both; explicit multiple-song counts and source restrictions are respected. Playlist creation writes a durable owner-private, source-tagged list, while coordinated playback uses the existing native and visible YouTube players and their existing receipts. [The MC1 contract](MC1-MUSIC-CHAT.md) owns behavior, the ten scored criteria and evidence limits. [Its deployment note](../MUSIC-CHAT-DEPLOY.txt) records the additive schema upgrade. Exact candidate, CI, merge and full archive evidence belong to the implementation PR. Implementation in progress is not a passed release gate.
 
-The following releases will address full searchable two-source personal listening history, then stronger preferences, suggestions and shared Agent knowledge. MC1 does not extend history retention or activate financial policy. No live host deployment, production migration, physical-device acceptance or actual Google account test is claimed by isolated fixtures.
+MC2 has delivered searchable two-source personal listening history. MC3 is the active follow-up for stronger preferences, suggestions and shared Agent context. MC1 does not extend history retention or activate financial policy. No live host deployment, production migration, physical-device acceptance or actual Google account test is claimed by isolated fixtures.
 
 ## Earlier reporting releases
 
@@ -94,7 +105,7 @@ The original documentation checks resolved 40 relative links and 49 pinned sourc
 | ML3A — All-time listening totals | Released in #951 as `98cccd1e`. All 16 candidate and 16 post-merge workflows passed; full archive verified. [Lifetime contract](ML3A-LIFETIME-TOTALS.md). |
 | MC1 — Two-source music Chat and private playlists | Implementation and exact release qualification: [PR #957](https://github.com/davemt74-lang/software/pull/957). [Contract and acceptance score](MC1-MUSIC-CHAT.md). The PR records final candidate checks, merged source and full archive verification. |
 | MC2 — Personal listening history and Agent retrieval | Implementation and exact release qualification: [PR #962](https://github.com/davemt74-lang/software/pull/962). [Contract and acceptance criteria](MC2-MUSIC-HISTORY.md). The PR records final candidate checks, merged source and full archive verification. |
-| MC3 — Preferences, suggestions and Agent learning | Planned follow-up; explicit taste, actual listening, deliberate skips and failures remain distinct evidence. |
+| MC3 — Preferences, suggestions and Agent learning | Active implementation. [Contract](MC3-MUSIC-PREFERENCES.md) and [deployment note](../MUSIC-PREFERENCES-DEPLOY.txt); explicit taste, actual listening, deliberate Next, deferred offers and failures remain distinct evidence. Final CI/merge/package qualification belongs to the implementation PR. |
 | ML4 — Funded earnings and statements | Not started; policy decisions required before real accrual |
 | ML5 — Payouts and reconciliation | Not started; settlement/provider decisions required |
 | ML6 — Artist Agent, support and release acceptance | Not started |

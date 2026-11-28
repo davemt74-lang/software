@@ -40,6 +40,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'media.library.read'=>['status','search'],
         'music.library.read'=>['status','search'],
         'music.history.read'=>['list'],
+        'music.preferences'=>['read','set'],
         'music.playlists.manage'=>['create','add'],
         'photos.library.read'=>['status','search'],
         'media.assets.read'=>['search'],
@@ -93,7 +94,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
     foreach(['record_id','count'] as $key)if(!is_int($value[$key]??null)||$value[$key]<0)return null;
     if($reason==='active_request'&&($cap!=='images.generate'||$op!=='queue'||$status!=='blocked'||$value['record_id']!==0||$value['count']!==0))return null;
     // A read, clarification or failed operation can never be a successful mutation.
-    $write=$cap==='email.followups'||($cap==='music.playlists.manage'&&in_array($op,['create','add'],true))
+    $write=$cap==='email.followups'||($cap==='music.preferences'&&$op==='set')||($cap==='music.playlists.manage'&&in_array($op,['create','add'],true))
         ||($cap==='email.send'&&$op==='send')||($cap==='music.releases.create'&&$op==='create')||($cap==='tracky.perception.request'&&$op==='request')||($cap==='radar.gateway.manage'&&$op==='set_policy')||($cap==='images.generate'&&$op==='queue')||($cap==='participants.setup'&&$op==='confirm')||($cap==='tasks.lists'&&in_array($op,['add','create_list','create_task','confirm'],true))||($cap==='system_apps.manage'&&$op==='confirm')||($cap==='tasks.manage')||($cap==='workflows.manage')||(in_array($cap,['scheduling.manage','team_scheduling.manage'],true)&&$op!=='prepare')||($cap==='transcripts.highlight'&&in_array($op,['highlight','review_item','item_action'],true))||($cap==='transcripts.analyze'&&in_array($op,['run_analysis','run_research'],true))||($cap==='reminders.manage'&&in_array($op,['create','update','complete','snooze','dismiss','cancel','delete'],true))||($cap==='calendar.manage'&&in_array($op,['create','update','cancel'],true));
     if($status==='completed'&&(!$write||$reason!==''))return null;
     if(in_array($status,['read_complete','no_matches'],true)&&$reason!=='')return null;

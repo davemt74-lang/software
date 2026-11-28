@@ -65,6 +65,9 @@
       ? {playlist_id:payload.playlist.id, revision:payload.playlist.revision}
       : {result_id:payload.result_id, revision:payload.revision};
   }
+  function preferenceSelection(payload, index) {
+    return {kind:payload.playlist ? 'playlist' : 'result', ...selectionFields(payload), index};
+  }
   function sameScope(left, right) {
     return ['owner_user_id', 'agent_id', 'conversation_id'].every(key => left[key] === right[key]);
   }
@@ -155,6 +158,8 @@
   function playbackState(selection, state) {
     if (active !== selection || selection.generation !== generation || !current(selection.record)) return;
     selection.state = state;
+    if (state === 'playing') selection.skipEligible = true;
+    else if (['starting','blocked','unavailable','ended','stopped'].includes(state)) selection.skipEligible = false;
     const labels = {starting:'Starting…', playing:'Playing', paused:'Paused', blocked:'Tap Play to start playback.',
       unavailable:'This song is unavailable. Choose another song or try again.', ended:'Finished.', stopped:'Stopped.'};
     status(selection.record, state === 'playing' ? 'Playing · ' + text(selection.item.title) : (labels[state] || 'Ready.'), state);
@@ -289,7 +294,8 @@
             for (const event of ['playing', 'pause', 'ended', 'error']) audio.addEventListener(event, () => {
               observedPlaybackState(selection, event === 'pause' ? 'paused' : event === 'error' ? 'unavailable' : event);
             }, {signal});
-            selection.handle = {pause:() => audio.pause(), resume:() => audio.play(), stop:() => {
+            selection.handle = {receipt:() => window.VP3MusicListeningV1?.attach(audio)?.receipt?.(),
+              pause:() => audio.pause(), resume:() => audio.play(), stop:() => {
               audio.pause();
               lifecycle.stop?.();
             }};
@@ -315,6 +321,7 @@
     } catch (error) {
       if (active === selection && current(record)) {
         selection.state = 'unavailable';
+        selection.skipEligible = false;
         status(record, error.message || 'Playback is unavailable. Try again.', 'unavailable');
         updateTransport(record);
         if (record.payload.history_operation) await refreshMessage(record.message);
@@ -346,6 +353,14 @@
     if (action === 'next' || action === 'previous') {
       const position = queueState?.position + (action === 'next' ? 1 : -1);
       if (!queueState || position < 0 || position >= queueState.entries.length) return {answer:'There is no ' + action + ' song in this selection.'};
+      if (action === 'next' && selection?.skipEligible && ['playing','paused'].includes(selection.state) && !selection.skipRecorded) {
+        const receipt = selection.handle?.receipt?.();
+        if (receipt) {
+          selection.skipRecorded = true;
+          window.VP3_MUSIC_PREFERENCES_V1?.recordSkip(selection.record.payload,
+            preferenceSelection(selection.record.payload, selection.index), receipt);
+        }
+      }
       const opened = await playQueueEntry(queueState, position);
       return {answer:opened ? 'Opened the ' + action + ' song.'
         : 'The ' + action + ' song could not be opened. Check the music selection or try another song.'};
@@ -504,6 +519,7 @@
     if (window.VP3_MUSIC_HISTORY_V1) actions.append(button('Listening history', () => {
       if (!window.STONEFELLOW_CHAT_CONTINUITY?.requestMusicHistory?.()) status(record, 'Finish the current Chat turn before opening listening history.');
     }));
+    if (window.VP3_MUSIC_PREFERENCES_V1) actions.append(button('Music preferences', () => window.VP3_MUSIC_PREFERENCES_V1.openSaved(record.card, payload)));
     record.card.append(actions);
     if (payload.playlist && record.editing) {
       const form = node('form', 'vp3-music-title-form');
@@ -578,6 +594,10 @@
       }
       const player = node('div', 'vp3-music-player-slot');
       row.append(controls, player); list.append(row); record.rows.push({row, play, player});
+      if (item.available) window.VP3_MUSIC_PREFERENCES_V1?.attachItem(row, {
+        payload, item, selection:preferenceSelection(payload, index),
+        current:() => current(record) && record.payload === payload, onUnavailable:() => void refresh(record)
+      });
     });
     if (!payload.items.length) record.card.append(node('p', '', payload.playlist ? 'This playlist is empty.' : 'No playable songs matched this request.'));
     record.card.append(list);

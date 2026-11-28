@@ -283,7 +283,6 @@ function player_for_you(array $user, array $trackMap, int $limit = 8): array
                     SUM(qualified_play) AS qualified_plays,
                     SUM(completed) AS completed_plays,
                     SUM(listened_seconds) AS seconds,
-                    SUM(CASE WHEN listened_seconds < 10 THEN 1 ELSE 0 END) AS skips,
                     MAX(started_at) AS last_played
                  FROM track_play_sessions
                  WHERE user_id=?
@@ -301,7 +300,8 @@ function player_for_you(array $user, array $trackMap, int $limit = 8): array
                 $score[$trackId] += min(12, (int)$row['qualified_plays'] * 2);
                 $score[$trackId] += min(12, (int)$row['completed_plays'] * 3);
                 $score[$trackId] += min(8, ((float)$row['seconds']) / 180);
-                $score[$trackId] -= min(8, (int)$row['skips'] * 1.5);
+                // Short or failed starts do not establish a deliberate skip.
+                // MC3 records an explicit Next gesture separately.
 
                 $genre = trim((string)($trackMap[$trackId]['genre'] ?? ''));
                 $mood = trim((string)($trackMap[$trackId]['mood'] ?? ''));

@@ -151,6 +151,9 @@ function vp3_initiative_opportunity_songs_v1(PDO $pdo,array $user,array $princip
     // Listening history intentionally belongs to the owner across their Agents.
     $tracks=$selected===null?player_recent_history($user,[],3):array_filter(array_map(
         static fn(string $id):?array=>vp3_initiative_opportunity_song_v1($pdo,$user,(int)$id),array_values($selected)));
+    require_once __DIR__.'/agent-media-preferences-v1.php';
+    $preferences=$tracks&&vp3_media_preferences_ready_v1($pdo)?vp3_media_preferences_read_v1($pdo,$user,(int)$principal['agent_id'],0,
+        vp3_media_preferences_candidates_v1(array_values($tracks),'vp3')):['ready'=>false];
     $evidence=[];
     foreach($tracks as $track){
         $id=(int)$track['id'];$ref='song-history:'.$id;
@@ -160,12 +163,21 @@ function vp3_initiative_opportunity_songs_v1(PDO $pdo,array $user,array $princip
             'session_count'=>max(0,(int)$track['session_count']),'qualified_plays'=>max(0,(int)$track['qualified_plays']),
             'completed_plays'=>max(0,(int)$track['completed_plays'])];
         if($state['title']==='')continue;
+        $preference=null;
+        if(($preferences['ready']??false)===true){
+            $preference=$preferences['items']['vp3:'.$id]??null;
+            if(!is_array($preference))continue;
+            $state['music_preference']=array_intersect_key($preference,array_flip([
+                'preference','preference_revision','play_count','measured_plays','measured_seconds','deliberate_skips','reason']));
+        }
         $position=(int)$state['position_seconds'];
         $evidence[$ref]=['ref'=>$ref,'kind'=>'song_history','title'=>$state['title'],
             'detail'=>($state['album']!==''?$state['album'].'. ':'').'Owner listening history: '.$state['session_count'].' sessions, '
                 .(int)$state['listened_seconds'].' recorded listening seconds, '.$state['qualified_plays'].' qualified plays. Last played '
                 .$state['last_played_at'].'. Resume position '.intdiv($position,60).':'.str_pad((string)($position%60),2,'0',STR_PAD_LEFT)
-                .'. A playback start alone is not evidence of interest.',
+                .'. A playback start alone is not evidence of interest.'
+                .($preference===null?'':' '.vp3_media_preferences_text_v1($preference['reason']??''))
+                .(($preference['preference']??null)==='dislike'?' Respect the owner’s explicit Dislike; do not recommend this recording.':''),
             'url'=>url('/track.php?id='.$id),
             'revision'=>hash('sha256',json_encode([VP3_INITIATIVE_OPPORTUNITY_SOURCES_V1,(int)$user['id'],$state],JSON_THROW_ON_ERROR))];
     }

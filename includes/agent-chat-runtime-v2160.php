@@ -21,6 +21,7 @@ require_once __DIR__.'/agent-connection-email-chat-v1.php';
 require_once __DIR__.'/agent-connection-youtube-chat-v1.php';
 require_once __DIR__.'/music-chat-v1.php';
 require_once __DIR__.'/music-history-chat-v1.php';
+require_once __DIR__.'/music-preferences-chat-v1.php';
 require_once __DIR__.'/agent-artist-research-v1.php';
 require_once __DIR__.'/connected-gelato-v1.php';
 require_once __DIR__.'/knowledge-retrieval-v162.php';
@@ -771,14 +772,15 @@ function vp3_agent_chat_send_v2160(PDO $pdo,array $user,?array $activeAgent,arra
         $chatId=(int)$input['conversation_id'];
         $text=trim($input['message']);
         $agentId=vp3_agent_chat_agent_id_v380($activeAgent);
-        $musicHistoryRequest=$reply===null&&vp3_music_history_chat_request_v1($pdo,$user,$agentId,$chatId,$text,$input);
+        $musicPreferencesRequest=$reply===null&&vp3_music_preferences_chat_request_v1($pdo,$user,$agentId,$chatId,$text,$input);
+        $musicHistoryRequest=$reply===null&&!$musicPreferencesRequest&&vp3_music_history_chat_request_v1($pdo,$user,$agentId,$chatId,$text,$input);
         $musicPlan=$reply===null&&!$musicHistoryRequest?vp3_music_chat_plan_v1($text):null;
         $musicSelection=false;
         if($musicPlan!==null&&isset($musicPlan['selection'])){
             vp3_music_chat_dependencies_v1();
             $musicSelection=vp3_music_chat_ready_v1($pdo)&&vp3_music_chat_result_latest_v1($pdo,$user,$agentId,$chatId)!==null;
         }
-        $linkedTool=$musicHistoryRequest||($reply!==null&&vp3_chat_reply_tool_plan_v1($text)!==null)
+        $linkedTool=$musicPreferencesRequest||$musicHistoryRequest||($reply!==null&&vp3_chat_reply_tool_plan_v1($text)!==null)
             ||($musicPlan!==null&&(!isset($musicPlan['selection'])||$musicSelection));
         $casualTarget=$linkedTool?null:vp3_casual_checkin_reply_target_v1($pdo,$user,$agentId,$chatId,$text,$reply);
         $mediaTarget=!$linkedTool&&$casualTarget===null?vp3_media_reply_target_v1($pdo,$user,$agentId,$chatId,$text,$reply):null;
@@ -1031,7 +1033,9 @@ $participantActor=vp3_participant_chat_actor_v1($pdo,$user,$input);
 $imageReferenceContext=vp3_chat_image_reference_context_v1($pdo,$user,$principal,$input,
     ['conversation_id'=>$conversationId,'user_agent_id'=>$activeAgentId]);
 $initiativeStatusRead=!$ephemeralProtocol&&in_array(vp3_initiative_command_v1($query),['status','findings'],true);
-$musicHistoryRequest=$allowConnectedSites&&!$ephemeralProtocol&&$participantActor===null
+$musicPreferencesRequest=$allowConnectedSites&&!$ephemeralProtocol&&$participantActor===null
+    &&vp3_music_preferences_chat_request_v1($pdo,$user,$activeAgentId,$conversationId,$query,$input);
+$musicHistoryRequest=$allowConnectedSites&&!$ephemeralProtocol&&$participantActor===null&&!$musicPreferencesRequest
     &&vp3_music_history_chat_request_v1($pdo,$user,$activeAgentId,$conversationId,$query,$input);
 $youtubeHistoryRequest=$allowConnectedSites&&!$ephemeralProtocol&&!$musicHistoryRequest&&agent_connection_youtube_history_request_v1($query);
 $musicPlan=$allowConnectedSites&&!$ephemeralProtocol?vp3_music_chat_plan_v1($query):null;
@@ -1110,7 +1114,7 @@ if(!$ephemeralProtocol){
         $userMessageId=vp3_agent_chat_followthrough_save_user_v2160($pdo,$user,$activeAgent,$principal,$conversationId,$query,$currentAuthority,$initiativeProgress['implicit_reply']??null);
     }else{
         $stmt=$pdo->prepare('INSERT INTO chat_messages (conversation_id,user_id,role,message,context_json) VALUES (?,?,?,?,?)');
-        $userContext=$initiativeStatusRead?'{"initiative_status_read_v1":true,"skip_brain_archive":true}':($emailRequest||$musicPlan!==null||$musicHistoryRequest?'{"skip_brain_archive":true}':null);
+        $userContext=$initiativeStatusRead?'{"initiative_status_read_v1":true,"skip_brain_archive":true}':($emailRequest||$musicPlan!==null||$musicHistoryRequest||$musicPreferencesRequest?'{"skip_brain_archive":true}':null);
         $stmt->execute([$conversationId,$userId,'user',vp3_agent_chat_public_prompt_v2160($query),$userContext]);
         $userMessageId=(int)$pdo->lastInsertId();
     }
@@ -1130,7 +1134,7 @@ $youtubeFollowup=$allowConnectedSites&&!$ephemeralProtocol&&$initiativeReply===n
     ?agent_connection_youtube_scoped_followup_plan_v1($pdo,$userId,$activeAgentId,$conversationId,$query,$userMessageId):null;
 $youtubeQuery=$allowConnectedSites&&!$ephemeralProtocol&&!$youtubeHistoryRequest&&$youtubeFollowup===null
     ?agent_connection_youtube_chat_plan_v1($query):null;
-$mediaCommand=$allowConnectedSites&&!$ephemeralProtocol&&($musicHistoryRequest||vp3_media_chat_command_v2160($query));
+$mediaCommand=$allowConnectedSites&&!$ephemeralProtocol&&($musicPreferencesRequest||$musicHistoryRequest||vp3_media_chat_command_v2160($query));
 if($imageTurn===null&&empty($imageReferenceContext['image_reference_asset_id'])&&!$ephemeralProtocol&&!$mediaCommand&&!$initiativeStatusRead&&!$emailRequest&&!$youtubeHistoryRequest&&$youtubeFollowup===null&&$youtubeQuery===null&&$publicResearchPlan===null&&$meetingResearchPlan===null&&$connectedSitePlan===null){
     $priorAuthority=$currentAuthority;
     $followthroughAuthority=static function()use($pdo,$user,$input,$priorAuthority):void{
@@ -1160,7 +1164,10 @@ if($imageTurn!==null){
     require_once __DIR__.'/agent-media-playback-v1.php';
     vp3_media_playback_secret_v1();
     $connectionAuthority();
-    if($musicHistoryRequest){
+    if($musicPreferencesRequest){
+        $capabilityTool=vp3_music_preferences_chat_execute_v1($pdo,$user,$principal,$conversationId,$userMessageId,$query,$input,$connectionAuthority);
+    }
+    if($capabilityTool===null&&$musicHistoryRequest){
         $capabilityTool=vp3_music_history_chat_execute_v1($pdo,$user,$principal,$conversationId,$userMessageId,$query,$input,$connectionAuthority);
     }
     if($capabilityTool===null&&$musicPlan!==null){
@@ -1375,6 +1382,7 @@ $r6Used=!empty($r6Packet['active'])&&empty($toolResult['handled']);if($r6Packet)
 [$storedAnswer,$messageContext]=agent_connection_email_chat_view_v1($toolResult,$storedAnswer,$messageContext);
 if($musicChatTool){
     $messageContext['skip_brain_archive']=true;
+    if(is_array($toolResult['music_preferences_v1']??null))$messageContext['music_preferences_v1']=$toolResult['music_preferences_v1'];
     if(is_array($toolResult['music_chat_v1']??null))$messageContext['music_chat_v1']=vp3_music_chat_result_reference_v1($toolResult['music_chat_v1']);
     if(is_array($toolResult['music_chat_followup_v1']??null))$messageContext['music_chat_followup_v1']=$toolResult['music_chat_followup_v1'];
     if(is_array($toolResult['music_history_snapshot_v1']??null)){
@@ -1488,6 +1496,7 @@ $connectedPlayback=($toolResult['connected_site_context_v1']['provider']??null)=
     ?vp3_stoneward_chat_live_playback_v1($pdo,$user,$principal,$conversationId,$assistantMessageId,
         $toolResult['connected_site_context_v1']['connectionId'],$toolResult):[];
 return ($youtubeResults!==null?['youtube_results'=>$youtubeResults]:[])
+    +(is_array($toolResult['music_preferences_v1']??null)?['music_preferences_v1'=>$toolResult['music_preferences_v1']]:[])
     +(is_array($toolResult['music_history_v1']??null)?['music_history_v1'=>$toolResult['music_history_v1']]:[])
     +(is_array($toolResult['music_history_followup_v1']??null)?['music_history_followup_v1'=>$toolResult['music_history_followup_v1']]:[])
     +(is_array($toolResult['music_chat_v1']??null)?['music_chat_v1'=>$toolResult['music_chat_v1']]:[])
