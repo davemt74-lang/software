@@ -319,6 +319,12 @@
         resume.disabled = !item.play_available; controls.append(resume);
       }
       controls.append(add); row.append(controls); list.append(row);
+      if (item.play_available) window.VP3_MUSIC_PREFERENCES_V1?.attachItem(row, {
+        payload, item, selection:{kind:'history', source_message_id:payload.source_message_id,
+          revision:payload.revision, entry_ref:item.entry_ref},
+        current:() => current(record) && record.payload === payload && !record.retired,
+        onUnavailable:() => void read(record)
+      });
     });
     record.card.append(list);
     if (!payload.items.length) record.card.append(node('p', 'vp3-music-history-summary', 'No retained listening entries match these filters.'));

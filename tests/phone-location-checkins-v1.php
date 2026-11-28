@@ -25,7 +25,12 @@ try{
     reject(422,fn()=>$op('location_checkin',['visit_id'=>$visit,'learn'=>true]),'check-in needs explicit confirmation');
     reject(403,fn()=>vp3_phone_device_v1($db,$token,'location_checkin',['device_id'=>str_repeat('a',32),'generation'=>$d['generation'],'confirmed'=>true,'visit_id'=>$visit,'learn'=>true]),'another device identity is rejected');
     $body=['visit_id'=>$visit,'confirmed'=>true,'learn'=>false];$d=$op('location_checkin',$body);check($d['checkins']['active']['visit_id']===$visit,'explicit holder check-in starts one durable visit');
-    check($op('location_checkin',$body)['checkins']['active']===$d['checkins']['active'],'lost check-in acknowledgement does not duplicate the visit');
+    $replayedCheckin=$op('location_checkin',$body)['checkins']['active'];$firstCheckin=$d['checkins']['active'];
+    // Elapsed duration may advance across a second boundary; durable visit fields must not change.
+    check(array_diff_key($replayedCheckin,['duration_seconds'=>true])===array_diff_key($firstCheckin,['duration_seconds'=>true])
+        &&is_int($replayedCheckin['duration_seconds']??null)&&$replayedCheckin['duration_seconds']>=$firstCheckin['duration_seconds']
+        &&(int)vp3_phone_sql_v1($db,'SELECT COUNT(*) FROM vp3_phone_checkins_v1 WHERE owner_user_id=? AND device_id=?',[1,$id])->fetchColumn()===1,
+        'lost check-in acknowledgement preserves one durable visit while elapsed duration may advance');
     reject(409,fn()=>$op('location_checkin',['visit_id'=>bin2hex(random_bytes(16)),'confirmed'=>true,'learn'=>true]),'one active location per phone');
     check(vp3_location_specialist_checkin_context_v1($db,['id'=>1])===[],'unselected learning never becomes Curiosity evidence');
     $row=vp3_phone_row_v1($db,1,$id);$row['fix_at']=$now+10;$row['longitude']=-112.06;$row['accuracy']=400;

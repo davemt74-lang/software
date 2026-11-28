@@ -1743,16 +1743,17 @@
         ? 'foodmonster' : null,
       tool_receipt:raw.tool_receipt,
       sources:Array.isArray(raw.sources) ? raw.sources : [],
-      media:raw.music_chat_v1 || raw.music_history_v1 ? [] : Array.isArray(raw.media) ? raw.media : [],
+      media:raw.music_chat_v1 || raw.music_history_v1 || raw.music_preferences_v1 ? [] : Array.isArray(raw.media) ? raw.media : [],
       stem_media:Array.isArray(raw.stem_media) ? raw.stem_media : [],
       actions:Array.isArray(raw.actions) ? raw.actions : [],
       cards:Array.isArray(raw.cards) ? raw.cards : (Array.isArray(raw.cognitive_cards) ? raw.cognitive_cards : []),
       system_app_action_card:raw.system_app_action_card && typeof raw.system_app_action_card === 'object' ? raw.system_app_action_card : null,
       knowledge_actions_r9:raw.knowledge_actions_r9 || null,
       canvas_media:raw.canvas_media && typeof raw.canvas_media==='object' ? raw.canvas_media : null,
-      youtube_results:!raw.music_chat_v1 && !raw.music_history_v1 && raw.youtube_results && typeof raw.youtube_results==='object' ? raw.youtube_results : null,
+      youtube_results:!raw.music_chat_v1 && !raw.music_history_v1 && !raw.music_preferences_v1 && raw.youtube_results && typeof raw.youtube_results==='object' ? raw.youtube_results : null,
       music_chat_v1:raw.music_chat_v1 && typeof raw.music_chat_v1==='object' ? raw.music_chat_v1 : null,
       music_history_v1:raw.music_history_v1 && typeof raw.music_history_v1==='object' ? raw.music_history_v1 : null,
+      music_preferences_v1:raw.music_preferences_v1 && typeof raw.music_preferences_v1==='object' ? raw.music_preferences_v1 : null,
       profile_handoff:raw.profile_handoff && typeof raw.profile_handoff==='object' ? raw.profile_handoff : null,
       profile_call:raw.profile_call && typeof raw.profile_call==='object' ? raw.profile_call : null,
       phone_v1:raw.phone_v1 && typeof raw.phone_v1==='object' ? raw.phone_v1 : null,
@@ -4728,6 +4729,7 @@
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       if(message.role==='assistant'&&context.music_chat_v1)void window.VP3_MUSIC_CHAT_V1?.attach(renderedMessage,context.music_chat_v1,{live:false});
       if(message.role==='assistant'&&context.music_history_v1)void window.VP3_MUSIC_HISTORY_V1?.attach(renderedMessage,context.music_history_v1,{live:false});
+      if(message.role==='assistant'&&context.music_preferences_v1)void window.VP3_MUSIC_PREFERENCES_V1?.attach(renderedMessage,context.music_preferences_v1,{live:false});
       if (message.role==='user') bindPairedPhoneMessage(renderedMessage,context);
       if(message.role==='assistant')bindScreenInsightsV1(renderedMessage,context.screen_insights_v1);
       bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
@@ -4894,6 +4896,7 @@
       bindStoredMessagePa3(renderedMessage,message.id,message.role==='assistant'?context.profile_handoff:null,String(message.role||'unknown'),message.created_at);
       if(message.role==='assistant'&&context.music_chat_v1)void window.VP3_MUSIC_CHAT_V1?.attach(renderedMessage,context.music_chat_v1,{live:false});
       if(message.role==='assistant'&&context.music_history_v1)void window.VP3_MUSIC_HISTORY_V1?.attach(renderedMessage,context.music_history_v1,{live:false});
+      if(message.role==='assistant'&&context.music_preferences_v1)void window.VP3_MUSIC_PREFERENCES_V1?.attach(renderedMessage,context.music_preferences_v1,{live:false});
       if (message.role==='user') bindPairedPhoneMessage(renderedMessage,context);
       if(message.role==='assistant')bindScreenInsightsV1(renderedMessage,context.screen_insights_v1);
       bindFoodMonsterResultIcon(renderedMessage,context.connected_site_provider_v1);
@@ -5392,7 +5395,7 @@
         'assistant',
         data.answer,
         data.sources || [],
-        data.music_chat_v1 || data.music_history_v1 ? [] : data.media || [],
+        data.music_chat_v1 || data.music_history_v1 || data.music_preferences_v1 ? [] : data.media || [],
         data.playlist_title || '',
         data.stem_media || [],
         data.actions || [],
@@ -5400,12 +5403,13 @@
         data.system_app_action_card || null,
         data.knowledge_actions_r9 || null,
         data.canvas_media || null,
-        data.music_chat_v1 || data.music_history_v1 ? null : data.youtube_results || null
+        data.music_chat_v1 || data.music_history_v1 || data.music_preferences_v1 ? null : data.youtube_results || null
       );
       if(!existingReply)bindStoredMessagePa3(reply,data.assistant_message_id);
       if(!existingReply&&data.music_chat_v1)void window.VP3_MUSIC_CHAT_V1?.attach(reply,data.music_chat_v1,{live:data.replayed!==true});
       if(existingReply&&data.music_chat_v1?.history_operation)void window.VP3_MUSIC_CHAT_V1?.refreshMessage?.(reply);
       if(data.music_history_v1)void window.VP3_MUSIC_HISTORY_V1?.attach(reply,data.music_history_v1,{live:!existingReply&&data.replayed!==true});
+      if(data.music_preferences_v1)void window.VP3_MUSIC_PREFERENCES_V1?.attach(reply,data.music_preferences_v1,{live:!existingReply&&data.replayed!==true});
       if(!existingReply || data.connected_site_provider_v1==='foodmonster')bindFoodMonsterResultIcon(reply,data.connected_site_provider_v1);
       if(!existingReply&&data.replayed!==true&&data.connected_site_provider_v1==='stoneward'){
         bindConnectedSitePlayback(reply,data.connected_site_playback_v1,data.connected_site_queue_v1);
@@ -5438,7 +5442,7 @@
       if(autoAction){window.setTimeout(()=>{window.location.href=withStudioReturn(String(autoAction.url));},450);}
       const autoMediaAction=(data.actions||[]).find(action=>action && action.auto && action.type==='media_capture');
       if(autoMediaAction){window.setTimeout(()=>{window.StonefellowMediaStudio?.open(autoMediaAction.mode||'camera',Number(autoMediaAction.camera_index||0));},260);}
-      if (!existingReply && !data.music_chat_v1 && !data.music_history_v1 && data.media_playback) {
+      if (!existingReply && !data.music_chat_v1 && !data.music_history_v1 && !data.music_preferences_v1 && data.media_playback) {
         void window.STONEFELLOW_CHAT_CONTINUITY?.applyMediaPlayback?.(data.media_playback,reply);
       }
 

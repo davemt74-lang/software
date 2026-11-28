@@ -37,7 +37,7 @@ class Media extends Node {
   pause() { this.paused=true;this.emit('pause'); }
 }
 const config={endpoint:'/api/music-chat-v1.php',userId:11,agentId:7,csrf:'fixture'};
-const requests=[],starts=[],payloads=new Map(),denied=new Set(),storage=new Map();
+const requests=[],starts=[],skips=[],payloads=new Map(),denied=new Set(),storage=new Map();
 let nextId=0,currentConversation=42,resolveGate=null;
 const scope={owner_user_id:11,agent_id:7,conversation_id:42};
 const id=()=> (++nextId).toString(16).padStart(32,'0');
@@ -49,13 +49,16 @@ function payload(items,{intent='show',automatic=false}={}) {
 }
 const native=[];let yt=null;
 const window={VP3_MUSIC_CHAT_CONFIG_V1:config,STONEFELLOW_CHAT:{userId:11,agentId:7,csrf:'fixture'},
+  VP3_MUSIC_PREFERENCES_V1:{attachItem(){},openSaved(){},recordSkip(payload,selection,receipt){
+    skips.push(JSON.parse(JSON.stringify({payload:payload.result_id,selection,receipt})));}},
+  VP3MusicListeningV1:{attach(audio){return {receipt:()=>({kind:'n',id:String(native.indexOf(audio)+1)})};}},
   VP3ParticipantContinuity:{selectedContext:()=>null},addEventListener(type,callback){(events[type]??=[]).push(callback);},
   STONEFELLOW_CHAT_CONTINUITY:{conversationId:()=>currentConversation,async applyMediaPlayback(action,message,options){
     if(!options.current())return false;
     const audio=new Media(action.track_id);body.append(audio);native.push(audio);starts.push('vp3:'+action.track_id);
     options.onReady(audio);await audio.play();return true;
   }},VP3_CHAT_YOUTUBE_V1:{pauseForMusic(){yt?.pause();},playMusic(host,button,result,observer){
-    const current={id:result.item.source_id,playing:false,pause(){this.playing=false;observer.onState('paused');},
+    const current={id:result.item.source_id,playing:false,receipt:()=>({kind:'y',id:'11111111-1111-4111-8111-111111111111'}),pause(){this.playing=false;observer.onState('paused');},
       resume(){this.playing=true;window.VP3_MUSIC_CHAT_V1.claimSource('youtube',{musicToken:observer.token});observer.onState('playing');},
       stop(){this.playing=false;if(yt===this)yt=null;observer.onState('stopped');},end(){this.playing=false;observer.onState('ended');}};
     yt=current;starts.push('youtube:'+current.id);current.resume();return current;
@@ -84,6 +87,7 @@ const activeNative=()=>native.filter(audio=>!audio.paused).map(audio=>audio.data
 const source=payload([['vp3','41']],{intent:'play',automatic:true});
 const first=await attach(source);
 assert.equal(music.isPlaying(),true);
+assert.equal(skips.length,0,'An actual start alone is not a deliberate skip');
 assert.equal(music.command('Play the next one'),'next','A relative follow-up controls the active music queue');
 assert.equal(music.command('Please play the previous track'),'previous','Previous follows the active queue through typed or voice commands');
 assert.equal(music.command('Play "The Next One"'),null,'A quoted song title remains a catalog request');
@@ -96,20 +100,26 @@ await attach(inserted);
 assert.deepEqual(starts,['vp3:41'],'Play-next does not interrupt current playback');
 await music.runCommand(music.command('Play the next one'));
 assert.equal(starts.at(-1),'vp3:42','Play-next inserts after current song');
+assert.deepEqual(skips[0],{payload:source.result_id,selection:{kind:'result',result_id:source.result_id,revision:source.revision,index:0},receipt:{kind:'n',id:'1'}},
+  'Explicit Next binds the exact prior selection and acknowledged receipt');
 await music.runCommand('next');
+assert.equal(skips.length,2,'Two distinct deliberate advances emit two prior-play receipts');
 assert.equal(starts.at(-1),'youtube:video000001','Append retains its tail position');
 assert.deepEqual(activeNative(),[],'YouTube pauses native audio');
 await music.runCommand(music.command('Play the previous track'));
 assert.equal(starts.at(-1),'vp3:42','Previous restores the same stored entry');
 assert.equal(yt,null,'Native takeover stops YouTube');
+assert.equal(skips.length,2,'Previous does not create a negative taste signal');
 const beforeEnd=starts.length;
 native.at(-1).emit('ended');native.at(-1).emit('ended');await settle();
 assert.equal(starts.length,beforeEnd+1,'Duplicate end notifications advance once');
 assert.equal(starts.at(-1),'youtube:video000001');
+assert.equal(skips.length,2,'Natural completion and duplicate end notifications never become deliberate skips');
 const beforeRestore=requests.filter(row=>row.action==='resolve').length;
 await attach(added);await attach(added,false);
 assert.equal(requests.filter(row=>row.action==='resolve').length,beforeRestore,'Duplicate and restored queue action remain quiet');
 await music.runCommand('stop');
+assert.equal(skips.length,2,'Stop and source restoration do not become skips');
 assert.equal(music.command('Play the next one'),null,'Without an active music queue the existing scoped continuation route owns next');
 const ready=payload([['vp3','41'],['youtube','video000002']],{intent:'queue_append',automatic:true});
 const readyCard=await attach(ready);
@@ -130,6 +140,7 @@ denied.clear();
 await music.runCommand('resume');
 assert.equal(readyCard.status.dataset.musicState,'playing','Authorized native resume can play after the failure');
 await music.runCommand('next');assert.equal(starts.at(-1),'youtube:video000002');
+assert.equal(skips.length,3,'A new actual playing observation re-enables deliberate skip evidence after recovery');
 denied.add('video000002');
 const deniedResponse=await music.runCommand('resume');
 assert.doesNotMatch(deniedResponse.answer,/^Resuming/);
@@ -138,6 +149,7 @@ yt.pause();
 assert.equal(readyCard.status.dataset.musicState,'unavailable','A late YouTube pause preserves the rejected resume failure');
 assert.equal(music.isPlaying(),false);denied.clear();
 await music.runCommand('stop');
+assert.equal(skips.length,3,'Unavailable playback never emits skip feedback');
 let release;
 resolveGate=new Promise(resolve=>{release=resolve;});
 const stale=payload([['vp3','42']],{intent:'play',automatic:true});
@@ -149,6 +161,16 @@ resolveGate=new Promise(resolve=>{release=resolve;});
 const staleAppend=payload([['youtube','video000003']],{intent:'queue_append',automatic:true});
 const pendingAppend=attach(staleAppend);await settle();await music.runCommand('stop');release();await pendingAppend;resolveGate=null;
 assert.equal(music.command('play queue'),null,'Stopping during queue admission discards the late addition');
+const failureQueue=payload([['vp3','41'],['youtube','video000004'],['vp3','42']],{intent:'queue_append',automatic:true});
+await attach(failureQueue);
+denied.add('41');await music.runCommand('resume');await music.runCommand('pause');
+const skippedBeforeFailure=skips.length;
+await music.runCommand('next');
+assert.equal(skips.length,skippedBeforeFailure,'Pause after an unavailable start cannot turn a failed attempt into a skip');
+await music.runCommand('pause');await music.runCommand('next');
+assert.equal(skips.length,skippedBeforeFailure+1,'A deliberate Next after pausing acknowledged playback preserves the actual prior-play signal');
+assert.equal(skips.at(-1).receipt.kind,'y','The YouTube adapter supplies its own canonical receipt kind');
+await music.runCommand('stop');denied.clear();
 for(const callback of events['stonefellow:chat-context-changing']??[])callback();
 assert.equal(body.querySelectorAll('.vp3-music-chat').length,0,'Context change removes all private cards');
 console.log('MUSIC_CHAT_CONTROLLER=PASS · exact mixed queue, append/next/previous, quiet readiness/replay, source ownership, revoked resume and late-response cancellation');

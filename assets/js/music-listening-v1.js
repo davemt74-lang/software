@@ -138,6 +138,7 @@
       if (result.ok && accepted(result.data, play, outgoing, start)) {
         if (start) {
           play.token = result.data.session_token;
+          play.sessionId = result.data.session_id;
           if (active === play && !play.terminal && !detached) notify('onStart', result.data);
         } else {
           play.queue.shift();
@@ -320,6 +321,11 @@
     listen('emptied', () => finish('stop'));
     const api = Object.freeze({
       flush,
+      // Opaque history address only. The server still rechecks the owner,
+      // current source and exact selected song; no bearer token leaves here.
+      receipt: () => active && !detached && !active.failed && !active.terminal && current()
+        && Number.isSafeInteger(active.sessionId) && active.sessionId > 0
+        ? {kind:'n', id:String(active.sessionId)} : null,
       stop: (beacon = false) => finish('stop', beacon),
       resetClock: () => {
         if (!active) return;

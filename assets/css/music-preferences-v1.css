@@ -1,0 +1,29 @@
+.vp3-music-preferences{margin-top:10px;padding-top:10px;border-top:1px solid #e5ebf0;min-width:0;max-width:100%;color:#24384e;overflow-wrap:anywhere}
+.vp3-music-preferences [hidden]{display:none!important}
+.vp3-music-preference-choices{display:flex;flex-wrap:wrap;align-items:center;gap:7px}
+.vp3-music-preferences button{min-height:44px;min-width:44px;max-width:100%;padding:9px 13px;border:1px solid #c6d2df;border-radius:9px;background:#fff;color:#24384e;font:inherit;font-size:.85rem;font-weight:600;line-height:1.3;cursor:pointer}
+.vp3-music-preferences button:hover:not(:disabled){background:#edf3fa;border-color:#8fa9c7}
+.vp3-music-preferences button[aria-pressed=true]{background:#e9f2ed;border-color:#5b9270;color:#285a3a}
+.vp3-music-preferences button[data-music-preference=dislike][aria-pressed=true]{background:#f6eeeb;border-color:#ad8071;color:#754b3e}
+.vp3-music-preferences button:disabled{opacity:.5;cursor:default}
+.vp3-music-preferences button:focus-visible{outline:3px solid #91b8ed;outline-offset:2px}
+.vp3-music-preference-status{margin:7px 0 0;font-size:.8rem;line-height:1.45;color:#526174}
+.vp3-music-preference-status[data-preference-status=error]{color:#815514}
+.vp3-music-preferences-panel{margin:16px 0;padding:16px;border:1px solid #d8e0e7;border-radius:14px;background:#fff;color:#17202c;min-width:0;max-width:100%;box-sizing:border-box;overflow-wrap:anywhere}
+.vp3-music-preferences-panel [hidden]{display:none!important}
+.vp3-music-preferences-heading{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px}
+.vp3-music-preferences-heading h3{margin:0;font-size:1.05rem;line-height:1.4}
+.vp3-music-preferences-panel button,.vp3-music-preferences-launch{min-height:44px;min-width:44px;max-width:100%;padding:9px 13px;border:1px solid #c6d2df;border-radius:9px;background:#fff;color:#24384e;font:inherit;font-size:.85rem;font-weight:600;line-height:1.3;cursor:pointer}
+.vp3-music-preferences-launch{margin:10px 0 0 8px}
+.vp3-music-preferences-panel button:disabled{opacity:.5;cursor:default}
+.vp3-music-preferences-panel button:hover:not(:disabled),.vp3-music-preferences-launch:hover{background:#edf3fa;border-color:#8fa9c7}
+.vp3-music-preferences-panel button:focus-visible,.vp3-music-preferences-panel select:focus-visible,.vp3-music-preferences-launch:focus-visible{outline:3px solid #91b8ed;outline-offset:2px}
+.vp3-music-preferences-note{margin:10px 0;font-size:.86rem;line-height:1.5;color:#465c74}
+.vp3-music-preferences-filter{display:grid;gap:6px;max-width:280px;margin:12px 0;font-size:.86rem;line-height:1.4}
+.vp3-music-preferences-filter select{min-height:44px;width:100%;max-width:100%;padding:9px 10px;border:1px solid #c6d2df;border-radius:8px;background:#fff;color:#17202c;font:inherit}
+.vp3-music-preferences-list{list-style:none;margin:0;padding:0}
+.vp3-music-preferences-saved-item{border-top:1px solid #e5ebf0;padding:14px 0;min-width:0}
+.vp3-music-preferences-saved-item>strong,.vp3-music-preferences-artist,.vp3-music-preferences-source{display:block;line-height:1.45;margin-bottom:4px}
+.vp3-music-preferences-artist,.vp3-music-preferences-source{font-size:.83rem;color:#526174}
+.vp3-music-preferences-pages{display:flex;flex-wrap:wrap;gap:8px;padding-top:12px;border-top:1px solid #d8e0e7}
+@media(max-width:520px){.vp3-music-preference-choices{gap:6px}.vp3-music-preferences button{padding:9px 11px}}

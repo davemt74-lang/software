@@ -96,6 +96,10 @@ jobs:
             "music_history_sources": ["vp3", "youtube"],
             "music_history_coverage": "retained_owner_receipts_v1",
             "music_history_upgrade_note": "docs/MUSIC-HISTORY-DEPLOY.txt",
+            "music_preferences_protocol": "vp3_music_preferences_v1",
+            "music_preferences_sources": ["vp3", "youtube"],
+            "music_preferences_evidence": "explicit-taste-separated-from-observation-v1",
+            "music_preferences_upgrade_note": "docs/MUSIC-PREFERENCES-DEPLOY.txt",
             "music_upgrade_note": "docs/MUSIC-CATALOG-LISTENING-DEPLOY.txt",
             "phone_agent_email_calls": "owner-consented-v1",
             "phone_agent_email_call_delivery_default": "off",
@@ -184,6 +188,13 @@ jobs:
           test -f _deploy/assets/js/music-history-v1.js
           test -f _deploy/assets/css/music-history-v1.css
           test -f _deploy/docs/MUSIC-HISTORY-DEPLOY.txt
+          test -f _deploy/includes/music-preferences-v1.php
+          test -f _deploy/includes/music-preferences-chat-v1.php
+          test -f _deploy/includes/agent-media-preferences-v1.php
+          test -f _deploy/api/music-preferences-v1.php
+          test -f _deploy/assets/js/music-preferences-v1.js
+          test -f _deploy/assets/css/music-preferences-v1.css
+          test -f _deploy/docs/MUSIC-PREFERENCES-DEPLOY.txt
           test -s _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/assets/twilio-voice-LICENSE.txt
           test -f _deploy/includes/phone-workspace-v1.php

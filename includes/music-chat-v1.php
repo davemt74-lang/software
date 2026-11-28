@@ -183,7 +183,7 @@ function vp3_music_chat_parse_v1(string $request): ?array
 }
 
 /** Deterministic source ranking is applied before the global result-count limit. */
-function vp3_music_chat_rank_v1(array $items,array $plan): array
+function vp3_music_chat_rank_v1(array $items,array $plan,?array $preferences=null): array
 {
     $query=vp3_music_chat_words_v1((string)$plan['query']);
     $terms=$query===''?[]:explode(' ',$query);
@@ -221,11 +221,22 @@ function vp3_music_chat_rank_v1(array $items,array $plan): array
             // YouTube's bounded current provider search is a relevance signal for descriptive queries.
             if($query!==''&&$score===0&&$item['source']!=='youtube')continue;
         }
-        $ranked[]=['item'=>$item,'score'=>$score,'order'=>$order];
+        $preferenceScore=0.0;
+        if(empty($plan['exact'])&&($preferences['ready']??false)===true){
+            $signal=$preferences['items'][$key]??null;
+            if(!is_array($signal)||($signal['preference']??null)==='dislike')continue;
+            $preferenceScore=(($signal['preference']??null)==='like'?1000.0:0.0)
+                +min(20,max(0,(int)($signal['measured_plays']??0))*2)
+                +min(10,max(0,(float)($signal['measured_seconds']??0))/180)
+                -min(6,max(0,(int)($signal['deliberate_skips']??0))*1.5);
+        }
+        $ranked[]=['item'=>$item,'score'=>$score,'preference_score'=>$preferenceScore,'order'=>$order];
     }
     usort($ranked,static function(array $a,array $b):int{
         $score=$b['score']<=>$a['score'];
         if($score!==0)return $score;
+        $preference=$b['preference_score']<=>$a['preference_score'];
+        if($preference!==0)return $preference;
         $source=(($a['item']['source']==='vp3')?0:1)<=>(($b['item']['source']==='vp3')?0:1);
         return $source!==0?$source:$a['order']<=>$b['order'];
     });
@@ -465,11 +476,18 @@ function vp3_music_chat_execute_v1(PDO $pdo,array $user,array $principal,int $ci
         }
         $native=vp3_music_chat_rank_v1($items,$plan);
         if($plan['requires_match']&&$native===[])return null;
+        $verifiedProviderItems=[];
         if($plan['source']!=='vp3'&&!$plan['requires_match']){
             $youtube=vp3_music_chat_youtube_items_v1($pdo,$live,$current,$cid,$plan,$authority,$http);
+            $verifiedProviderItems=$youtube['items'];
             $items=[...$items,...$youtube['items']];$coverage[]=$youtube['coverage'];
         }
-        $ranked=vp3_music_chat_rank_v1($items,$plan);
+        $preferences=null;
+        if(empty($plan['exact'])&&vp3_media_playback_history_allowed_v1($pdo,$live,$current)){
+            require_once __DIR__.'/music-preferences-v1.php';
+            if(vp3_music_preferences_ready_v1($pdo))$preferences=vp3_music_preferences_snapshot_v1($pdo,$live,(int)$current['agent_id'],$cid,$items,$verifiedProviderItems);
+        }
+        $ranked=vp3_music_chat_rank_v1($items,$plan,$preferences);
         $ambiguous=false;
         if(!empty($plan['exact'])&&count($ranked)>1){
             $topTitle=vp3_music_chat_words_v1($ranked[0]['title']);

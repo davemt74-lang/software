@@ -32,9 +32,27 @@ function vp3_media_youtube_attributed_artist_v1(array $context,string $query): ?
 function vp3_media_youtube_play_analysis_v1(PDO $pdo,array $scope,DateTimeImmutable $now,?array $selected=null): array
 {
     [$candidates,$artistVideos]=vp3_media_youtube_play_candidates_v1($pdo,$scope,$now);
-    $candidates=$selected===null?array_slice($candidates,0,1,true):array_intersect_key($candidates,$selected);
-    return array_values(array_map(static fn(array $candidate):array=>
-        vp3_media_youtube_play_finding_v1($candidate,$artistVideos),$candidates));
+    if($selected!==null)$candidates=array_intersect_key($candidates,$selected);
+    if(!$candidates)return [];
+    require_once __DIR__.'/agent-media-preferences-v1.php';
+    $preferences=vp3_media_preferences_ready_v1($pdo)?vp3_media_preferences_read_v1($pdo,$scope['user'],$scope['agent_id'],$scope['conversation_id'],
+        vp3_media_preferences_candidates_v1(array_column($candidates,'play'),'youtube')):['ready'=>false];
+    $findings=[];
+    foreach($candidates as $candidate){
+        $signal=null;
+        if(($preferences['ready']??false)===true){
+            $signal=$preferences['items']['youtube:'.$candidate['play']['video_id']]??null;
+            if(!is_array($signal)||($signal['preference']??null)==='dislike')continue;
+        }
+        $finding=vp3_media_youtube_play_finding_v1($candidate,$artistVideos);
+        if($signal!==null){
+            $finding['summary'].=' '.vp3_media_preferences_text_v1($signal['reason']??'');
+            $finding['preference_revision']=$signal['preference_revision'];
+        }
+        $findings[]=$finding;
+        if($selected===null)break;
+    }
+    return $findings;
 }
 
 /** Reuse the play receipt and current provider metadata for every projection. */

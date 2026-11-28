@@ -1,0 +1,55 @@
+MC3 — Private music preferences and evidence-based suggestions
+
+Use the original official full Cloud deployment ZIP from the qualified main
+commit. The implementation PR records its exact source, all applicable PR/main
+checks, original archive SHA-256, full source inventory and generated manifest.
+
+1. Make matching backups of the installed code, database, configuration,
+   private data and uploaded media through your normal deployment procedure.
+2. Install the full package at the application root. Preserve config.php,
+   environment files, private/ and uploads/. These runtime files are excluded
+   from the official archive.
+3. Run the normal explicit Database Upgrade once. MC3 adds the owner-private
+   music_preferences_v1, music_preference_requests_v1 and
+   music_deliberate_skips_v1 tables. Existing MC1/MC2, Phone, Canvas and Gmail
+   prerequisites remain in the shared additive upgrade path. Ordinary history,
+   preference and Chat reads do not install tables.
+4. Open Player > Music preferences, or show listening history and use Like,
+   Dislike and Clear beside an available item. Test a native and an authorized
+   YouTube item. Clear an unavailable saved choice using its private list row.
+5. In private Agent Chat, try: Show my listening history; I like the second
+   song; Show my music preferences. A phrase such as I like this song requires
+   one unambiguous displayed item. Exact numbered choices and current access
+   are verified again before they are saved.
+6. Verify one relevant Media/Entertainment report or suggestion. Its stated
+   reason must distinguish explicit taste from bounded listening evidence.
+   A disliked item is excluded from recommendations, while an exact explicit
+   request can still play it. Existing cooldown, permission and reply rules
+   govern any proactive offer.
+
+Source boundaries
+
+There are exactly two music sources: VP3 native media and YouTube. Stoneward is
+the VP3 catalog distributor and needs no MC3 client update. YouTube history is
+observed inside VP3, with existing consent, capture and metadata expiry. It is
+not lifetime Google account history. Consent renewal does not restore old taste.
+
+Only explicit Like/Dislike is a stated preference. Short or failed playback,
+unplayed results, declined offers and automatic endings are not dislikes.
+Deliberate Next is a separate weak signal only when the coordinated player has
+an acknowledged current canonical receipt. Reads examine up to 200 retained
+candidate receipts from the last 30 days; the UI/context disclose the limit.
+
+Recovery
+
+If the application reports upgrade_required, complete the explicit upgrade;
+do not add schema installation to a request handler. Restore matching backups
+through the established recovery procedure if installation fails. Additive MC3
+tables may remain when rolling code back; do not delete historical listening
+tables to reset a preference. Use Clear for a saved choice.
+
+Evidence limits
+
+Release tests use production handlers and SQL with deterministic external
+provider/iframe/speech doubles. The build does not perform live-host deployment,
+production migration, physical-phone playback or live-account certification.
