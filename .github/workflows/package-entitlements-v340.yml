@@ -238,6 +238,7 @@ jobs:
           php tests/phone-assigned-entrypoints-v1.php
           php tests/phone-browser-workspace-v1.php
           php tests/phone-browser-workspace-v1.php global-context
+          php tests/phone-browser-workspace-v1.php call-continuity
           php tests/phone-tracking-chat-v1.php global-activity
           php tests/operator-schedule-calendar-v1.php
           php tests/operator-outreach-v1.php
@@ -347,6 +348,7 @@ jobs:
         run: |
           php tests/phone-browser-workspace-v1.php
           php tests/phone-browser-workspace-v1.php global-context
+          php tests/phone-browser-workspace-v1.php call-continuity
       - name: Consented Agent conversation and revocation on native MySQL
         env:
           VP3_PHONE_MYSQL_DSN: mysql:host=127.0.0.1;port=3306;dbname=phone_participation_test;charset=utf8mb4
@@ -412,6 +414,8 @@ jobs:
           node tests/agent-phone-shell-browser-v1.mjs
           node tests/member-transcriptions-browser-v1.mjs
           node tests/admin-standard-header-browser-v1.mjs
+          node tests/phone-call-continuity-browser-v1.mjs
+          node tests/canvas-phone-chat-browser-v1.mjs
       - uses: actions/upload-artifact@v4
         if: always()
         with:

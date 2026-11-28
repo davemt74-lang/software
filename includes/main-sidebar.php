@@ -322,15 +322,19 @@ if ($mainSidebarRenderAgentVoiceAssets) $mainSidebarAgentVoiceMenuBuild .= '-'.s
 <?php if ($mainSidebarCodingCanvas): ?>
 <script>window.VP3_CODING_CANVAS_V1=<?= json_encode([
     'endpoint' => url('/api/coding-canvas-v1.php'), 'csrf' => csrf_token(),
+    'usageUrl' => url('/ai-usage.php'),
     'artworkEndpoint' => url('/api/coding-canvas-artwork-v1.php'),
     'iconEndpoint' => url('/api/coding-canvas-icon-v1.php'),
 ], JSON_HEX_TAG|JSON_HEX_AMP|JSON_HEX_APOS|JSON_HEX_QUOT|JSON_UNESCAPED_SLASHES) ?>;</script>
 <script src="<?= e(url('/coding-canvas-thumbnail-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-thumbnail-v1.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/coding-canvas-icon-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-icon-v1.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/coding-canvas-runtime-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-runtime-v1.js'), 0, 12))) ?>" defer></script>
+<script src="<?= e(url('/coding-canvas-workflow-runtime-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-workflow-runtime-v1.js'), 0, 12))) ?>" defer></script>
+<script src="<?= e(url('/coding-canvas-workflow-editor-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-workflow-editor-v1.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/coding-canvas-diff-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-diff-v1.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/assets/vendor/acorn-8.19.0.js?v='.substr(hash_file('sha256', __DIR__.'/../assets/vendor/acorn-8.19.0.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/coding-canvas-source-editor-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-source-editor-v1.js'), 0, 12))) ?>" defer></script>
+<script src="<?= e(url('/coding-canvas-live-source-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../coding-canvas-live-source-v1.js'), 0, 12))) ?>" defer></script>
 <script src="<?= e(url('/chat-coding-canvas-v1.js?v='.substr(hash_file('sha256', __DIR__.'/../chat-coding-canvas-v1.js'), 0, 12))) ?>" defer></script>
 <?php endif; ?>
 <?php if ($mainSidebarIsChat): ?><script data-chat-rail-controls-v132 src="<?= e(url('/chat-rail-controls-v132.js?v='.substr(hash_file('sha256', __DIR__.'/../chat-rail-controls-v132.js'), 0, 12))) ?>" defer></script><?php endif; ?>

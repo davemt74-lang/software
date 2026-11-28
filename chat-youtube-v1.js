@@ -270,7 +270,7 @@
     watch.hidden = !reason || reason === 'next';
   }
 
-  function playVideo(row, button, video, title, messageId, suggestion, {playlistId='',queue=[],index=-1,musicToken='',onMusicState=null,resumeFromHistory=true}={}) {
+  function playVideo(row, button, video, title, messageId, suggestion, {playlistId='',queue=[],index=-1,musicToken='',onMusicState=null,resumeFromHistory=true,resumeAtMs=null}={}) {
     const videoId = video.video_id;
     if (document.hidden || window.VP3ParticipantContinuity?.selectedContext() || activePlayer?.button === button) return;
     stopPlayer();
@@ -387,6 +387,15 @@
         }});
       }).catch(() => { if(activePlayer===active)musicState(active,'blocked'); }); // The native iframe controls remain available.
     };
+    // A selected historical listen supplies its own freshly authorized position.
+    // It must never be replaced by the latest cached position for the same video.
+    if (resumeAtMs !== null) {
+      if (!validPosition(resumeAtMs) || !config.resumeCapture || !canCapture(active, active.play)) {
+        stopPlayer(); return null;
+      }
+      mount(resumeAtMs);
+      return active;
+    }
     const known = resumeFromHistory ? positions.get(videoId) ?? video.resume_ms : 0;
     if (!config.resumeCapture || !canCapture(active,active.play) || validPosition(known)) {
       mount(config.resumeCapture && canCapture(active,active.play) ? known : 0);
@@ -859,14 +868,15 @@
     const video = Array.isArray(videos) && videos.length === 1 ? videos[0] : null;
     const messageId = Number(resolved?.source_message_id || result?.source_message_id || 0);
     const playlistId = resolved?.youtube_playlist_id || result?.playlist_id || '';
+    const resumeAtMs = resolved?.resume_ms === undefined ? null : resolved.resume_ms;
     if (!host?.isConnected || !button?.isConnected || !video || !videoIdPattern.test(video.video_id || '')
         || typeof video.made_for_kids !== 'boolean' || !Number.isSafeInteger(result.expires_at)
         || result.expires_at * 1000 <= Date.now() || !Number.isSafeInteger(messageId) || messageId < 1
-        || playlistId && !playlistIdPattern.test(playlistId) || document.hidden
+        || playlistId && !playlistIdPattern.test(playlistId) || resumeAtMs !== null && !validPosition(resumeAtMs) || document.hidden
         || window.VP3ParticipantContinuity?.selectedContext?.()) return null;
     const active = playVideo(host, button, video, typeof video.title === 'string' ? video.title : 'YouTube selection',
       messageId, false, {playlistId, musicToken:String(observer.token || ''),
-        onMusicState:observer.onState, resumeFromHistory:false});
+        onMusicState:observer.onState, resumeFromHistory:false, resumeAtMs});
     if (!active) return null;
     return {
       pause() { if(activePlayer===active)pauseForMusic(); },

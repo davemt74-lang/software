@@ -39,6 +39,20 @@ ML2A extends the same gate with real native listening HTTP authority checks, SQL
 
 Future Music listening, metadata and provider regressions should extend this same feature gate. ML1 is its initial coverage, not a reason to add a permanent workflow for each later phase or reactivate the archived social/music workflow. Keep the reviewed filename in the consolidation allowlist. The governance check also protects the path filter, configured native MySQL check and desktop/phone browser acceptance from accidental removal or advisory-only execution.
 
+## Music Chat and personal history gate
+
+The existing music-chat-v1.yml feature gate covers MC1 music requests/private
+playlists and MC2 retained personal history and Agent recall. MC2 extends this
+reviewed gate instead of adding another permanent workflow. Both suites retain
+PHP 8.1/8.3 compatibility, native prepared MySQL, real PHP HTTP and typed/voice
+checks. The same Chromium/WebKit matrix runs both browser suites and publishes
+separate Chat and history screenshot artifacts.
+
+History's source paths are included in both PR and main triggers. The governance
+check requires the history SQLite/MySQL, HTTP/runtime and browser commands while
+preserving every MC1 guard. Production Deploy remains the sole full Cloud artifact
+authority.
+
 ## Historical phases
 
 Historical YAML definitions are stored in `.github/workflow-archive/`. The test files they reference remain in `tests/`; they have not been deleted.

@@ -45,7 +45,7 @@ const server=http.createServer(async(req,res)=>{
  res.setHeader('Set-Cookie','fixture_owner='+account+'; Path=/; SameSite=Lax');res.setHeader('Content-Type','text/html');
  const config={endpoint:'/api/phone-workspace-v1.php',urlbase:'/',owner_id:account,agent_id:0,conversation_id:chat?contexts.get(account)||0:0,csrf:'csrf-'+account,
   global_surface:!chat,context_endpoint:'/api/agent-phone-shell-v1.php',attention_binding:'binding-'+account,sdk_url:'/assets/twilio-voice-2.18.5.min.js',sdk_integrity:integrity};
- const bridge={endpoint:'/api/agent-phone-shell-v1.php',owner_id:account,csrf:'csrf-'+account,binding:'binding-'+account,enabled:!chat,admin_surface:admin,
+ const bridge={endpoint:'/api/agent-phone-shell-v1.php',owner_id:account,csrf:'csrf-'+account,binding:'binding-'+account,enabled:true,admin_surface:admin,
   voice_enabled:true,voice_script:'/fixture-premium.js',drawer_script:'/chat-notifications-drawer-v240.js',notifications_endpoint:'/api/notifications',chat_endpoint:'/api/chat.php'};
  res.end(`<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><link rel="stylesheet" href="/phone-workspace-v1.css"><link rel="stylesheet" href="/agent-orb.css"><link rel="stylesheet" href="/agent-composer-v1.css"><style>body{font:14px system-ui;margin:0}header{padding:12px;display:flex;justify-content:flex-end}main{padding:20px}</style>
  <header class="${admin?'admin-page-actions':'chat-topbar-actions'}">${admin?'':'<button data-phone-workspace-toggle aria-label="Phone">Phone</button>'}</header><main><h1>${admin?'Admin settings':'Phone Tracking'}</h1>${chat?'<div id="chatThread"></div><form id="chatForm"><textarea id="chatInput"></textarea></form>':''}</main>
@@ -80,8 +80,10 @@ try{
  await check('a Chat popup shares the parent phone runtime without a duplicate device',async()=>{assert.equal(await page.evaluate(()=>phoneTest.devices.length),1);assert.equal(await page.frameLocator('iframe').locator('.vp3-phone-workspace').count(),0);});
  await card.getByRole('button',{name:'End call',exact:true}).click();
  notices=[{id:1,message_id:50,conversation_id:10,agent_id:0,speech:'A connected phone sent a chat message.',url:'/notifications.php?open=1'}];
+ await page.evaluate(()=>{const overlay=document.createElement('dialog');overlay.id='fixtureEditor';overlay.innerHTML='<h2>Open editor</h2><textarea aria-label="Unsent editor note">Keep this draft</textarea>';document.body.append(overlay);overlay.showModal();});
  await page.evaluate(()=>VP3AgentPhoneShellV1.refresh());await card.getByRole('link',{name:'Open Chat'}).waitFor();
- await check('connected-phone activity announces in Admin and links the durable personal Chat notice',async()=>{assert.equal(await card.getByRole('link',{name:'Open Chat'}).getAttribute('href'),base+'/notifications.php?open=1');await page.waitForFunction(()=>window.spoken?.length===1);assert.equal(await page.evaluate(()=>activity.length),1);});
+ await check('connected-phone activity announces behind an Admin editor overlay and links the durable personal Chat notice',async()=>{assert.equal(await card.getByRole('link',{name:'Open Chat'}).getAttribute('href'),base+'/notifications.php?open=1');await page.waitForFunction(()=>window.spoken?.length===1);assert.equal(await page.evaluate(()=>activity.length),1);assert.equal(await page.getByLabel('Unsent editor note').inputValue(),'Keep this draft');assert.equal(await page.evaluate(()=>document.getElementById('fixtureEditor').open),true);});
+ await page.evaluate(()=>document.getElementById('fixtureEditor').close());
  await page.evaluate(()=>VP3AgentPhoneShellV1.refresh());assert.equal(await page.evaluate(()=>activity.length),1);
  await page.reload();await page.bringToFront();await page.waitForFunction(()=>window.phoneTest?.devices.length===1);await page.evaluate(()=>VP3AgentPhoneShellV1.refresh());
  await check('page changes do not repeat an already announced unread event',async()=>{assert.equal(await page.evaluate(()=>activity.length),0);assert.equal(await page.evaluate(()=>spoken.length),0);});
@@ -93,6 +95,15 @@ try{
  await check('phone controls fit 320px and 390px screens',async()=>{assert.deepEqual(errors,[]);});
  await page.goto(base+'/admin/fullscreen.php?owner=1');await page.getByRole('button',{name:'Phone',exact:true}).click();
  await check('fullscreen Admin keeps Phone in its header without public Agent controls',async()=>{await page.getByRole('button',{name:'Enable calls in this browser',exact:true}).waitFor();assert.equal(await page.locator('.admin-page-actions [data-phone-workspace-toggle]').count(),1);assert.equal(await page.locator('.vp3-personal-phone-launcher,.vp3-orb-bar,.vp3-orb-root,.chat-transcription-canvas-button').count(),0);});
+ notices=[];await page.goto(base+'/chat.php?owner=1');await page.bringToFront();
+ await page.evaluate(()=>{window.spoken=[];window.STONEFELLOW_NOTIFICATION_CENTER={announceWhen:(text,allowed)=>{if(allowed())spoken.push(text);}};document.querySelector('#chatInput').value='Unsent current Chat draft';});
+ notices=[{id:2,message_id:60,conversation_id:777,agent_id:7,speech:'A connected phone sent a chat in another conversation.',url:'/notifications.php?open=2'}];
+ await page.evaluate(()=>VP3AgentPhoneShellV1.refresh());
+ await check('main Chat announces phone activity from a separate conversation without replacing the current draft',async()=>{await page.waitForFunction(()=>spoken.length===1);assert.equal(await page.locator('#chatInput').inputValue(),'Unsent current Chat draft');assert.equal(new URL(page.url()).pathname,'/chat.php');assert.equal(await page.evaluate(()=>activity.at(-1).conversation_id),777);});
+ await page.evaluate(()=>{const frame=document.createElement('iframe');frame.src='/chat.php?orb_embed=1';document.body.append(frame);});await page.waitForFunction(()=>document.querySelector('iframe')?.contentWindow.VP3AgentPhoneShellV1);
+ notices.push({id:3,message_id:61,conversation_id:778,agent_id:7,speech:'Another phone update while a Chat popup is open.',url:'/notifications.php?open=3'});
+ await page.evaluate(()=>VP3AgentPhoneShellV1.refresh());
+ await check('an embedded Chat delegates personal announcements to its same-account parent',async()=>{await page.waitForFunction(()=>spoken.length===2);assert.equal(await page.evaluate(()=>document.querySelector('iframe').contentWindow.activity.length),0);assert.equal(await page.evaluate(()=>activity.length),2);});
  console.log('AGENT_PHONE_SHELL_BROWSER_V1=PASS ('+checks+' cases)');
 }catch(error){console.error(JSON.stringify({errors,requests,phone:await page.locator('.vp3-phone-panel').innerText().catch(()=>''),hidden:await page.locator('.vp3-phone-workspace').getAttribute('hidden').catch(()=>null)}));throw error;}
 finally{await browser.close();await new Promise(resolve=>server.close(resolve));}

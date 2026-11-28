@@ -92,6 +92,13 @@ assert.match(musicChat,/php tests\/agent-connection-youtube-playlists-v1\.php/,'
 assert.match(musicChat,/browser:\s*\[chromium,\s*webkit\]/,'Music Chat must retain Chromium and WebKit acceptance');
 assert.match(musicChat,/run:\s*node tests\/music-chat-browser-v1\.mjs/,'Music Chat must exercise real browser requests and source switching');
 assert.match(musicChat,/actions\/upload-artifact@v4/,'Music Chat browser evidence must remain available for release review');
+assert.match(musicChat,/includes\/music-history-\*\.php/,'Shared Music Chat gate must include history source changes');
+assert.match(musicChat,/php tests\/music-history-intent-v1\.php/,'History requests must retain exact source/date/time intent checks');
+assert.match(musicChat,/php tests\/music-history-v1\.php/,'History must retain real SQLite filters, repeated receipts and pagination');
+assert.match(musicChat,/run:\s*php tests\/music-history-mysql-v1\.php/,'History must retain native prepared MySQL acceptance');
+assert.match(musicChat,/node tests\/music-history-api-v1\.mjs/,'History must retain actual HTTP authority and exact selected actions');
+assert.match(musicChat,/node tests\/music-history-runtime-v1\.mjs/,'History must retain typed and voice restoration checks');
+assert.match(musicChat,/run:\s*node tests\/music-history-browser-v1\.mjs/,'History must retain real browser queries and selected playback');
 assert.doesNotMatch(musicChat,/continue-on-error:\s*true/,'Music Chat failures must not be downgraded to advisory checks');
 
 for(const name of archived){

@@ -7,7 +7,9 @@ import {spawn,spawnSync} from 'node:child_process';
 const root=process.cwd(),tmp=fs.mkdtempSync(path.join(os.tmpdir(),'vp3-profile-phone-'));
 fs.mkdirSync(path.join(tmp,'api'));fs.mkdirSync(path.join(tmp,'includes'));
 fs.copyFileSync('api/profile-phone-v1.php',path.join(tmp,'api/profile-phone-v1.php'));
-fs.symlinkSync(path.join(root,'includes/profile-phone-v1.php'),path.join(tmp,'includes/profile-phone-v1.php'));
+for(const file of ['profile-phone-v1.php','profile-browser-phone-schema-v1.php']){
+ fs.symlinkSync(path.join(root,'includes',file),path.join(tmp,'includes',file));
+}
 fs.writeFileSync(path.join(tmp,'includes/agent-observation-authority-v1.php'),'<?php // Authority is controlled by the isolated fixture.');
 fs.writeFileSync(path.join(tmp,'includes/bootstrap.php'),`<?php
  define('VP3_PROFILE_PHONE_TEST_HELPERS_ONLY',true);
@@ -47,6 +49,8 @@ try{
  r=await request({method:'POST',body:input});check(r.status===409,'repeated stale save cannot overwrite settings');
  r=await request({user:0,owner:'',query:'?action=public&username=dave'});
  check(r.status===200&&r.data.href==='tel:+16025550101'&&!('numbers' in r.data)&&!('owner_user_id' in r.data),'anonymous public response exposes only the explicitly published line');
+ check(r.data.browser?.contract==='vp3.profile-browser-phone.v1'&&r.data.browser.enabled===false&&r.data.browser.reason==='Browser calling is unavailable. You can use your phone app.','public browser availability fails closed without the browser-call schema');
+ check(Object.keys(r.data).sort().join(',')==='browser,contract,enabled,href,number,ok'&&Object.keys(r.data.browser).sort().join(',')==='contract,enabled,reason','public calling exposes only the published line and availability without private configuration or provider credentials');
  check(r.headers.get('cache-control')==='no-store, private'&&r.headers.get('x-content-type-options')==='nosniff','public calling is uncached and typed');
  r=await request({user:0,query:'?action=public&username=dave&number_id=12'});check(r.status===404,'public query cannot override the chosen line');
  r=await request({user:0,query:'?action=public&username=missing'});check(r.status===404,'unknown profile has no published phone');

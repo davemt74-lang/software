@@ -4,7 +4,8 @@
   const endpoint=new URL(cfg.endpoint,location.href);if(endpoint.origin!==location.origin||endpoint.username||endpoint.password)return;
   let disposed=false,inFlight=null,lastCall='',update=null;const seen=new Set();
   const card=document.createElement('section');card.className='vp3-agent-phone-card';card.hidden=true;card.setAttribute('role','region');card.setAttribute('aria-label','Personal phone activity');card.setAttribute('aria-live','polite');document.body.append(card);
-  const ownerCurrent=()=>!disposed&&Number(cfg.owner_id)>0&&(!window.VP3_ORB_CONFIG||Number(window.VP3_ORB_CONFIG.ownerKey)===Number(cfg.owner_id))&&!window.VP3ParticipantContinuity?.selectedContext?.();
+  const parentOwnsActivity=()=>{try{return parent!==window&&parent.location.origin===location.origin&&parent.VP3AgentPhoneShellV1?.ownerId===Number(cfg.owner_id)&&parent.VP3AgentPhoneShellV1?.activityEnabled===true;}catch{return false;}};
+  const ownerCurrent=()=>!disposed&&!parentOwnsActivity()&&Number(cfg.owner_id)>0&&(!window.VP3_ORB_CONFIG||Number(window.VP3_ORB_CONFIG.ownerKey)===Number(cfg.owner_id))&&!window.VP3ParticipantContinuity?.selectedContext?.();
   const foreground=()=>ownerCurrent()&&!document.hidden&&document.hasFocus()&&navigator.onLine!==false;
   const voiceReady=(async()=>{
     if(!cfg.admin_surface||!cfg.voice_enabled)return;
@@ -74,5 +75,5 @@
   window.addEventListener('vp3:phone-attention-changed',render);window.addEventListener('vp3:participant-selection-changed',wake);
   window.addEventListener('focus',wake);window.addEventListener('online',wake);window.addEventListener('pageshow',wake);document.addEventListener('visibilitychange',wake);
   window.addEventListener('resize',position);window.addEventListener('pagehide',dispose,{once:true});window.addEventListener('stonefellow:session-expired',dispose);window.addEventListener('stonefellow:logout',dispose);
-  window.VP3AgentPhoneShellV1=Object.freeze({refresh:poll,dispose});wake();
+  window.VP3AgentPhoneShellV1=Object.freeze({ownerId:Number(cfg.owner_id),activityEnabled:cfg.enabled===true,refresh:poll,dispose});wake();
 })();

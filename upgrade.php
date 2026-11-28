@@ -12,6 +12,7 @@ require_once __DIR__ . '/includes/agent-connection-gmail-inbox-initial-v1.php';
 require_once __DIR__ . '/includes/agent-email-triage-v1.php';
 require_once __DIR__ . '/includes/agent-email-preferences-schema-v1.php';
 require_once __DIR__ . '/includes/agent-gmail-documents-schema-v1.php';
+require_once __DIR__ . '/includes/gmail-email-capture-schema-v1.php';
 require_once __DIR__ . '/includes/agent-connection-gmail-inbox-activity-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-store-v1.php';
 require_once __DIR__ . '/includes/coding-canvas-source-v1.php';
@@ -342,6 +343,8 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_coding_canvas_ready_v1($schemaConnection)
         && vp3_coding_canvas_visibility_ready_v1($schemaConnection)
         && vp3_coding_canvas_source_ready_v1($schemaConnection)
+        && vp3_coding_canvas_checks_ready_v1($schemaConnection)
+        && vp3_coding_canvas_response_ready_v1($schemaConnection)
         && vp3_coding_canvas_command_grants_ready_v1($schemaConnection)
         && vp3_coding_canvas_source_grants_ready_v1($schemaConnection)
         && vp3_coding_canvas_publishing_ready_v1($schemaConnection)
@@ -393,6 +396,7 @@ function vp3_upgrade_complete(?PDO $schemaConnection = null): bool
         && vp3_phone_agent_email_calls_ready_v1($schemaConnection)
         && agent_email_preferences_ready_v1($schemaConnection)
         && agent_gmail_documents_ready_v1($schemaConnection)
+        && gmail_email_capture_ready_v1($schemaConnection)
         && vp3_phone_camera_ready_v1($schemaConnection)
         && vp3_phone_camera_map_ready_v1($schemaConnection)
         && vp3_phone_record_ready_v1($schemaConnection)

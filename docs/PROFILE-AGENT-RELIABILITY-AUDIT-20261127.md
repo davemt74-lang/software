@@ -201,6 +201,16 @@ Four prior-head CI causes were repaired without weakening the gates: a Public Fu
 
 Section 14 now runs both new SQL/API suites on SQLite and native MySQL and includes the new browser suites. Recovery Baseline includes response analytics, and deployment-package checks require the new helpers/API and bundled SDK. These local results do not certify the deployed site's Twilio account, callbacks or media transport. Check CI on the exact published head and run the installed-site acceptance steps before release.
 
+### Follow-up validation: release compatibility
+
+CI on `30c3da75f5d12a7a64e0ada2c0a380703a766d4c` completed with 17 successful workflows and three failed workflows. Five causes were identified: a HomeServer source contract still inspected the old inline inference location; an isolated public-phone fixture did not copy the new schema reader; a full Profile fixture omitted the additive public browser availability field; a native-call test expected retired owner-live copy; and the new response report displaced the established Images-first section order.
+
+The repaired HomeServer contract follows the shared helper and retains owner-quota, HomeServer-before-Cloud, and live authority checks. Public-phone fixtures continue to reject private configuration and credentials. The native-call assertion verifies owner continuation separately from its truthful waiting copy. The report restores Images first, then Owner responses and knowledge gaps, then Visits; the new response browser suite checks that order on desktop and mobile.
+
+Local checks passed: HomeServer contract 23, HomeServer PHP runtime, public-response runtime 127, public-phone HTTP 20, and native-call runtime 96. The current local environment has no working Chromium executable and its browser download is unavailable, so the browser assertions require CI verification on the corrected published head. Earlier browser results above describe their respective prior candidates; they do not establish this follow-up's browser result.
+
+The release branch was also integrated with main at `8e9f23fe4ed1006191fe0c61b2e671e8e60aa804`. The combined tree passed the same HomeServer/public-response checks, existing Phone workspace 641, new main call-continuity fixture 17, public-phone HTTP 20, native-call runtime 96, and workflow consolidation. Integration exposed an incomplete upgrade fixture: its supposedly complete database omitted the real Profile response tables. The corrected fixture retains all readiness/read-only assertions and now verifies missing tables/columns, saved User responses policy preservation, fresh-install defaults, and no fabricated owner requests. All 89 upgrade cases passed. Production upgrade code needed no correction.
+
 ## Deployment and installed-site acceptance
 
 See `docs/PROFILE-AGENT-RELIABILITY-DEPLOY.txt`. Apply the source through the normal release process, preserve runtime configuration/data, and run Database Upgrade. Public phone publication remains off until an owner enables it.

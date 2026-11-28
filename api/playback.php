@@ -145,6 +145,12 @@ try {
     if ($action === 'start') {
         $token = bin2hex(random_bytes(32));
         $user = current_user();
+        if(is_array($input['media_offer_playback']??null)&&array_key_exists('history_ref',$input['media_offer_playback'])){
+            require_once dirname(__DIR__).'/includes/agent-media-playback-v1.php';
+            if(!vp3_media_history_start_authorized_v1($pdo,$user,$requestedTrackId,$sourceContext,$input['media_offer_playback'],(float)$position)){
+                music_listening_v1_error('history_changed',409,'The selected history playback changed. Choose it again before playing.');
+            }
+        }
         $offer=null;
         if($user&&in_array($sourceContext,['agent_chat','agent_player'],true)&&is_array($input['media_offer_playback']??null)){
             require_once dirname(__DIR__).'/includes/agent-media-offer-native-receipt-v1.php';

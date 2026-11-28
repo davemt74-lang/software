@@ -68,8 +68,14 @@ jobs:
             "phone_agent_workspace": "paired-owner-approved-v2",
             "phone_canvas_delivery": "canonical-private-v1",
             "canvas_source_editor": "owner-draft-v1",
+            "canvas_live_source": "checkpointed-provider-stream-v1",
+            "canvas_workflow_checks": "sample-actions-one-repair-v1",
             "notification_reliability": "semantic-wake-v1",
             "agent_phone_shell": "account-context-v1",
+            "phone_call_continuity": "persistent-window-v1",
+            "phone_agent_activity": "all-view-background-v1",
+            "chat_sidebar_unread": "native-receipts-v1",
+            "phone_canvas_loading": "bounded-read-retry-v1",
             "member_transcriptions": "account-bound-library-v1",
             "admin_shell": "standard-header-v1",
             "music_catalog_schema": "music-song-metadata-v1-20261126",
@@ -88,11 +94,16 @@ jobs:
             "music_chat_sources": ["vp3", "youtube"],
             "music_chat_playlists": "owner-private-source-tagged-v1",
             "music_chat_upgrade_note": "docs/MUSIC-CHAT-DEPLOY.txt",
+            "music_history_protocol": "vp3_music_history_v1",
+            "music_history_sources": ["vp3", "youtube"],
+            "music_history_coverage": "retained_owner_receipts_v1",
+            "music_history_upgrade_note": "docs/MUSIC-HISTORY-DEPLOY.txt",
             "music_upgrade_note": "docs/MUSIC-CATALOG-LISTENING-DEPLOY.txt",
             "phone_agent_email_calls": "owner-consented-v1",
             "phone_agent_email_call_delivery_default": "off",
             "gmail_draft_preferences": "owner-reviewed-email-soul-v1",
             "gmail_attachment_understanding": "owner-reviewed-documents-v1",
+            "gmail_email_capture": "owner-selected-regions-v1",
             "repository": "${GITHUB_REPOSITORY}",
             "workflow_run_id": "${GITHUB_RUN_ID}",
             "tracky_agent_eyes_section": "1G5",
@@ -110,6 +121,14 @@ jobs:
           EOF
 
           test -s _deploy/VP3_RELEASE.json
+          test -f _deploy/gmail-email-capture-v1.js
+          test -f _deploy/gmail-email-capture-v1.css
+          test -f _deploy/api/gmail-email-capture-v1.php
+          test -f _deploy/includes/gmail-email-capture-v1.php
+          test -f _deploy/includes/gmail-email-capture-source-v1.php
+          test -f _deploy/includes/gmail-email-capture-input-v1.php
+          test -f _deploy/includes/gmail-email-capture-schema-v1.php
+          test -f _deploy/docs/GMAIL-EMAIL-CAPTURE-DEPLOY.txt
           test -f _deploy/includes/agent-curiosity-email-activity-v1.php
           test -f _deploy/includes/agent-curiosity-screen-v1.php
           test -f _deploy/includes/agent-initiative-curiosity-analysis-v1.php
@@ -161,6 +180,12 @@ jobs:
           test -f _deploy/assets/js/music-chat-v1.js
           test -f _deploy/assets/css/music-chat-v1.css
           test -f _deploy/docs/MUSIC-CHAT-DEPLOY.txt
+          test -f _deploy/includes/music-history-v1.php
+          test -f _deploy/includes/music-history-chat-v1.php
+          test -f _deploy/api/music-history-v1.php
+          test -f _deploy/assets/js/music-history-v1.js
+          test -f _deploy/assets/css/music-history-v1.css
+          test -f _deploy/docs/MUSIC-HISTORY-DEPLOY.txt
           test -s _deploy/assets/twilio-voice-2.18.5.min.js
           test -f _deploy/assets/twilio-voice-LICENSE.txt
           test -f _deploy/includes/phone-workspace-v1.php
@@ -534,6 +559,8 @@ jobs:
           test -f _deploy/chat-coding-canvas-v1.js
           test -f _deploy/coding-canvas-diff-v1.js
           test -f _deploy/coding-canvas-source-editor-v1.js
+          test -f _deploy/chat-sidebar-unread-v1.js
+          test -f _deploy/chat-sidebar-unread-v1.css
           test -f _deploy/includes/coding-canvas-source-v1.php
           test -f _deploy/assets/vendor/acorn-8.19.0.js
           test -f _deploy/assets/vendor/acorn-LICENSE.txt
@@ -548,6 +575,15 @@ jobs:
           test -f _deploy/includes/coding-canvas-store-v1.php
           test -f _deploy/includes/coding-canvas-model-v1.php
           test -f _deploy/includes/coding-canvas-provider-v1.php
+          test -f _deploy/includes/coding-canvas-stream-v1.php
+          test -f _deploy/includes/coding-canvas-response-schema-v1.php
+          test -f _deploy/includes/coding-canvas-response-v1.php
+          test -f _deploy/coding-canvas-live-source-v1.js
+          test -f _deploy/coding-canvas-workflow-runtime-v1.js
+          test -f _deploy/coding-canvas-workflow-editor-v1.js
+          test -f _deploy/includes/coding-canvas-checks-contract-v1.php
+          test -f _deploy/includes/coding-canvas-checks-schema-v1.php
+          test -f _deploy/includes/coding-canvas-checks-v1.php
           test -f _deploy/includes/agent-initiative-canvas-v1.php
           test -f _deploy/includes/agent-initiative-canvas-policy-v1.php
           test -f _deploy/api/initiative-canvas-settings-v1.php
@@ -654,7 +690,7 @@ jobs:
                       includes/phone-agent-workspace-native-v1.php includes/phone-agent-workspace-view-v1.php \
                       includes/phone-agent-device-grants-v1.php includes/coding-canvas-phone-v1.php \
                       includes/phone-agent-alerts-v1.php includes/notification-read-transactions-v1.php docs/NOTIFICATIONS-RELIABILITY-V1.txt \
-                      includes/agent-phone-shell-v1.php api/agent-phone-shell-v1.php agent-phone-shell-v1.js agent-composer-v1.css includes/member-transcriptions-v1.php admin/admin-header-standard-v1.css docs/AGENT-PHONE-CROSS-PAGE-DEPLOY.txt \
+                      includes/agent-phone-shell-v1.php api/agent-phone-shell-v1.php agent-phone-shell-v1.js agent-composer-v1.css includes/phone-call-continuity-v1.php phone-call-window-v1.php phone-call-window-v1.css phone-call-continuity-v1.js docs/PHONE-CALL-CONTINUITY-DEPLOY.txt includes/member-transcriptions-v1.php admin/admin-header-standard-v1.css docs/AGENT-PHONE-CROSS-PAGE-DEPLOY.txt \
                       phone-agent-workspace-v1.js phone-agent-workspace-v1.css phone-agent-workspace-media-v1.js \
                       phone-agent-item-v1.js phone-agent-item-v1.css docs/PHONE-AGENT-WORKSPACE-V1.txt; do
             test -s "_deploy/$path"

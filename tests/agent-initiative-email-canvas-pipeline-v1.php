@@ -307,4 +307,28 @@ catch(RuntimeException $error){$invalidOrigin=$error->getCode()===409;}
 $corrupt->execute([$manualOrigin,$sourceManual['canvas']['id'],$sourceManual['revision']['id']]);
 canvas_pipeline_check($invalidOrigin,'malformed manual provenance fails closed rather than becoming a writable generic app');
 
+require_once dirname(__DIR__).'/includes/coding-canvas-checks-v1.php';
+$emailPlan=[['name'=>'Review sample deadlines','steps'=>[['action'=>'click','selector'=>'#workflow-email']],
+    'expect'=>['kind'=>'text','selector'=>'#workflow-result','value'=>'Sample checked','match'=>'equals'],'persist'=>false]];
+$emailCode=$sourceManual['revision']['artifact'];$emailCode['html'].='<button id="workflow-email">Review sample</button><p id="workflow-result"></p>';
+$emailCode['js'].=';CanvasUI.on("#workflow-email","click",()=>CanvasUI.text("#workflow-result","Sample checked"));';
+$checked=vp3_coding_canvas_source_save_v1($pdo,$owner,7,11,$sourceManual['canvas']['id'],$sourceManual['revision']['id'],
+    $sourceManual['revision']['source_hash'],agent_event_uuid_v1920(),$emailCode,$sourceManual['canvas']['draft_revision'],$sourceManual['canvas']['active_revision'],$emailPlan);
+canvas_pipeline_check(vp3_coding_canvas_email_binding_v1($pdo,$owner,7,$checked['canvas']['id'],$checked['revision']['id'])
+    ===vp3_coding_canvas_email_binding_v1($pdo,$owner,7,$sourceManual['canvas']['id'],$sourceManual['revision']['id']),
+    'adding workflow checks preserves the exact native email origin');
+$emailCheck=agent_event_uuid_v1920();
+vp3_coding_canvas_check_begin_v1($pdo,$owner,7,11,$checked['canvas']['id'],$checked['revision']['id'],$emailCheck,$checked['revision']['source_hash'],$checked['state']['revision'],null);
+$emailPass=['passed'=>1,'failed_case'=>null,'step'=>0,'reason'=>'none','email_fixture_checked'=>false];
+$withoutEmailFixture=false;
+try{vp3_coding_canvas_check_finish_v1($pdo,$owner,7,11,$checked['canvas']['id'],$checked['revision']['id'],$emailCheck,$emailPass);}
+catch(RuntimeException $error){$withoutEmailFixture=$error->getCode()===409;}
+canvas_pipeline_check($withoutEmailFixture,'passing custom actions cannot bypass the existing sample-email test');
+$emailTested=vp3_coding_canvas_check_finish_v1($pdo,$owner,7,11,$checked['canvas']['id'],$checked['revision']['id'],$emailCheck,array_replace($emailPass,['email_fixture_checked'=>true]));
+canvas_pipeline_check($emailTested['revision']['test_passed']&&$emailTested['state']==$checked['state'],
+    'workflow completion and sample-email proof test the exact version without changing private app data');
+$proof=$pdo->prepare("SELECT run_id FROM agent_workflow_events WHERE owner_user_id=1 AND event_type='email_canvas_fixture_passed' AND metadata_json=?");
+$proof->execute([agent_workflow_json_v1400(['canvas_id'=>$checked['canvas']['id'],'revision'=>$checked['revision']['id'],'state_revision'=>$checked['state']['revision']])]);
+canvas_pipeline_check((int)$proof->fetchColumn()>0,'manual email workflow proof references a verified Coding run rather than an orphan run zero');
+
 echo 'INITIATIVE_EMAIL_CANVAS_PIPELINE=PASS ('.$checks.' email assertions, '.($mysql ? 'mysql' : 'sqlite').")\n";

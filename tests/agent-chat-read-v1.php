@@ -27,7 +27,11 @@ $pdo->exec("INSERT INTO chat_conversations(id,user_id,user_agent_id) VALUES (42,
 $owner=['id'=>1,'is_active'=>1];
 read_check(!vp3_chat_read_schema_ready_v1($pdo),'an installation without read state is explicitly unavailable');
 read_reject(static fn()=>vp3_chat_read_state_v1(db(),['id'=>1],0,42,[1]),'missing schema cannot report a historical post as new',503);
+$pdo->exec("CREATE TABLE vp3_paired_phone_turns_v1(user_message_id INTEGER PRIMARY KEY,conversation_id INTEGER);
+    INSERT INTO chat_messages(id,conversation_id,role,message) VALUES(14,42,'user','Historical incoming phone message');
+    INSERT INTO vp3_paired_phone_turns_v1 VALUES(14,42)");
 vp3_chat_read_ensure_schema_v1($pdo);
+read_check(vp3_chat_read_state_v1($pdo,$owner,0,42,[14])['unread_message_ids']===[],'existing incoming phone history starts read at its one-time rollout');
 read_check(vp3_chat_read_schema_ready_v1($pdo),'schema initialization commits its rollout marker and receipt table');
 read_check(vp3_chat_read_state_v1($pdo,$owner,0,42,[1])['unread_message_ids']===[]
     &&vp3_chat_read_state_v1($pdo,$owner,7,11,[5])['unread_message_ids']===[],
@@ -75,4 +79,23 @@ vp3_chat_read_ensure_schema_v1($pdo);
 read_check($read([7])['unread_message_ids']===[7],'re-running an upgrade never backfills posts created after initial rollout');
 $ack([7]);
 read_check($read([3,6,7,8])['unread_message_ids']===[],'only the exact acknowledged persisted assistant posts become read');
+$pdo->exec("UPDATE user_agents SET is_active=1 WHERE id=7;
+    INSERT INTO chat_messages(id,conversation_id,role,message) VALUES(15,42,'user','New incoming phone chat'),(16,42,'user','Owner reply to phone');
+    INSERT INTO vp3_paired_phone_turns_v1 VALUES(15,42)");
+read_check($read([15])['unread_message_ids']===[15],'a canonical incoming phone turn is unread even though its Chat role is user');
+read_reject(static fn()=>$read([16]),'an owner reply to a phone cannot acquire an unread receipt');
+$counts=vp3_chat_read_sidebar_v1($pdo,$owner,[42,11,43]);$map=array_column($counts['conversations'],'unread_count','conversation_id');
+read_check($counts['owner_user_id']===1&&$map===[11=>1,42=>1],'sidebar counts exact unread incoming posts per owned System/named Agent Chat without foreign-owner rows');
+vp3_chat_read_ensure_schema_v1($pdo);
+read_check($read([15])['unread_message_ids']===[15],'repeated upgrades never consume a new incoming phone message');
+$ack([15]);$map=array_column(vp3_chat_read_sidebar_v1($pdo,$owner,[42,11])['conversations'],'unread_count','conversation_id');
+read_check($map===[11=>1,42=>0],'acknowledging the phone post clears only that conversation count');
+$GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']=['participant_id'=>3];
+read_reject(static fn()=>vp3_chat_read_sidebar_v1(db(),['id'=>1],[42]),'participant scope cannot read owner sidebar counts',403);
+unset($GLOBALS['VP3_PARTICIPANT_RESOURCE_SCOPE_V1']);
+$pdo->exec('UPDATE users SET is_active=0 WHERE id=1');
+read_reject(static fn()=>vp3_chat_read_sidebar_v1(db(),['id'=>1],[42]),'inactive owner cannot read sidebar counts',403);
+$pdo->exec('UPDATE users SET is_active=1 WHERE id=1;UPDATE user_agents SET is_active=0 WHERE id=7');
+read_check(count(vp3_chat_read_sidebar_v1($pdo,$owner,[11])['conversations'])===0,'sidebar counts exclude inactive Agents');
+read_reject(static fn()=>vp3_chat_read_sidebar_v1(db(),$owner,range(1,51)),'sidebar count requests are bounded to fifty conversations');
 echo 'AGENT_CHAT_READ_V1=PASS ('.$GLOBALS['readChecks'].' cases)'.PHP_EOL;

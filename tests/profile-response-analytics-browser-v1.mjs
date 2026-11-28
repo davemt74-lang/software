@@ -25,6 +25,8 @@ try{
     const bounds=await panel().boundingBox(),size=page.viewportSize();
     check(bounds&&bounds.x>=0&&bounds.y>=0&&bounds.x+bounds.width<=size.width+1&&bounds.y+bounds.height<=size.height+1,'report stays inside the viewport');
     check(await panel().evaluate(el=>el.scrollWidth<=el.clientWidth+1),'report has no horizontal overflow');
+    const groupOrder=await panel().locator('.vp3-profile-period > .vp3-profile-period-group > h4').allTextContents();
+    check(JSON.stringify(groupOrder.slice(0,3))===JSON.stringify(['Free image creations','Owner responses and knowledge gaps','Visits']),'completed reports keep images first and owner responses before other activity');
     const small=await report().locator('p,small,th,td,strong,dt,dd,summary').evaluateAll(nodes=>nodes.filter(node=>node.getClientRects().length&&node.textContent.trim()&&parseFloat(getComputedStyle(node).fontSize)<12).length);
     check(small===0,'response report type remains readable');
   };

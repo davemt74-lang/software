@@ -292,3 +292,139 @@ and arbitrary generated-app functional correctness are outside this score.
    control can be diagnosed and repaired without losing the working version.
 2. Extend the native editor command registry only where an existing surface can
    verify its changes; preserve the generated app runtime's isolation.
+
+## Section 4: live generated source and retained provider responses
+
+A rebuild can consume provider tokens without yielding a saved Canvas. The owner
+reported that exact symptom with Claude. The old Coding transport waited for one
+complete JSON response and used an 80-second timeout. A timeout or unreadable
+response became `coding_provider_unconfirmed`; the repository cannot prove which
+transport failure occurred in the owner's historical run. No production inference
+or paid retry was used to investigate this change.
+
+Coding now uses a single bounded SSE request for the exact selected Claude
+Messages or OpenAI Responses model. Native model authorization, personal-key
+checks, package reservation, service policy and the execution ledger remain in
+force. There is no provider retry, model substitution or automatic paid repair.
+The transport allows up to 300 seconds, respects a smaller enclosing AI budget,
+and refreshes the native worker lease while receiving output or waiting on the
+connection. Browser navigation does not cancel server execution. Host process
+termination can still stop a run; polling recovers its existing status.
+
+Only answer text is accumulated. Claude thinking/signature blocks and OpenAI
+reasoning events are excluded. SSE framing, event order, text size, total response
+size and final response identity are bounded and checked. Claude cumulative usage
+is merged rather than summed. OpenAI answer deltas must match the completed
+response. A missing completion receipt never becomes confirmed zero usage.
+
+The canonical private job has a nullable `coding_provider_result_json` column.
+An explicit Database Upgrade adds it to existing installations; fresh job schema
+includes it. Live reads and admissions do not perform DDL. Each checkpoint carries
+the exact run, request, lease attempt, source proof and received-text hash. Updates
+require the current native lease and executing run. The final checkpoint precedes
+usage settlement and source validation, preserving received code if either later
+step fails. Generic workflow history and ordinary build progress exclude that
+source. No parallel app store or second queue is introduced.
+
+Opening the owner editor automatically shows **Live generated code** for the
+current run. HTML, CSS, JavaScript and the received JSON response are selectable.
+A bounded prefix reader displays incomplete JSON strings as literal source; it
+does not evaluate them or inject markup. Code refreshes about once per second
+while the view is open and the run is active. The existing selected/working app
+stays below it. Chat, Agent or account changes, hiding the page and leaving the
+editor clear the view and discard late responses. Source wraps in the existing
+Chat scroller instead of adding an inner source scroller.
+
+Run details now show native provider status, elapsed time when known, confirmed
+usage or an explicit unknown-usage message, and a direct AI usage link. Confirmed
+rejection, timeout, lost connection, service error and incomplete response have
+separate bounded explanations. Retry explicitly says it starts a new provider
+attempt that may use more API tokens.
+
+For failed/stopped **rebuilds**, complete structurally valid received source can
+be explicitly saved as an untested draft without inference. Recovery retains the
+original source revision, active/draft compare-and-swap fences, commands, native
+email ancestry, permissions and current app records. It never activates or
+publishes code. The exact response derives one stable native save identity, so a
+lost import response or reload returns the same revision. A newer app draft blocks
+an old import. Partial/invalid source remains inspectable. New-app runs can show
+received source but do not offer this rebuild-only import path. Older runs cannot
+recover source that was never retained by the old implementation.
+
+Section acceptance is 10/10 for the following bounded gates after release CI:
+streamed Claude and OpenAI parsing; accurate known/unknown native metering; one
+physical attempt; current-lease checkpoints; private scoped code reads; loss-safe
+rebuild import; preserved active version/data; unexecuted live display; typed inline
+run diagnostics; and responsive/context-fenced browser behavior. Local evidence
+covers the real native meter with offline transport, native storage on SQLite and
+MySQL, the shipped HTTP controller, Chromium desktop/390px views, and existing
+source/editor, email, Profile and paired-phone regression paths. Actual provider
+latency, code quality, HostGator request limits and physical-device suspension
+remain deployment acceptance rather than claims made by synthetic tests.
+
+Provider event contracts:
+- https://platform.claude.com/docs/en/build-with-claude/streaming
+- https://developers.openai.com/api/reference/resources/responses/streaming-events
+
+## Section 5: saved workflow checks and one-pass repair
+
+A preview starting successfully does not prove that a button, form or save works.
+The owner editor can now record a workflow using the real isolated app controls,
+name its expected visible result, and optionally require that result after a
+reload. Recording uses empty disposable app data and sample connected sources.
+Password input values are not recorded. Generated new apps may also propose
+checks; the owner can inspect and remove them. Existing apps without saved checks
+keep the legacy startup test and can add a recorded workflow when useful.
+
+A saved source revision may carry at most three declarative cases, twelve actions
+per case and twenty-four total actions. Actions are click, fill and check; expected
+results are visible text, a control value or a checkbox state. Text, selector and
+JSON sizes are bounded. Definitions contain no executable assertion scripts,
+network targets, secrets supplied by VP3 or authority to change grants. They are
+private owner-authored/sample test data, stored with the immutable source and
+included in its native source hash. Saving/removing checks creates a new untested
+draft through the existing idempotent manual-save path. Manual source edits and
+Coding repairs inherit the same acceptance checks; a repair cannot remove or
+weaken them to manufacture success.
+
+The trusted iframe harness invokes the existing worker callback bridge. Each
+step waits for its callbacks, acknowledged sample saves and a short quiet render
+interval. It checks a visible result, then starts a fresh runtime with only the
+acknowledged disposable state when persistence is required. Test mode has no
+openable email/source targets, no live data refresh and no live app-data writes.
+Worker faults, missing/ambiguous controls, missing click handlers, failed expected
+results and timeouts produce bounded reason/step codes. Untrusted synthetic
+browser events cannot add recording steps.
+
+Test preview runs saved workflows without inference. Test & repair explicitly
+allows one existing Coding Agent job if a check fails. The native failed report
+stores that exact run identity, so replay after a lost admission cannot create a
+second repair. The owner job still pins its model/funding, uses the native meter,
+and saves a separate draft. The current editor retests that new draft with repair
+disabled. A failed retest remains a failed draft and stops the cycle. Stop repair
+cancels the native run; Stop check cancels the local test. Changed source, app
+state, Chat/Agent/account context or unsaved manual edits fence delayed results.
+A recovery import of received provider code also inherits the original checks.
+
+Reports live in nullable `workflow_result_json` on the canonical version table.
+Database Upgrade adds it explicitly; live operations do not migrate storage. Begin
+and finish share an exact request identity and are idempotent. Reports bind the
+source hash, check hash, app-state revision, active/draft pointers, image token,
+Agent and original Chat. Finishing an obsolete check cannot test a newer source or
+newer app records. A version with saved checks needs a current passed report before
+it can be marked tested. Email-connected apps additionally retain the existing
+native sample-email proof and original Chat. Use/Restore and publishing continue
+to use the existing activation and publication controls; tests do not activate or
+publish code. Publication strips test plans and reports from its source projection.
+
+Section acceptance targets 10/10 for these bounded gates: declarative validation;
+immutable versioned plans; real recorded actions; sample-only data and no external
+requests; acknowledged save/reload verification; exact native test proofs; one
+explicit repair admission; retest without another paid loop; preserved active
+code/data/email/publication boundaries; and desktop/phone/context-loss behavior.
+Local coverage includes SQLite and MySQL, actual controller POSTs and real Chromium
+workers. Runtime Journey runs the new native, HTTP, runtime and editor browser
+checks. This establishes the check system's behavior, not that an arbitrary model
+has written a complete specification or that passing selected examples proves all
+possible app behavior. Live provider quality and installation process limits still
+need the owner's normal deployment test.

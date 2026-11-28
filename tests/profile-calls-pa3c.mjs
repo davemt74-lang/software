@@ -246,7 +246,8 @@ for(const kind of ['connect','microphone','camera'])for(const reject of [false,t
 }
 {
   const f=await fixture({widget:true,liveStatus:'expired'});await f.ready();await f.consent();await f.click('join');await f.click('end');
-  const choice=f.shell.querySelector('[data-profile-live-chat]');check(choice.checked&&!choice.disabled&&f.shell.querySelector('[data-profile-agent-status]').textContent.includes('owner has joined'),'Hangup preserves owner continuation despite a historical expired live-text request');
+  const choice=f.shell.querySelector('[data-profile-live-chat]');check(choice.checked&&!choice.disabled,'Hangup preserves owner continuation despite a historical expired live-text request');
+  check(f.shell.querySelector('[data-profile-agent-status]').textContent==='The profile owner is handling this conversation. Replies will appear here when sent.','post-hangup owner continuation promises replies only when sent');
   f.textarea.value='One more question for the owner';f.form.requestSubmit();await settle();const continued=f.requests.filter(r=>r.action==='message').at(-1);
   check(continued.chat_mode==='auto'&&!Object.hasOwn(continued,'continue_live')&&continued.conversation_id===31,'ordinary post-hangup message continues the same owner thread instead of silently switching to Agent');
   choice.checked=false;choice.dispatchEvent(new Event('change'));f.textarea.value='Use the Agent for this question';f.form.requestSubmit();await settle();

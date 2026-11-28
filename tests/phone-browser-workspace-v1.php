@@ -63,6 +63,7 @@ function status(array $call,string $value,string $hex='c',array $extra=[],bool $
 c(!vp3_phone_workspace_schema_ready_v1($pdo),'unreleased tables cannot masquerade as installed');
 vp3_phone_workspace_ensure_schema_v1($pdo);c(vp3_phone_workspace_schema_ready_v1($pdo),'explicit schema installs phone workspace');
 if(($argv[1]??'')==='global-context'){require __DIR__.'/fixtures/global-phone-context-v1.php';exit;}
+if(($argv[1]??'')==='call-continuity'){require __DIR__.'/fixtures/phone-call-continuity-v1.php';exit;}
 // Reading the existing Phone workspace never installs optional recording tables.
 $pdo->exec("INSERT INTO phone_voice_calls_v130(id,provider,provider_call_sid,owner_user_id,phone_number_id,agent_id,caller_e164,called_e164,state,created_at) VALUES(90001,'twilio','CA00000000000000000000000000090001',1,1,7,'+16025550999','+16025550101','completed','2026-01-01 01:00:00')");
 $pdo->exec("INSERT INTO phone_voice_recordings_v130(id,call_id,owner_user_id,provider,provider_recording_sid,recording_status,duration_seconds,created_at) VALUES(90001,90001,1,'twilio','RE00000000000000000000000000090001','completed',12,'2026-01-01 01:00:00')");

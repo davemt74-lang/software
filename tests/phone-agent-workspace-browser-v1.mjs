@@ -39,6 +39,7 @@ const draft={id:id(101),status:'prepared',from:'owner@example.test',to:'alex@exa
   attachments:[],is_reply:false,can_edit:true,can_send:true,review_token:'review-1',watch_review_token:'watch-review-1',edit_revision:hash(1),saved_at:time,watch_requested:false,
   followthrough:{enabled:false,deadline_at:null,time_zone:'UTC',prepare_if_overdue:false,priority:'normal'}};
 let draftRevision=1;
+let canvasReadFailures=0;
 let phoneLearning=false,phoneSoul={text:'Use clear, warm emails and include a practical next step.\n',version:0,revision:hash(800)};
 const phoneProposals=new Map();
 const phonePreference=()=>({draft_id:draft.id,eligible:phoneLearning&&!phoneProposals.has(draft.id),reason:phoneLearning?null:'generated_baseline_unavailable',
@@ -211,6 +212,7 @@ await page.route('https://phone-agent.test/**',async route=>{
   if(url.searchParams.has('workspace_canvas')){
     assert.equal(url.searchParams.get('source_revision'),rows[3].source_revision);
     nativeRequests.push({...input});assert.equal(input.action,'open');assert.equal(input.canvas_id,canvasId);assert.equal(input.revision,1);
+    if(canvasReadFailures>0){canvasReadFailures--;return route.abort('failed');}
     return ok({canvas:{id:canvasId,title:'A little creative break',active_revision:1},state:{revision:0,value:{}},command_grants:{app_data:{app_access:false}},email_source:false,
       revision:{id:1,commands:[],artifact:{html:'<section><h1>A little creative break</h1><p id="result">Ready to play</p><button id="spark">Try a spark</button></section>',
         css:'body{background:#eff7f3;color:#174e46}section{padding:28px;font:18px system-ui}button{font:inherit;padding:14px;border-radius:12px;border:0;background:#0a665b;color:white}',
@@ -452,12 +454,20 @@ try{
   assert.equal(voiceReview.state,'completed');emailCall={...emailCall,state:'ended',reason:'completed',revision:2};emailActiveCall=null;await back().click();await card(id(3)).waitFor();
   await card(id(3)).getByRole('button',{name:'View image'}).click();await nativeFrame().getByRole('img',{name:'Color study'}).waitFor();
   await nativeFrame().getByRole('img',{name:'Color study'}).evaluate(image=>image.decode());await bounds(true);await screenshot('agent-image-phone.png');await back().click();
+  canvasReadFailures=1;const canvasReadsBefore=nativeRequests.filter(q=>q.action==='open').length;
   await card(id(4)).getByRole('button',{name:'Open canvas'}).click();const canvas=nativeFrame().frameLocator('.phone-agent-canvas-frame');
   await canvas.getByText('Ready to play',{exact:true}).waitFor();assert.equal(await nativeFrame().locator('.phone-agent-canvas-frame').getAttribute('sandbox'),'allow-scripts');
   await canvas.getByRole('button',{name:'Try a spark'}).click();await canvas.getByText('A fresh idea is taking shape.').waitFor();
+  assert.equal(nativeRequests.filter(q=>q.action==='open').length,canvasReadsBefore+2,'An interrupted saved Canvas read gets exactly one bounded retry.');
   await bounds(true);assert.equal(await page.locator('.phone-header').isVisible(),false);
   const canvasBox=await agent().boundingBox();assert.ok(canvasBox.x===0&&canvasBox.y===0&&canvasBox.width===390&&canvasBox.height===700,'Canvas occupies the full app viewport.');
   await screenshot('agent-canvas-phone.png');assert.ok(nativeRequests.every(input=>['get','open'].includes(input.action)),'Viewing a saved private canvas does not dispatch generation, source writes, or model calls.');
+  await back().click();
+  canvasReadFailures=2;await card(id(4)).getByRole('button',{name:'Open canvas'}).click();
+  await nativeFrame().getByText(/This Canvas could not load because the connection was interrupted/).waitFor();
+  assert.equal(await nativeFrame().locator('.phone-agent-canvas-frame').count(),0,'An exhausted read never leaves a blank generated app.');
+  await nativeFrame().getByRole('button',{name:'Try opening again',exact:true}).click();
+  await nativeFrame().frameLocator('.phone-agent-canvas-frame').getByText('Ready to play',{exact:true}).waitFor();
   await back().click();
   await card(id(5)).getByRole('button',{name:'Read email'}).click();await nativeFrame().getByRole('heading',{name:'Account review requested'}).waitFor();
   const formatted=nativeFrame().frameLocator('.vp3-gmail-email-frame');await formatted.getByRole('heading',{name:'Account review',exact:true}).waitFor();

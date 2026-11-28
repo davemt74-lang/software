@@ -63,7 +63,7 @@ try{
     };
     $parallel('install');
     mysql_read_check(vp3_chat_read_schema_ready_v1($pdo)
-        &&(int)$pdo->query('SELECT COUNT(*) FROM agent_chat_read_rollout_v1')->fetchColumn()===1
+        &&(int)$pdo->query('SELECT COUNT(*) FROM agent_chat_read_rollout_v1')->fetchColumn()===2
         &&(int)$pdo->query('SELECT COUNT(*) FROM agent_chat_read_receipts_v1')->fetchColumn()===1,
         'two independent installers initialize historical read receipts exactly once on InnoDB');
     $pdo->exec("INSERT INTO chat_messages(id,conversation_id,role,message) VALUES
@@ -87,6 +87,17 @@ try{
     $pdo->exec('DELETE FROM chat_messages WHERE id=3');
     mysql_read_check((int)$pdo->query('SELECT COUNT(*) FROM agent_chat_read_receipts_v1 WHERE message_id=3')->fetchColumn()===0,
         'deleting a persisted message removes its read receipt through the production foreign key');
+    $pdo->exec("CREATE TABLE vp3_paired_phone_turns_v1(user_message_id BIGINT UNSIGNED PRIMARY KEY,conversation_id BIGINT UNSIGNED);
+        INSERT INTO chat_messages(id,conversation_id,role,message) VALUES(6,42,'user','Incoming phone'),(7,42,'user','Owner reply');
+        INSERT INTO vp3_paired_phone_turns_v1 VALUES(6,42)");
+    mysql_read_check(vp3_chat_read_state_v1($pdo,['id'=>1,'is_active'=>1],0,42,[6])['unread_message_ids']===[6],
+        'native MySQL recognizes canonical incoming phone posts without treating owner turns as new');
+    $counts=vp3_chat_read_sidebar_v1($pdo,['id'=>1,'is_active'=>1],[42,43]);
+    mysql_read_check($counts['conversations']===[['conversation_id'=>42,'agent_id'=>0,'unread_count'=>3]],
+        'native MySQL sidebar groups exact sparse unread posts and excludes foreign conversation metadata');
+    vp3_chat_read_acknowledge_v1($pdo,['id'=>1,'is_active'=>1],0,42,[6]);
+    mysql_read_check(vp3_chat_read_sidebar_v1($pdo,['id'=>1,'is_active'=>1],[42])['conversations'][0]['unread_count']===2,
+        'the native phone receipt clears exactly one sidebar count');
     echo 'AGENT_CHAT_READ_MYSQL=PASS ('.$GLOBALS['readChecks'].' cases)'.PHP_EOL;
 }finally{
     if($pdo->inTransaction())$pdo->rollBack();

@@ -35,6 +35,7 @@ function agent_workflow_ensure_schema_v1400(?PDO $pdo=null): void
       dedupe_key CHAR(64) NOT NULL,
       title VARCHAR(190) NOT NULL,
       goal TEXT NULL,
+      coding_provider_result_json MEDIUMTEXT NULL,
       decision_summary TEXT NULL,
       status VARCHAR(32) NOT NULL DEFAULT 'queued',
       risk_level VARCHAR(16) NOT NULL DEFAULT 'low',

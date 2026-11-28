@@ -330,7 +330,7 @@ function vp3_music_chat_answer_v1(array $payload): string
         ?'Your selected song is in “'.(string)$payload['playlist']['title'].'”.':'Preparing the playlist update.';
     elseif($intent==='queue_append')$answer='Selected '.$count.' '.($count===1?'song':'songs').' for your queue.';
     elseif($intent==='play_next')$answer='Selected '.$count.' '.($count===1?'song':'songs').' to play next.';
-    elseif($count===1)$answer=($intent==='play'?'Ready to play ':''). '“'.(string)$items[0]['title'].'”.';
+    elseif($count===1)$answer=($intent==='play'?(($payload['history_operation']??null)==='resume'?'Ready to resume ':'Ready to play '):''). '“'.(string)$items[0]['title'].'”.';
     else $answer='Here are '.$count.' matching songs.';
     if($count<$requested)$answer.=' I verified '.$count.' of the '.$requested.' requested songs in the current search.';
     foreach($payload['coverage']??[] as $coverage){

@@ -1,0 +1,121 @@
+VP3 — Browser call continuity and live connected-phone activity
+
+DEPLOYMENT
+
+Upload and extract the complete Cloud ZIP over the existing installation. Keep
+the installation's config.php, private/ and uploads/. Run Database Upgrade for
+the current main migrations, then reload VP3 assets. Calling adds no new tables.
+Sidebar counts reuse the existing read tables with a one-time historical phone
+message rollout during Database Upgrade.
+
+CALLING WHILE BROWSING
+
+Open Phone from any authorized member or Admin header, choose Open calling
+window, then click Enable calls in this browser in that window. Allow the
+browser's popup for VP3 when requested. Keep the Phone window open while talking.
+It owns one native calling device, microphone lease, live call and optional
+consented captions while the other VP3 pages navigate or reload.
+
+The saved enable choice remains scoped to this signed-in user and installation.
+Opening a window or loading a page does not register, dial or take a microphone.
+Enable explicitly in a newly opened Phone window, including after an upgrade.
+Reviewing a destination from another page only stages the native call form; the
+actual Call click remains in Phone, using the existing native carrier intent,
+exact-call binding, permissions, subscription and recording checks.
+
+Incoming calls offer Answer and Decline in the current page's personal Phone
+card. The slideout and saved Chat call cards operate the same exact call. End
+call and mute controls cannot apply to a different or newer call. The full Phone
+window retains native Contacts, Recent calls, Voicemail, call review and live
+caption controls. Consented caller captions continue there during navigation.
+Opening a page without its own calling context does not end a personal call.
+
+Close/reload of the Phone window, logout, revocation, account/session changes or
+an expired permission ends its own runtime. Controls show unconfirmed state if
+the window stops responding. A lost acknowledgement never retries a mutation
+or redials. A new window requires fresh authorization; stale window messages
+cannot control it. Only one owner window may register for this installation and
+session. Modern secure-context BroadcastChannel and Web Locks are required;
+missing assets or unavailable primitives give recovery guidance and do not
+silently create another device on the browsing page.
+
+No provider token, microphone audio or private message body is placed in browser
+storage or inter-window messages. Inter-window status includes the current call
+identifier, bounded caller label, phase and exact control revisions. Existing
+server account, Agent, conversation and subscription checks remain authoritative.
+
+CONNECTED-PHONE ACTIVITY IN EVERY AGENT VIEW
+
+The selected private conversation keeps reading saved messages while Canvas,
+Gmail, Player, Marketing or other Agent views are open. Connected-phone chats
+and information-request responses can announce through the existing Agent Voice
+queue without closing an editor or switching views. This respects the current
+owner/Agent/conversation, participant, visible-page, focus and voice preferences.
+No automatic microphone reply is started by these notices.
+
+Background reads append canonical posts without scrolling an editor, changing
+its preview, replacing source edits or clearing an unsent Chat draft. Posts stay
+hidden behind the current tool and are present on return to Chat. Reading them
+in the background does not mark them as seen in the visible conversation.
+The Canvas builder/editor again displays the same native Chat footer; the full
+app playback view retains its available viewport.
+
+All member pages, including main Chat, use the personal activity bridge and Orb.
+Messages from another owned phone conversation announce without changing the
+current Chat or copying their private contents into it. A Chat popup delegates
+personal announcements to its same-account parent to avoid duplicate notices.
+Admin keeps
+its own Agent interface and receives personal Phone/connected-phone activity;
+this does not add the public Chat footer, Transcriptions or public Orb to Admin.
+The durable private Chat post remains in its original conversation. No private
+phone content is copied into an Admin Agent conversation.
+
+CONVERSATION UNREAD COUNTS
+
+Each existing Chat row in the shared member sidebar displays its confirmed
+unread-message count, including completed Agent posts and canonical incoming
+connected-phone chats. Owner-authored turns, phone owner replies, blank streams,
+system markers, foreign accounts and inactive Agents do not inflate the count.
+Counts update during other Agent views and on personal-phone activity. The
+existing exact-message viewing receipts clear only the messages actually viewed
+in the visible, focused conversation; announcements and background reads cannot
+mark them read. Other tabs update through the existing read-receipt signal.
+
+Historical incoming phone messages start read at the one-time rollout. Repeated
+upgrades leave later unread phone messages intact. The sidebar endpoint is
+read-only, session bound, participant fenced and limited to fifty requested
+owned conversations. Counts clear if the current account/session is rejected.
+
+SENT CANVAS NETWORK RECOVERY
+
+An intermittent phone "Load failed" report recovered on the user's next try;
+its production root cause is not established. Native Canvas opening now retries
+one transient read failure, at most once, and offers Try opening again after a
+second transport failure. Only open/command_data/email_data reads are retried.
+Saves, sends, approvals and other mutations are never automatically retried.
+Native grant, saved version and paired-device checks run on every request. An
+approved paired phone still does not need an owner account login.
+
+VERIFICATION AND LIMITS
+
+Native scope tests run against SQLite and MariaDB. Browser integration uses the
+actual PHP runtime configuration and native UI with isolated provider transport,
+real getUserMedia, WebAudio processing and RTCPeerConnection lifetime checks.
+It covers popup failure, missing script, explicit registration, navigation,
+duplicate owners, caption capture, stale epochs, lost replies, account changes,
+editor drafts, every Agent view, Admin modal activity and narrow phone layouts.
+Existing native call, carrier intent, attachment, Gmail and review checks run too.
+
+Local browser checks do not prove real carrier/RTP audio or a physical iPhone's
+background lifecycle. Perform one controlled live call after deployment: answer
+from an authorized page, navigate member/Admin pages with Phone left open,
+confirm both people hear each other, check captions if consented, and end once.
+Check paired-phone message/request delivery while editing and after returning
+to Chat. A phone/device OS may suspend a background browser window.
+
+Architecture references: Twilio Voice JavaScript Device documentation (register
+on user activation; document close protection), MDN Web Locks API and MDN
+Broadcast Channel API. This release keeps the existing bundled SDK version.
+https://www.twilio.com/docs/voice/sdks/javascript/twiliodevice
+https://developer.mozilla.org/en-US/docs/Web/API/Web_Locks_API
+https://developer.mozilla.org/en-US/docs/Web/API/Broadcast_Channel_API

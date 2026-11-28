@@ -37,7 +37,7 @@
     const csrf = String(options.csrf);
     const plays = new Set();
     const listeners = [];
-    let active = null, detached = false;
+    let active = null, detached = false, playingDuringInitialSeek = false;
     const current = () => {try {return !options.isCurrent || options.isCurrent() === true;} catch (_) {return false;}};
     const notify = (name, value) => {try {options[name]?.(value);} catch (_) {}};
     const elapsed = play => integer(performance.now() - play.startedAt);
@@ -196,7 +196,17 @@
     }
 
     function playing() {
-      if (detached || !audio.isConnected || audio.paused || audio.seeking || !current()) return;
+      if (detached || !audio.isConnected || audio.paused || audio.ended || !current()) {
+        playingDuringInitialSeek = false;
+        return;
+      }
+      if (audio.seeking) {
+        // An actual playing event can precede the initial seek completion.
+        // Keep that observation, but start at the stable position and clock.
+        if (!active || active.terminal) playingDuringInitialSeek = true;
+        return;
+      }
+      playingDuringInitialSeek = false;
       if (!active || active.terminal) {createPlay(); return;}
       if (!valid(active) || active.phase === 'playing') return;
       sample(active, false);
@@ -206,6 +216,7 @@
     }
 
     function pause() {
+      playingDuringInitialSeek = false;
       const play = active;
       if (!play || play.terminal || !valid(play)) return;
       sample(play, !audio.seeking);
@@ -215,6 +226,8 @@
     }
 
     function waiting() {
+      // Buffering can precede seeked without another playing event. Retain the
+      // initial observation; seeked rechecks authority and starts a fresh clock.
       const play = active;
       if (!play || play.terminal || !valid(play) || ['buffering', 'seeking', 'paused'].includes(play.phase)) return;
       sample(play, !audio.seeking);
@@ -234,6 +247,11 @@
     }
 
     function seeked() {
+      if (playingDuringInitialSeek && (!active || active.terminal)) {
+        playingDuringInitialSeek = false;
+        playing();
+        return;
+      }
       const play = active;
       if (!play || play.terminal || !valid(play)) return;
       sample(play, false);
@@ -253,6 +271,7 @@
     }
 
     function finish(action = 'stop', beacon = false) {
+      playingDuringInitialSeek = false;
       const play = active;
       if (play && !play.terminal && valid(play)) {
         sample(play, !audio.seeking);

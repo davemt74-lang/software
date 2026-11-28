@@ -335,8 +335,14 @@ try {
                     ['name'=>'Message-ID','value'=>'<original@example.test>']]]]];
     };
     $opened = agent_connection_gmail_inbox_open_item_v1($pdo,$users[1],$ref,$openHttp);
-    first_review_check($opened === ['subject'=>'Exact fixture subject','from'=>'sender@example.test','body'=>'Exact fixture body.','auto_reply'=>false]
+    $captureSource=$opened['capture_source']??null;$openedText=$opened;unset($openedText['capture_source']);
+    first_review_check($openedText === ['subject'=>'Exact fixture subject','from'=>'sender@example.test','body'=>'Exact fixture body.','auto_reply'=>false]
         && $reads === 1,'explicit Open reads one exact message and returns plain text without provider IDs');
+    first_review_check(is_string($captureSource)&&strlen($captureSource)<=6000&&ctype_xdigit($captureSource)
+        &&!str_contains($captureSource,'original-thread'),'the opened reader adds only an opaque bounded capture source');
+    $captureOrigin=gmail_email_capture_source_open_v1($users[1],$captureSource);
+    first_review_check($captureOrigin['owner']===1&&$captureOrigin['message']==='good'&&$captureOrigin['thread']==='original-thread',
+        'the capture source remains bound to the exact privately opened owner and Gmail message');
     foreach ([[$users[2],$ref],[$users[1],str_repeat('0',64)]] as [$wrongUser,$wrongRef]) {
         try { agent_connection_gmail_inbox_open_item_v1($pdo,$wrongUser,$wrongRef,$openHttp); }
         catch (DomainException $error) { if (!in_array($error->getCode(),[403,404],true)) throw $error; }

@@ -189,7 +189,7 @@
     return visible;
   }
 
-  function renderOpenedEmail(panel,text,links,proof,bodyClass = '',display = null,subject = '',documents = null) {
+  function renderOpenedEmail(panel,text,links,proof,bodyClass = '',display = null,subject = '',documents = null,captureSource = null,sender = '') {
     const approved = new Map();
     for (const entry of Array.isArray(links) ? links.slice(0,30) : []) {
       const url = httpLink(entry?.url);
@@ -213,7 +213,7 @@
         host.append(list);
       }
     };
-    const formatted = window.VP3GmailEmailDisplayV1?.mount(panel,{body:text,display,subject},{renderPlain,
+    const formatted = window.VP3GmailEmailDisplayV1?.mount(panel,{body:text,display,subject,from:sender,capture_source:captureSource},{renderPlain,
       onLink:(event,value) => {
         const receipt = approved.get(value);
         if (!event.isTrusted || !receipt?.token || !recordableLink(proof,panel)) return;
@@ -401,7 +401,7 @@
       const ref = itemRef(payload.item_ref) ? payload.item_ref : itemRef(message.item_ref) ? message.item_ref : null;
       const proof = ref ? linkScope({conversation_id:payload.conversation_id,message_id:payload.chat_message_id},ref)
         || {mailbox:true,item_ref:ref} : null;
-      renderOpenedEmail(panel,message.body || 'No readable text in this message.',message.links,proof,'',message.display,message.subject,message.documents);
+      renderOpenedEmail(panel,message.body || 'No readable text in this message.',message.links,proof,'',message.display,message.subject,message.documents,message.capture_source,message.from);
       if (message.answered_in_gmail === true) {
         panel.append(node('small','Already replied in Gmail.'));
         return;
@@ -1399,7 +1399,7 @@
     }
     for (const row of thread.querySelectorAll('[data-gmail-content-post="true"]')) renderGmailPostLinks(row);
     window.VP3GmailInboxInitialV1 = Object.freeze({openTriageItem,openArrivedItem,openReportedItem,
-      renderMessageBody:(panel,text,links,bodyClass,display,subject,documents) => renderOpenedEmail(panel,text,links,null,bodyClass,display,subject,documents)});
+      renderMessageBody:(panel,text,links,bodyClass,display,subject,documents,captureSource,sender) => renderOpenedEmail(panel,text,links,null,bodyClass,display,subject,documents,captureSource,sender)});
   }
   listenForReviewChanges();
   render();

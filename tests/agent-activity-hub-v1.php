@@ -178,10 +178,10 @@ foreach ([[1,'+1 hour','+2 hours','active'],[2,'+3 days','+3 days 1 hour','activ
     $updateEvent->execute([$now->modify($start)->format('Y-m-d H:i:s'),$now->modify($end)->format('Y-m-d H:i:s'),$status,$id]);
 }
 $missionId = '8a000000-0000-4000-8000-000000000001';
-$pdo->prepare("INSERT INTO agent_workflow_runs VALUES(101,1,11,'cloud_mission',?,'cloud','Active mission','executing',?)")
+$pdo->prepare("INSERT INTO agent_workflow_runs (id,owner_user_id,agent_id,source_kind,source_key,execution_target,title,status,updated_at) VALUES(101,1,11,'cloud_mission',?,'cloud','Active mission','executing',?)")
     ->execute([$missionId,$now->format('Y-m-d H:i:s')]);
 $pdo->prepare('INSERT INTO agent_cloud_missions_v1 VALUES(?,1,11,101)')->execute([$missionId]);
-$pdo->exec("INSERT INTO agent_workflow_runs VALUES(103,1,12,'agent_initiative_action','','cloud','Other revisit','completed','2026-01-01');
+$pdo->exec("INSERT INTO agent_workflow_runs (id,owner_user_id,agent_id,source_kind,source_key,execution_target,title,status,updated_at) VALUES(103,1,12,'agent_initiative_action','','cloud','Other revisit','completed','2026-01-01');
     INSERT INTO agent_workflow_actions VALUES(103,103,1,'{}');");
 $pdo->exec('ALTER TABLE agent_workflow_actions ADD COLUMN capability_key TEXT');
 $pdo->exec('ALTER TABLE agent_workflow_actions ADD COLUMN sequence_no INTEGER DEFAULT 1');

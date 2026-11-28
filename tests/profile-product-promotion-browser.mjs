@@ -144,7 +144,10 @@ try {
   assert.ok(ready, logs);
   const calling = await fetch(base + '/api/profile-phone-v1.php?action=public&username=fixture-owner');
   assert.equal(calling.status,200);
-  assert.deepEqual(await calling.json(),{ok:true,contract:'vp3.profile-phone.v1',enabled:false,number:'',href:''});
+  assert.deepEqual(await calling.json(),{
+    ok:true,contract:'vp3.profile-phone.v1',enabled:false,number:'',href:'',
+    browser:{contract:'vp3.profile-browser-phone.v1',enabled:false,reason:'Browser calling is unavailable. You can use your phone app.'}
+  },'anonymous calling exposes only disabled public actions, without private line or provider configuration');
   const response = await fetch(base + imagePath);
   assert.deepEqual(Buffer.from(await response.arrayBuffer()), image);
   assert.equal(response.headers.get('content-type'), 'image/png');

@@ -73,7 +73,7 @@
   }
 
   function mount(parent, message, options = {}) {
-    const display = message?.display;
+    const display = message?.display ?? (typeof message?.body === 'string' ? {version:1,html:'',remote_images:0} : null);
     if (!parent || display?.version !== 1 || typeof display.html !== 'string' || display.html.length > 350000) return false;
     const root = node('section', undefined, 'vp3-gmail-email-display');
     const toolbar = node('div', undefined, 'vp3-gmail-email-toolbar');
@@ -87,6 +87,8 @@
     let observer = null;
     let frame = null;
     let disposed = false;
+    let capture = null;
+    let captureFactory = null;
     const plain = node('div', undefined, 'vp3-gmail-email-plain');
     if (typeof options.renderPlain === 'function') options.renderPlain(plain);
     else plain.append(node('p', String(message.body || 'No readable text in this email.')));
@@ -108,11 +110,15 @@
     toolbar.append(htmlButton, textButton, imageButton, status);
     root.append(toolbar, content);
     parent.append(root);
-    const entry = {root, destroy: () => { disposed = true; observer?.disconnect(); frame?.remove(); root.remove(); mounted.delete(entry); }};
+    const entry = {root, refreshCapture: () => {
+      if (!disposed && root.getClientRects().length && captureFactory && !capture?.accessRevoked && !capture?.current?.()) {capture?.destroy();capture=captureFactory();}
+    }, destroy: () => { disposed = true; captureFactory=null;capture?.destroy(); observer?.disconnect(); frame?.remove(); root.remove(); mounted.delete(entry); }};
     mounted.add(entry);
 
     function render() {
       if (disposed) return;
+      capture?.destroy();capture = null;
+      captureFactory = null;
       observer?.disconnect();
       observer = null;
       frame?.remove();
@@ -122,7 +128,13 @@
       imageButton.hidden = !formatted || !(display.remote_images > 0) || images;
       status.textContent = display.truncated ? 'Plain text view for this large email.' : formatted && display.remote_images > 0
         ? (images ? 'Remote images loaded.' : 'Remote images are hidden.') : '';
-      if (!formatted) { content.replaceChildren(plain); return; }
+      const installCapture = (body, frame = null) => {
+        capture?.destroy();
+        captureFactory = () => window.VP3GmailEmailCaptureV1?.mount({root,toolbar,content,body,frame,message,
+          source:options.captureSource ?? message.capture_source,isCurrent:() => !disposed && (options.isCurrent?.() ?? true)});
+        capture = captureFactory();
+      };
+      if (!formatted) { content.replaceChildren(plain); installCapture(plain); return; }
       const currentFrame = node('iframe');
       currentFrame.className = 'vp3-gmail-email-frame';
       currentFrame.title = `Formatted email${message.subject ? ': ' + String(message.subject).slice(0,180) : ''}`;
@@ -152,11 +164,13 @@
           anchor.addEventListener('auxclick', record);
         }
         if (typeof ResizeObserver === 'function') {
+          observer?.disconnect();
           observer = new ResizeObserver(resize);
           observer.observe(doc.body);
         }
         for (const image of doc.images) image.addEventListener('load', resize, {once:true});
         resize();
+        installCapture(doc.body,currentFrame);
       });
       frame = currentFrame;
       content.replaceChildren(currentFrame);
@@ -166,8 +180,8 @@
     return true;
   }
   new MutationObserver(() => {
-    for (const entry of mounted) if (!entry.root.isConnected) entry.destroy();
-  }).observe(document.documentElement, {childList:true, subtree:true});
+    for (const entry of mounted) if (!entry.root.isConnected) entry.destroy(); else entry.refreshCapture();
+  }).observe(document.documentElement, {childList:true, subtree:true,attributes:true,attributeFilter:['hidden','open','data-view']});
   window.addEventListener('stonefellow:chat-context-changing', () => {
     for (const entry of mounted) entry.destroy();
   });

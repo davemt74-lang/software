@@ -39,6 +39,7 @@ function vp3_tool_receipt_normalize_v1(mixed $value): ?array
         'tv.capture.manage'=>['prepare'],
         'media.library.read'=>['status','search'],
         'music.library.read'=>['status','search'],
+        'music.history.read'=>['list'],
         'music.playlists.manage'=>['create','add'],
         'photos.library.read'=>['status','search'],
         'media.assets.read'=>['search'],

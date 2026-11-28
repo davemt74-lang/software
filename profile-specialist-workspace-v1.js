@@ -1433,7 +1433,6 @@
       if(value.coverage!=='ready')frame.append(node('p',
         value.coverage==='limited'?'Some measures have incomplete evidence. Observed subsets are labeled below.':'The requested period could not be completely verified.',
         'vp3-profile-period-coverage'));
-      if(value.response_activity)frame.append(responsePeriod(value.response_activity));
       for(const [group,label] of analyticsGroups){
         const section=node('section','','vp3-profile-period-group');section.append(node('h4',label));
         const groupState=value.groups[group];
@@ -1446,6 +1445,7 @@
         const list=node('dl');
         for(const metric of metrics){list.append(node('dt',analyticsMetricCatalog[metric.key][2]),node('dd',metric.definition));}
         definitions.append(list);section.append(definitions);frame.append(section);
+        if(group==='images'&&value.response_activity)frame.append(responsePeriod(value.response_activity));
       }
       const money=node('section','','vp3-profile-period-group');money.append(node('h4','Commerce ledger amounts'));
       money.append(node('p','Amounts use the saved commerce ledger scale of two decimal places. Each currency is reported separately.'));

@@ -10,7 +10,7 @@
   overflow:hidden;
   scroll-padding:0;
 }
-.chat-main:has(> #chatThread[data-view="coding"]) > #chatComposerShell {
+.chat-main:has(> #chatThread[data-view="coding"][data-coding-mode="app"]) > #chatComposerShell {
   display:none !important;
 }
 .vp3-coding-canvas-dock {
@@ -419,6 +419,13 @@
   display:grid;
   gap:.65rem;
 }
+.vp3-coding-canvas-editor-content { min-width:0;display:grid;gap:1rem; }
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-editor-content { display:contents; }
+.vp3-coding-canvas[data-mode="app"] .vp3-coding-canvas-editor-content > section:not(.vp3-coding-canvas-workspace) { display:none; }
+.vp3-coding-live-source { min-width:0;border:1px solid #cad9d3;border-radius:.65rem;padding:.8rem;background:#f7faf8; }
+.vp3-coding-live-source summary { cursor:pointer;font-weight:650; }
+.vp3-coding-live-source p { font-size:.82rem;overflow-wrap:anywhere; }
+.vp3-coding-live-source pre { margin:.8rem 0;white-space:pre-wrap;overflow-wrap:anywhere;max-height:none;overflow:visible;font:13px/1.65 ui-monospace,SFMono-Regular,Consolas,monospace; }
 .vp3-coding-canvas-image-fields {
   display:grid;
   gap:.5rem;
@@ -497,6 +504,12 @@
 .vp3-coding-source-context { display:flex;flex-wrap:wrap;gap:.5rem;padding:.75rem;border:1px solid #187561;border-radius:.6rem; }
 .vp3-coding-source-context p { flex-basis:100%; }
 .vp3-coding-source-controls { align-items:stretch; }
+.vp3-coding-workflow { margin-top:.8rem;padding-top:.8rem;border-top:1px solid var(--line,#dbe4e0);min-width:0; }
+.vp3-coding-workflow h4 { margin:0 0 .6rem; }
+.vp3-coding-workflow-row { padding:.5rem 0;overflow-wrap:anywhere; }
+.vp3-coding-workflow-builder { display:grid;gap:.65rem;margin-top:.75rem; }
+.vp3-coding-workflow-builder label { display:grid;gap:.3rem;min-width:0; }
+.vp3-coding-workflow-builder input:not([type="checkbox"]) { box-sizing:border-box;width:100%;min-width:0;font-size:16px; }
 @media (max-width:760px) {
   .vp3-coding-canvas .vp3-coding-source-input,.vp3-coding-canvas .vp3-coding-source-field pre { font-size:16px; }
   .vp3-coding-canvas-preview iframe { height:clamp(15rem,45dvh,27rem); }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 // Real PDO/SQLite and the production TV schema exercise the connection and readiness path.
 $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_actions_v1','agent_participant_settings_v1','agent_participant_grants_v1','agent_participant_presence_v1','agent_participant_observers_v1','profile_chat_attachments_v1',
     'profile_agent_handoff_owners_pa3','profile_agent_handoff_presence_pa3','profile_agent_handoff_conversations_pa3','profile_agent_handoff_turns_pa3','profile_agent_handoff_deliveries_pa3','profile_agent_handoff_operations_pa3',
+    'profile_agent_response_settings_v1','profile_agent_owner_requests_v1',
     'profile_calls_pa3c','profile_call_slots_pa3c','profile_call_operations_pa3c','profile_call_deliveries_pa3c',
     'profile_call_assistance_pa3c','profile_call_research_pa3c',
     'profile_visitor_voices_pa4a','profile_speech_items_pa4a','profile_speech_attempts_pa4a',
@@ -15,6 +16,8 @@ $newTables=['agent_task_lists_v1','agent_task_list_items_v1','agent_task_list_ac
     'vp3_initiative_youtube_playlist_v1','vp3_profile_canvases_v1'];
 $partialSpeech=[
     'partial-auto-greet'=>['team_user_presence','auto_greet_enabled'],
+    'partial-profile-response-mode'=>['profile_agent_response_settings_v1','mode'],
+    'partial-profile-owner-request'=>['profile_agent_owner_requests_v1','settled_at_ms'],
     'partial-conversation-checkout-review'=>['profile_conversation_checkouts_pa5','product_snapshot_hash'],
     'partial-speech-voice'=>['profile_visitor_voices_pa4a','assignment_revision'],
     'partial-speech-source'=>['profile_speech_items_pa4a','source_hash'],
@@ -33,6 +36,8 @@ $partialSpeech=[
     'partial-canvas-edit-origin'=>['vp3_coding_canvas_versions_v1','edit_origin_revision'],
     'partial-canvas-edit-request'=>['vp3_coding_canvas_versions_v1','edit_request_id'],
     'partial-canvas-edit-hash'=>['vp3_coding_canvas_versions_v1','edit_request_hash'],
+    'partial-canvas-workflow-report'=>['vp3_coding_canvas_versions_v1','workflow_result_json'],
+    'partial-coding-response'=>['agent_workflow_runs','coding_provider_result_json'],
 ];
 $phoneContactModes=['phone-contacts-old-get','phone-contacts-old-post','phone-contacts-new-post','phone-contacts-ready-get'];
 $operatorPolicyModes=['operator-policy-old-get','operator-policy-old-post','operator-policy-ready-get'];
@@ -91,6 +96,9 @@ if($phoneContacts){
     }
 }
 require dirname(__DIR__).'/includes/tv-watching-v1.php';
+require dirname(__DIR__).'/includes/coding-canvas-checks-schema-v1.php';
+require dirname(__DIR__).'/includes/coding-canvas-response-schema-v1.php';
+$fixture->exec('CREATE TABLE agent_workflow_runs(id INTEGER PRIMARY KEY,goal TEXT)');
 $canvasDdl=file_get_contents(dirname(__DIR__).'/includes/coding-canvas-store-v1.php');
 $canvasStart=strpos($canvasDdl,'function '.'vp3_coding_canvas_schema_v1(');
 $canvasEnd=strpos($canvasDdl,'function '.'vp3_coding_canvas_authority_v1(',$canvasStart);
@@ -108,6 +116,7 @@ eval(substr($profileCanvasDdl,$profileCanvasStart,$profileCanvasEnd-$profileCanv
 require dirname(__DIR__).'/includes/agent-reminders-v1.php';
 require dirname(__DIR__).'/includes/chat-settings-v237.php';
 require dirname(__DIR__).'/includes/profile-agent-handoff-pa3.php';
+require_once dirname(__DIR__).'/includes/profile-agent-responses-v1.php';
 require_once dirname(__DIR__).'/includes/profile-chat-attachments-v1.php';
 require dirname(__DIR__).'/includes/profile-calls-pa3c.php';
 require_once dirname(__DIR__).'/includes/profile-call-activity-pa3c.php';
@@ -192,6 +201,8 @@ if($modern && !in_array($mode,['owner-phone-old-get','owner-phone-old-post'],tru
 }
 if($modern){tv_schema_v1($fixture);reminder_schema_v1($fixture);if($mode!=='participants-only')vp3_task_lists_schema_v1($fixture);if($mode!=='lists-only')vp3_participant_updates_schema_v1($fixture);vp3_profile_handoff_ensure_schema_pa3($fixture);vp3_profile_call_ensure_schema_pa3c($fixture);vp3_profile_call_activity_ensure_schema_pa3c($fixture);vp3_profile_speech_ensure_schema_pa4a($fixture);profile_agent_ensure_schema($fixture);vp3_profile_attention_ensure_schema_pa4b($fixture);vp3_profile_projection_ensure_schema_pa4b($fixture);vp3_profile_event_clock_install_v1($fixture);}
 if($modern){
+    vp3_profile_responses_install_v1($fixture);
+    $fixture->exec("INSERT INTO profile_agent_response_settings_v1(owner_user_id,mode,revision,created_at_ms,updated_at_ms) VALUES(1,'user_responses',4,1800000000000,1800000001000)");
     if ($mode !== 'missing-coding-canvas') vp3_coding_canvas_schema_v1($fixture);
     vp3_profile_canvases_install_v1($fixture);
     $fixture->exec("INSERT INTO vp3_profile_canvases_v1(canvas_id,owner_user_id,listed,generation) VALUES('00000000-0000-4000-8000-000000000001',1,1,3)");
@@ -305,6 +316,10 @@ if($ownerPhones){
     foreach (['social_feed_schema_v1', 'knowledge_r6_ensure_schema', 'knowledge_r7_ensure_schema', 'knowledge_r8_ensure_schema', 'workspace_native_schema_v1', 'artist_music_v185_ensure_schema'] as $name) check(in_array($name, $calls, true), 'Upgrade did not reach '.$name);
     check(table_exists('tv_watching_state_v1') && table_exists('tv_watching_records_v1') && reminder_ready_v1($fixture) && $complete, 'Upgrade skipped TV/reminder storage');
     foreach($newTables as $table)check(table_exists($table),'Upgrade skipped required table '.$table);
+    check(vp3_profile_responses_ready_v1($fixture),'Upgrade skipped Profile response settings or owner requests');
+    $responsePolicy=vp3_profile_response_settings_v1($fixture,1);
+    check($responsePolicy['mode']===($mode==='post'?'automated':'user_responses')&&$responsePolicy['revision']===($mode==='post'?0:4),'Upgrade changed the default or saved Profile response policy');
+    check((int)$fixture->query('SELECT COUNT(*) FROM profile_agent_owner_requests_v1')->fetchColumn()===0,'Upgrade must not submit owner requests');
     check(chat_settings_agent_orb_shape_schema_ready_v237($fixture), 'Upgrade skipped the Agent shape preference');
     check(chat_settings_agent_orb_shape_v237($fixture, 1) === ($mode === 'post' ? 'orbit' : 'particle_face'), 'Upgrade did not preserve the default or saved Agent shape');
     check(chat_settings_agent_auto_greet_schema_ready_v237($fixture), 'Upgrade skipped Auto Greet storage');
@@ -334,7 +349,7 @@ if($ownerPhones){
 } elseif ($mode === 'csrf') {
     check($error === 'Session expired. Please try again.' && $dbCalls === 0 && $calls === [], 'CSRF rejection allowed upgrade work');
 } else {
-    $needsConnection = isset($partialSpeech[$mode]) || $missingYouTube || in_array($mode,['missing-ai-service-usage','missing-coding-canvas','missing-canvas-source-index','missing-profile_event_clock_activation_v1','missing-vp3_profile_canvases_v1'],true);
+    $needsConnection = isset($partialSpeech[$mode]) || $missingYouTube || in_array($mode,['missing-ai-service-usage','missing-coding-canvas','missing-canvas-source-index','missing-profile_event_clock_activation_v1','missing-vp3_profile_canvases_v1','missing-profile_agent_response_settings_v1','missing-profile_agent_owner_requests_v1'],true);
     check(!$complete && $dbCalls === ($needsConnection?1:0) && $calls === [], 'Missing required storage was marked ready or GET performed migrations');
     check(str_contains($html, 'Run Upgrade'), 'Missing required storage must expose the upgrade control');
 }
