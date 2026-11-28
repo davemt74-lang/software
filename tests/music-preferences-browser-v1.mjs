@@ -112,7 +112,8 @@ async function attachMusic(page,seed){
   await page.evaluate(async seed=>{
     const message=document.createElement('article');message.className='message assistant';
     message.dataset.chatMessageId=String(seed.assistant_message_id);message.dataset.chatConversationId='43';message.dataset.chatMessageRole='assistant';
-    const body=document.createElement('div');body.className='message-body';message.append(body);
+    const avatar=document.createElement('div');avatar.className='message-avatar';avatar.textContent='AI';
+    const body=document.createElement('div');body.className='message-body';message.append(avatar,body);
     const thread=document.querySelector('#chatThread');thread.insertBefore(message,thread.querySelector('.chat-listening-continuation'));
     await window.VP3_MUSIC_CHAT_V1.attach(message,seed.music_chat_v1,{live:true});
   },seed);
@@ -182,7 +183,7 @@ try{
   let panel=await openSaved(page);
   equal(await panel.locator('.vp3-music-preferences-saved-item').count(),2,'Saved choices contain exact native and YouTube preferences');
   check(await panel.textContent().then(value=>value.includes('History Moonlight')&&value.includes('YouTube Song 6')),'Current authorized saved metadata is visible');
-  await capture(page,'desktop-saved-choices',panel,panel.getByRole('button',{name:'Close preferences',exact:true}));
+  await capture(page,'desktop-saved-choices',panel,choice(panel.locator('.vp3-music-preferences-saved-item').first(),'like'));
   const sourceList=preferenceResponse(page,'list');await panel.getByLabel('Preference source').selectOption('vp3');await sourceList;
   await page.waitForFunction(()=>document.querySelector('.vp3-music-preferences-panel .vp3-music-preferences-list')?.children.length===1);
   equal(await panel.locator('.vp3-music-preferences-saved-item').count(),1,'Source filtering returns one current native choice');
@@ -193,7 +194,8 @@ try{
   const writesAfterClear=writes();
   await page.evaluate(async reference=>{
     const message=document.createElement('article');message.className='message assistant';message.dataset.preferenceReplay='1';
-    const body=document.createElement('div');body.className='message-body';message.append(body);document.querySelector('#chatThread').append(message);
+    const avatar=document.createElement('div');avatar.className='message-avatar';avatar.textContent='AI';
+    const body=document.createElement('div');body.className='message-body';message.append(avatar,body);document.querySelector('#chatThread').append(message);
     await window.VP3_MUSIC_PREFERENCES_V1.attach(message,{protocol:'vp3_music_preferences_v1',owner_user_id:11,agent_id:7,conversation_id:43,
       action:'feedback',reference},{live:false});
   },feedbackReference);
@@ -215,9 +217,15 @@ try{
   equal((await clearUnavailable).status(),200,'An unavailable saved choice can still be cleared');
   await page.waitForFunction(()=>![...document.querySelectorAll('.vp3-music-preferences-panel .vp3-music-preferences-saved-item')].some(row=>row.textContent.includes('Unavailable song')));
   await fixture.control({consent:true});
+  // Renewed policy consent does not silently re-enable playback capture after
+  // revocation cleanup. This fixture explicitly opts in through its real helper.
+  fixture.run("vp3_youtube_history_change_v1(db(),11,'enable_history');");
   await page.reload();
   await page.waitForFunction(()=>window.VP3_MUSIC_PREFERENCES_V1&&window.STONEFELLOW_CHAT_CONTINUITY?.conversationId?.()===43);
   await historyCard(page).locator('.vp3-music-history-items').waitFor();
+  const renewedCapture=fixture.readDb('SELECT capture_key FROM vp3_youtube_history_settings_v1 WHERE owner_user_id=11')[0]?.capture_key;
+  check(typeof renewedCapture==='string'&&/^[a-f0-9]{32}$/.test(renewedCapture),'Explicit history opt-in creates a current capture key');
+  equal(await page.evaluate(()=>window.VP3_YOUTUBE_PLAYBACK_V1.captureKey),renewedCapture,'Reloaded Chat uses the current explicitly enabled capture key');
 
   for(const width of [320,390]){
     const mobile=await pageFor({width,height:844});
@@ -225,7 +233,7 @@ try{
     check(await choice(mobileRow,'like').getAttribute('aria-pressed')==='true','Saved choice restores on '+width+'px without a mutation');
     await capture(mobile.page,'phone-'+width+'-history',mobileRow,choice(mobileRow,'like'));
     const mobilePanel=await openSaved(mobile.page);
-    await capture(mobile.page,'phone-'+width+'-preferences',mobilePanel,mobilePanel.getByRole('button',{name:'Close preferences',exact:true}));
+    await capture(mobile.page,'phone-'+width+'-preferences',mobilePanel,choice(mobilePanel.locator('.vp3-music-preferences-saved-item').first(),'like'));
     await mobile.context.close();
   }
 
@@ -247,7 +255,9 @@ try{
   await mixedCard.locator('[data-music-state="playing"]').waitFor();
   const ytRecordResponse=await ytRecorded;
   check((await ytRecordResponse.json()).recorded===true,'The actual YouTube recorder acknowledges its child-playlist receipt');
-  await waitUntil(()=>count('vp3_youtube_playlist_plays_v1')>quietPlays[2],'YouTube playback must reach its canonical history ledger');
+  const ytRecordFields=new URLSearchParams(ytRecordResponse.request().postData());
+  await waitUntil(()=>fixture.readDb('SELECT play_id FROM vp3_youtube_playlist_plays_v1 WHERE owner_user_id=? AND playlist_id=? AND play_id=?',
+    [11,ytRecordFields.get('playlist_id'),ytRecordFields.get('play_id')]).length===1,'The exact acknowledged YouTube receipt must reach its canonical history ledger');
   // The recorder uses a single request for either ordinary or child-list plays;
   // its completion is observed through the ledger and a following browser turn.
   await page.waitForFunction(before=>window.__preferencesYouTube.active()?.state===1&&window.__preferencesYouTube.acknowledged>before,acknowledgedBefore);
